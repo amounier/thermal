@@ -1,0 +1,19 @@
+name: thermal
+channels:
+  - conda-forge
+  - nodefaults
+dependencies:
+  - pandas
+  - fiona
+  - matplotlib
+  - tqdm
+  - spyder
+  - jupyter
+  - cartopy
+  - xarray
+  - netCDF4
+  - cmocean
+  - geopandas
+  - rioxarray
+  - html5lib
+  - numpy
