@@ -17,3 +17,6 @@ dependencies:
   - rioxarray
   - html5lib
   - numpy
+  - pyogrio
+  - dask
+  - dask-geopandas
