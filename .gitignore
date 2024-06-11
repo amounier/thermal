@@ -5,3 +5,5 @@ presentation/
 documentation/
 typologies/
 output/
+.ipynb_checkpoints/
+.virtual_documents/
