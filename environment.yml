@@ -21,3 +21,6 @@ dependencies:
   - dask
   - dask-geopandas
   - seaborn
+  - pip
+  - pip:
+      - eppy
