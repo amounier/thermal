@@ -1,0 +1,5 @@
+L'installation d'eppy sur l'environnement conda pose des problèmes :
+- le module eppy est disponible via pip (cf lignes commentées dans le .yml)
+- cette installation via pip froce une vieille version de bs4 (3.8)
+- version ancienne incompatible avec pandas (notamment pour read_html)
+- installation de eppy-core via conda (à voir si les fonctionnalités core suffisent)
