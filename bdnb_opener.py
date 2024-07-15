@@ -30,11 +30,13 @@ import cartopy.io.img_tiles as cimgt
 import cartopy.geodesic as cgeo
 from urllib.request import urlopen, Request
 from PIL import Image
+import xmltodict
 
 pd.set_option('future.no_silent_downcasting', True)
 
 
 today = pd.Timestamp(date.today()).strftime('%Y%m%d')
+output_folder = os.path.join('output')
 
 
 def get_layer_names():
@@ -133,220 +135,7 @@ def cull_empty_partitions(df):
     return df
 
 
-
-
-# =============================================================================
-# # à mettre dans main plus tard 
-# =============================================================================
-
-# étude des DPE successifs sur des batiments (pas d'informations sur le logement)
-if False:
-    tic = time.time()
-    
-    # ouverture des données sous dask
-    bdnb_dpe_logement, bdnb_rel_batiment_groupe_dpe_logement, bdnb_batiment_groupe_compile = get_bdnb()
-    
-    bdnb_batiment_groupe_compile = bdnb_batiment_groupe_compile[['batiment_groupe_id','ffo_bat_nb_log']]
-    bdnb_batiment_groupe_compile = bdnb_batiment_groupe_compile.compute()
-    
-    bdnb_rel_batiment_groupe_dpe_logement = bdnb_rel_batiment_groupe_dpe_logement[['batiment_groupe_id','identifiant_dpe']]
-    bdnb_rel_batiment_groupe_dpe_logement = bdnb_rel_batiment_groupe_dpe_logement.compute()
-    
-    bdnb_dpe_logement = bdnb_dpe_logement[['identifiant_dpe','date_etablissement_dpe','classe_bilan_dpe','type_dpe','surface_habitable_logement']]
-    bdnb_dpe_logement = bdnb_dpe_logement.set_index('identifiant_dpe')
-    bdnb_dpe_logement = bdnb_dpe_logement.compute()
-    
-    multiple_dpe_batiment_groupe = dict(Counter(bdnb_rel_batiment_groupe_dpe_logement.batiment_groupe_id))
-    
-    multiple_dpe_batiment_groupe_df = pd.DataFrame().from_dict({'batiment_groupe_id':multiple_dpe_batiment_groupe.keys(),'nb_dpe':multiple_dpe_batiment_groupe.values()})
-    multiple_dpe_batiment_groupe_df = multiple_dpe_batiment_groupe_df[multiple_dpe_batiment_groupe_df.nb_dpe>1]
-    
-    base_multiple_dpe_batiment_groupe_df = multiple_dpe_batiment_groupe_df[multiple_dpe_batiment_groupe_df.nb_dpe<multiple_dpe_batiment_groupe_df.nb_dpe.quantile(0.99)]
-    
-    if True:
-        fig,ax = plt.subplots(dpi=300,figsize=(5,5))
-        sns.histplot(base_multiple_dpe_batiment_groupe_df,x='nb_dpe',stat='percent',ax=ax,binwidth=5,)
-        ax.set_xlabel('Nombre de DPE par bâtiment ({} bâtiments)'.format(len(base_multiple_dpe_batiment_groupe_df)))
-        plt.show()
-        
-    
-    batiment_group_list = base_multiple_dpe_batiment_groupe_df.batiment_groupe_id.to_list()
-    
-    number_batiment_groupe = 1000
-    batiment_group_list = batiment_group_list[:number_batiment_groupe]
-    
-    results = dict()
-    pbar = tqdm.tqdm(enumerate(batiment_group_list), total=len(batiment_group_list))
-    for i,bg_id in pbar:
-        pbar.set_description(bg_id)
-        pbar.refresh()
-
-        results[bg_id] = {'identifiant_dpe':[],
-                          'date_etablissement_dpe':[],
-                          'classe_bilan_dpe':[],
-                          'surface_habitable_logement':[],
-                          'type_dpe':[],
-                          'nb_log_batiment_groupe':[]}
-        
-        dpe_bg = bdnb_rel_batiment_groupe_dpe_logement[bdnb_rel_batiment_groupe_dpe_logement.batiment_groupe_id==bg_id].identifiant_dpe
-        # dpe_bg = dpe_bg.compute()
-        
-        nb_logement = bdnb_batiment_groupe_compile[bdnb_batiment_groupe_compile.batiment_groupe_id==bg_id].ffo_bat_nb_log
-        
-        try: 
-            nb_logement = int(nb_logement.values[0])
-        except ValueError:
-            continue
-        
-        # print('{}/{}: {} ({} DPE toutes méthodes)'.format(i+1,number_batiment_groupe,bg_id, len(dpe_bg)))
-        for dpe_id in dpe_bg:
-            bdnb_dpe_logement_filtered = bdnb_dpe_logement.loc[dpe_id]#.compute()
-            date_etablissement_dpe, classe_bilan_dpe, type_dpe, surface_habitable_logement = bdnb_dpe_logement_filtered.values
-            
-            if np.isnan(surface_habitable_logement):
-                continue
-            
-            results[bg_id]['identifiant_dpe'].append(dpe_id)
-            results[bg_id]['date_etablissement_dpe'].append(date_etablissement_dpe)
-            results[bg_id]['classe_bilan_dpe'].append(classe_bilan_dpe)
-            results[bg_id]['type_dpe'].append(type_dpe)
-            results[bg_id]['surface_habitable_logement'].append(int(surface_habitable_logement))
-            results[bg_id]['nb_log_batiment_groupe'].append(nb_logement)
-            
-    # print(results)
-    tac = time.time()
-    print('Done in {:.2f}s.'.format(tac-tic))
-    
-    letter_to_number_dict = {chr(ord('@')+n):n for n in range(1,10)}
-    
-    for bg_id in batiment_group_list:
-    # for bg_id in ['bdnb-bg-2GSS-QG39-2CAH']:
-    # for bg_id in ['bdnb-bg-65F1-XL3D-CUER']:
-    # for bg_id in ['bdnb-bg-1HX6-5V4H-1L6W']:
-    # for bg_id in ['bdnb-bg-KP9N-M5LM-X8CB']:
-        df_dpe_bg_id = pd.DataFrame().from_dict(results.get(bg_id))
-        df_dpe_bg_id = df_dpe_bg_id.dropna(axis=0)
-        df_dpe_bg_id = df_dpe_bg_id[df_dpe_bg_id.type_dpe=='dpe arrêté 2021 3cl logement']
-        df_dpe_bg_id['classe_bilan_dpe_number'] = [letter_to_number_dict.get(e) for e in df_dpe_bg_id.classe_bilan_dpe]
-        df_dpe_bg_id = df_dpe_bg_id.sort_values('date_etablissement_dpe')
-        
-        if df_dpe_bg_id.empty or len(df_dpe_bg_id)<2:
-            continue
-    
-        # filtre pour ne garder que les surface de logements identiques d'un DPE au suivant 
-        filter_same_surface = np.asarray([df_dpe_bg_id.surface_habitable_logement==df_dpe_bg_id.surface_habitable_logement.shift(1),
-                                          df_dpe_bg_id.surface_habitable_logement==df_dpe_bg_id.surface_habitable_logement.shift(-1)]).any(0)
-        df_dpe_bg_id = df_dpe_bg_id[filter_same_surface]
-        
-        # filtre pour ne garder que les changements d'étiquette d'un DPE au suivant
-        filter_same_etiquette = np.asarray([df_dpe_bg_id.classe_bilan_dpe_number==df_dpe_bg_id.classe_bilan_dpe_number.shift(1),
-                                            df_dpe_bg_id.classe_bilan_dpe_number==df_dpe_bg_id.classe_bilan_dpe_number.shift(-1)]).any(0)
-        df_dpe_bg_id = df_dpe_bg_id[~filter_same_etiquette]
-        
-        # filtre pour ne garder que les DPE distants de moins de 30 jours
-        df_dpe_bg_id['days_difference'] = df_dpe_bg_id.date_etablissement_dpe - df_dpe_bg_id.date_etablissement_dpe.shift(1)
-        df_dpe_bg_id['days_difference'] = df_dpe_bg_id.days_difference.dt.days
-        if not any(df_dpe_bg_id.days_difference < 30.):
-            continue
-        
-        # filtre pour ne garder que les bâtiments ayant au moins 2 DPE successifs
-        if len(df_dpe_bg_id)<2:
-            continue
-        
-        # sortie des fichiers csv pour les bâtiments 'suspects'
-        output_folder = os.path.join('output')
-        folder = '{}_DPE_successifs'.format(today)
-        if folder not in os.listdir(output_folder):
-            os.mkdir(os.path.join(output_folder,folder))
-        df_dpe_bg_id.to_csv(os.path.join(output_folder,folder,'{}.csv'.format(bg_id)),index=False)
-        
-        # print(df_dpe_bg_id.identifiant_dpe)
-        
-if False:
-    output_folder = os.path.join('output')
-    folder = '{}_DPE_successifs'.format(today)
-    done_batiment_group_list = os.listdir(os.path.join(output_folder, folder))
-    done_batiment_group_list = [s.replace('.csv','') for s in done_batiment_group_list if s.endswith('.csv')]
-    for bg_id in tqdm.tqdm(done_batiment_group_list):
-        df_dpe_bg_id = pd.read_csv(os.path.join(output_folder, folder,'{}.csv'.format(bg_id)))
-        df_dpe_bg_id['date_etablissement_dpe'] = [pd.to_datetime(t) for t in df_dpe_bg_id.date_etablissement_dpe]
-        
-        if 'figs' not in os.listdir(os.path.join(output_folder, folder)):
-            os.mkdir(os.path.join(output_folder,folder,'figs'))
-            
-        fig,ax = plt.subplots(dpi=300,figsize=(5,5))
-        ax.plot(df_dpe_bg_id.date_etablissement_dpe, df_dpe_bg_id.classe_bilan_dpe_number,ls=':',marker='o')
-        ax.set_title('{} ({} log)'.format(bg_id,df_dpe_bg_id.nb_log_batiment_groupe.values[0]))
-        ax.set_yticks(ticks:=list(range(1,8)),labels=[chr(ord('@')+n) for n in ticks])
-        locator = mdates.AutoDateLocator(minticks=1, maxticks=4)
-        ax.xaxis.set_major_locator(locator)
-        ax.xaxis.set_minor_locator(mdates.MonthLocator(interval=1))
-        plt.show()
-        plt.close()
-        
-if False:
-    output_folder = os.path.join('output')
-    folder = '{}_DPE_successifs'.format(today)
-    done_batiment_group_list = os.listdir(os.path.join(output_folder, folder))
-    done_batiment_group_list = [s.replace('.csv','') for s in done_batiment_group_list if s.endswith('.csv')]
-    
-    suspicious_batiment_group_dict = dict()
-    suspicious_batiment_group_dict_dpe_id = dict()
-    for bg_id in tqdm.tqdm(done_batiment_group_list):
-        df_dpe_bg_id = pd.read_csv(os.path.join(output_folder, folder,'{}.csv'.format(bg_id)))
-        df_dpe_bg_id['date_etablissement_dpe'] = [pd.to_datetime(t) for t in df_dpe_bg_id.date_etablissement_dpe]
-        
-        # filtre pour une période de 30 jours
-        filter_days_difference = df_dpe_bg_id.days_difference<30
-        filter_days_difference = np.asarray([filter_days_difference.values, filter_days_difference.shift(-1).fillna(False).values])
-        filter_days_difference = filter_days_difference.any(0)
-        df_suspicious_dpe_bg_id = df_dpe_bg_id[filter_days_difference]
-        
-        # filtre pour DPE à la baisse
-        filter_dpe_gains = [False]*len(df_suspicious_dpe_bg_id)
-        for i in range(1,len(filter_dpe_gains)):
-            old_dpe, new_dpe = df_suspicious_dpe_bg_id.classe_bilan_dpe_number.values[i-1:i+1]
-            if old_dpe>new_dpe:
-                filter_dpe_gains[i] = True
-                filter_dpe_gains[i-1] = True
-        df_suspicious_dpe_bg_id = df_suspicious_dpe_bg_id[np.asarray(filter_dpe_gains)]
-                
-        # affichage des trajectoires de DPE
-        if 'figs' not in os.listdir(os.path.join(output_folder, folder)):
-            os.mkdir(os.path.join(output_folder,folder,'figs'))
-        
-        if df_suspicious_dpe_bg_id.empty:
-            continue
-        
-        fig,ax = plt.subplots(dpi=300,figsize=(5,5))
-        ax.plot(df_dpe_bg_id.date_etablissement_dpe, df_dpe_bg_id.classe_bilan_dpe_number,ls=':',marker='o')
-        for i in range(1,len(df_suspicious_dpe_bg_id)):
-            if df_suspicious_dpe_bg_id.days_difference.values[i-1:i+1][-1]<30 and df_suspicious_dpe_bg_id.classe_bilan_dpe_number.values[i-1]>df_suspicious_dpe_bg_id.classe_bilan_dpe_number.values[i]:
-                ax.plot(df_suspicious_dpe_bg_id.date_etablissement_dpe.values[i-1:i+1], df_suspicious_dpe_bg_id.classe_bilan_dpe_number.values[i-1:i+1],ls=':',marker='o',color='red')
-                
-                if bg_id not in suspicious_batiment_group_dict.keys():
-                    suspicious_batiment_group_dict[bg_id] = []
-                    suspicious_batiment_group_dict_dpe_id[bg_id] = []
-                suspicious_batiment_group_dict[bg_id].append(list(df_suspicious_dpe_bg_id.classe_bilan_dpe_number.values[i-1:i+1]))
-                suspicious_batiment_group_dict_dpe_id[bg_id].append(list(df_suspicious_dpe_bg_id.identifiant_dpe.values[i-1:i+1]))
-                
-        ax.set_title('{} ({} log)'.format(bg_id,df_dpe_bg_id.nb_log_batiment_groupe.values[0]))
-        ax.set_yticks(ticks:=list(range(1,8)),labels=[chr(ord('@')+n) for n in ticks])
-        locator = mdates.AutoDateLocator(minticks=1, maxticks=4)
-        ax.xaxis.set_major_locator(locator)
-        ax.xaxis.set_minor_locator(mdates.MonthLocator(interval=1))
-        plt.show()
-        plt.close()
-        
-        # suspicious_batiment_group_dict[bg_id] = [df_suspicious_dpe_bg_id.classe_bilan_dpe_number.max(), df_suspicious_dpe_bg_id.classe_bilan_dpe_number.min()]
-        
-    print(len(suspicious_batiment_group_dict), suspicious_batiment_group_dict)
-    
-    # prochaine étape : regarder le fichier xml https://observatoire-dpe-audit.ademe.fr/pub/dpe/2375E4547621M/xml
-
-
-
-def draw_local_map(geometry,style='map',figsize=12, radius=370, grey_background=True):
+def draw_local_map(geometry,style='map',figsize=12, radius=370, grey_background=True, save_path=None):
     """
     based on https://www.theurbanist.com.au/2021/03/plotting-openstreetmap-images-with-cartopy/
 
@@ -394,11 +183,365 @@ def draw_local_map(geometry,style='map',figsize=12, radius=370, grey_background=
     
     # add building on map
     ax.add_geometries(geometry, crs=data_crs, color='tab:blue')
+    
+    # sauvegarde de l'image
+    if save_path is not None:
+        plt.savefig(save_path, bbox_inches='tight')
+        
     return fig,ax
 
+
+# =============================================================================
+# # à mettre dans main plus tard 
+# =============================================================================
+
+
+def suspect_identification(plot=False, force=False, number_batiment_groupe=1000):
+    """
+    étude des DPE successifs sur des batiments (pas d'informations sur le logement)
+
+    Parameters
+    ----------
+    plot : boolean, optional
+        DESCRIPTION. The default is False.
+    force : boolean, optional
+        DESCRIPTION. The default is False.
+    number_batiment_groupe : int, optional
+        à maximiser in fine (:). The default is 1000.
+
+    Returns
+    -------
+    None.
+
+    """
+
+    tic = time.time()
     
+    # ouverture des données sous dask
+    bdnb_dpe_logement, bdnb_rel_batiment_groupe_dpe_logement, bdnb_batiment_groupe_compile = get_bdnb()
+    
+    bdnb_batiment_groupe_compile = bdnb_batiment_groupe_compile[['batiment_groupe_id','ffo_bat_nb_log']]
+    bdnb_batiment_groupe_compile = bdnb_batiment_groupe_compile.compute()
+    
+    bdnb_rel_batiment_groupe_dpe_logement = bdnb_rel_batiment_groupe_dpe_logement[['batiment_groupe_id','identifiant_dpe']]
+    bdnb_rel_batiment_groupe_dpe_logement = bdnb_rel_batiment_groupe_dpe_logement.compute()
+    
+    bdnb_dpe_logement = bdnb_dpe_logement[['identifiant_dpe','date_etablissement_dpe','classe_bilan_dpe','type_dpe','surface_habitable_logement']]
+    bdnb_dpe_logement = bdnb_dpe_logement.set_index('identifiant_dpe')
+    bdnb_dpe_logement = bdnb_dpe_logement.compute()
+    
+    multiple_dpe_batiment_groupe = dict(Counter(bdnb_rel_batiment_groupe_dpe_logement.batiment_groupe_id))
+    
+    multiple_dpe_batiment_groupe_df = pd.DataFrame().from_dict({'batiment_groupe_id':multiple_dpe_batiment_groupe.keys(),'nb_dpe':multiple_dpe_batiment_groupe.values()})
+    multiple_dpe_batiment_groupe_df = multiple_dpe_batiment_groupe_df[multiple_dpe_batiment_groupe_df.nb_dpe>1]
+    
+    base_multiple_dpe_batiment_groupe_df = multiple_dpe_batiment_groupe_df[multiple_dpe_batiment_groupe_df.nb_dpe<multiple_dpe_batiment_groupe_df.nb_dpe.quantile(0.99)]
+    
+    if plot:
+        fig,ax = plt.subplots(dpi=300,figsize=(5,5))
+        sns.histplot(base_multiple_dpe_batiment_groupe_df,x='nb_dpe',stat='percent',ax=ax,binwidth=5,)
+        ax.set_xlabel('Nombre de DPE par bâtiment ({} bâtiments)'.format(len(base_multiple_dpe_batiment_groupe_df)))
+        plt.show()
+        
+    
+    batiment_group_list = base_multiple_dpe_batiment_groupe_df.batiment_groupe_id.to_list()
+    
+    batiment_group_list = batiment_group_list[:number_batiment_groupe]
+    
+    results = dict()
+    pbar = tqdm.tqdm(enumerate(batiment_group_list), total=len(batiment_group_list))
+    for i,bg_id in pbar:
+        pbar.set_description(bg_id)
+        pbar.refresh()
+
+        results[bg_id] = {'identifiant_dpe':[],
+                          'date_etablissement_dpe':[],
+                          'classe_bilan_dpe':[],
+                          'surface_habitable_logement':[],
+                          'type_dpe':[],
+                          'nb_log_batiment_groupe':[]}
+        
+        dpe_bg = bdnb_rel_batiment_groupe_dpe_logement[bdnb_rel_batiment_groupe_dpe_logement.batiment_groupe_id==bg_id].identifiant_dpe
+        # dpe_bg = dpe_bg.compute()
+        
+        nb_logement = bdnb_batiment_groupe_compile[bdnb_batiment_groupe_compile.batiment_groupe_id==bg_id].ffo_bat_nb_log
+        
+        try: 
+            nb_logement = int(nb_logement.values[0])
+        except ValueError:
+            continue
+        
+        # print('{}/{}: {} ({} DPE toutes méthodes)'.format(i+1,number_batiment_groupe,bg_id, len(dpe_bg)))
+        for dpe_id in dpe_bg:
+            bdnb_dpe_logement_filtered = bdnb_dpe_logement.loc[dpe_id]#.compute()
+            date_etablissement_dpe, classe_bilan_dpe, type_dpe, surface_habitable_logement = bdnb_dpe_logement_filtered.values
+            
+            if np.isnan(surface_habitable_logement):
+                continue
+            
+            results[bg_id]['identifiant_dpe'].append(dpe_id)
+            results[bg_id]['date_etablissement_dpe'].append(date_etablissement_dpe)
+            results[bg_id]['classe_bilan_dpe'].append(classe_bilan_dpe)
+            results[bg_id]['type_dpe'].append(type_dpe)
+            results[bg_id]['surface_habitable_logement'].append(int(surface_habitable_logement))
+            results[bg_id]['nb_log_batiment_groupe'].append(nb_logement)
+            
+    # print(results)
+    tac = time.time()
+    # print('Done in {:.2f}s.'.format(tac-tic))
+    
+    letter_to_number_dict = {chr(ord('@')+n):n for n in range(1,10)}
+    
+    for bg_id in batiment_group_list:
+    # for bg_id in ['bdnb-bg-2GSS-QG39-2CAH']:
+    # for bg_id in ['bdnb-bg-65F1-XL3D-CUER']:
+    # for bg_id in ['bdnb-bg-1HX6-5V4H-1L6W']:
+    # for bg_id in ['bdnb-bg-KP9N-M5LM-X8CB']:
+        df_dpe_bg_id = pd.DataFrame().from_dict(results.get(bg_id))
+        df_dpe_bg_id = df_dpe_bg_id.dropna(axis=0)
+        df_dpe_bg_id = df_dpe_bg_id[df_dpe_bg_id.type_dpe=='dpe arrêté 2021 3cl logement']
+        df_dpe_bg_id['classe_bilan_dpe_number'] = [letter_to_number_dict.get(e) for e in df_dpe_bg_id.classe_bilan_dpe]
+        df_dpe_bg_id = df_dpe_bg_id.sort_values('date_etablissement_dpe')
+        
+        if df_dpe_bg_id.empty or len(df_dpe_bg_id)<2:
+            continue
+    
+        # filtre pour ne garder que les surface de logements identiques d'un DPE au suivant 
+        filter_same_surface = np.asarray([df_dpe_bg_id.surface_habitable_logement==df_dpe_bg_id.surface_habitable_logement.shift(1),
+                                          df_dpe_bg_id.surface_habitable_logement==df_dpe_bg_id.surface_habitable_logement.shift(-1)]).any(0)
+        df_dpe_bg_id = df_dpe_bg_id[filter_same_surface]
+        
+        # filtre pour ne garder que les changements d'étiquette d'un DPE au suivant
+        filter_same_etiquette = np.asarray([df_dpe_bg_id.classe_bilan_dpe_number==df_dpe_bg_id.classe_bilan_dpe_number.shift(1),
+                                            df_dpe_bg_id.classe_bilan_dpe_number==df_dpe_bg_id.classe_bilan_dpe_number.shift(-1)]).any(0)
+        df_dpe_bg_id = df_dpe_bg_id[~filter_same_etiquette]
+        
+        # filtre pour ne garder que les DPE distants de moins de 30 jours
+        df_dpe_bg_id['days_difference'] = df_dpe_bg_id.date_etablissement_dpe - df_dpe_bg_id.date_etablissement_dpe.shift(1)
+        df_dpe_bg_id['days_difference'] = df_dpe_bg_id.days_difference.dt.days
+        if not any(df_dpe_bg_id.days_difference < 30.):
+            continue
+        
+        # filtre pour ne garder que les bâtiments ayant au moins 2 DPE successifs
+        if len(df_dpe_bg_id)<2:
+            continue
+        
+        # sortie des fichiers csv pour les bâtiments 'suspects'
+        output_folder = os.path.join('output')
+        folder = '{}_DPE_successifs'.format(today)
+        if folder not in os.listdir(output_folder):
+            os.mkdir(os.path.join(output_folder,folder))
+        df_dpe_bg_id.to_csv(os.path.join(output_folder,folder,'{}.csv'.format(bg_id)),index=False)
+        
+        # print(df_dpe_bg_id.identifiant_dpe)
+    return
+
+
+def plot_raw_suspects():
+    """
+    Première version peu utile en pratique (vérification brute)
+
+    Returns
+    -------
+    None.
+
+    """
+    folder = '{}_DPE_successifs'.format(today)
+    
+    if folder not in os.listdir(output_folder):
+        suspect_identification()
+    
+    done_batiment_group_list = os.listdir(os.path.join(output_folder, folder))
+    done_batiment_group_list = [s.replace('.csv','') for s in done_batiment_group_list if s.endswith('.csv')]
+    
+    if len(done_batiment_group_list) == 0:
+        suspect_identification()
+        done_batiment_group_list = os.listdir(os.path.join(output_folder, folder))
+        done_batiment_group_list = [s.replace('.csv','') for s in done_batiment_group_list if s.endswith('.csv')]
+        
+    for bg_id in tqdm.tqdm(done_batiment_group_list):
+        df_dpe_bg_id = pd.read_csv(os.path.join(output_folder, folder,'{}.csv'.format(bg_id)))
+        df_dpe_bg_id['date_etablissement_dpe'] = [pd.to_datetime(t) for t in df_dpe_bg_id.date_etablissement_dpe]
+        
+        if 'figs' not in os.listdir(os.path.join(output_folder, folder)):
+            os.mkdir(os.path.join(output_folder,folder,'figs'))
+            
+        fig,ax = plt.subplots(dpi=300,figsize=(5,5))
+        ax.plot(df_dpe_bg_id.date_etablissement_dpe, df_dpe_bg_id.classe_bilan_dpe_number,ls=':',marker='o')
+        ax.set_title('{} ({} log)'.format(bg_id,df_dpe_bg_id.nb_log_batiment_groupe.values[0]))
+        ax.set_yticks(ticks:=list(range(1,8)),labels=[chr(ord('@')+n) for n in ticks])
+        locator = mdates.AutoDateLocator(minticks=1, maxticks=4)
+        ax.xaxis.set_major_locator(locator)
+        ax.xaxis.set_minor_locator(mdates.MonthLocator(interval=1))
+        plt.show()
+        plt.close()
+    return
+        
+        
+        
 if True:
-    batiment_groupe_id = 'bdnb-bg-9CBX-DZ3C-1DYC'
+    show_plots = False
+    show_details = True
+    
+    output_folder = os.path.join('output')
+    folder = '{}_DPE_successifs'.format(today)
+    done_batiment_group_list = os.listdir(os.path.join(output_folder, folder))
+    done_batiment_group_list = [s.replace('.csv','') for s in done_batiment_group_list if s.endswith('.csv')]
+    
+    suspicious_batiment_group_dict_dpe_number = dict()
+    suspicious_batiment_group_dict_dpe_id = dict()
+    for bg_id in tqdm.tqdm(done_batiment_group_list):
+        df_dpe_bg_id = pd.read_csv(os.path.join(output_folder, folder,'{}.csv'.format(bg_id)))
+        df_dpe_bg_id['date_etablissement_dpe'] = [pd.to_datetime(t) for t in df_dpe_bg_id.date_etablissement_dpe]
+        
+        # filtre pour une période de 30 jours
+        filter_days_difference = df_dpe_bg_id.days_difference<30
+        filter_days_difference = np.asarray([filter_days_difference.values, filter_days_difference.shift(-1).fillna(False).values])
+        filter_days_difference = filter_days_difference.any(0)
+        df_suspicious_dpe_bg_id = df_dpe_bg_id[filter_days_difference]
+        
+        # filtre pour DPE à la baisse
+        filter_dpe_gains = [False]*len(df_suspicious_dpe_bg_id)
+        for i in range(1,len(filter_dpe_gains)):
+            old_dpe, new_dpe = df_suspicious_dpe_bg_id.classe_bilan_dpe_number.values[i-1:i+1]
+            if old_dpe>new_dpe:
+                filter_dpe_gains[i] = True
+                filter_dpe_gains[i-1] = True
+        df_suspicious_dpe_bg_id = df_suspicious_dpe_bg_id[np.asarray(filter_dpe_gains)]
+                
+        # affichage des trajectoires de DPE
+        if 'figs' not in os.listdir(os.path.join(output_folder, folder)):
+            os.mkdir(os.path.join(output_folder,folder,'figs'))
+        
+        if df_suspicious_dpe_bg_id.empty:
+            continue
+        
+        if show_plots:
+            fig,ax = plt.subplots(dpi=300,figsize=(5,5))
+            ax.plot(df_dpe_bg_id.date_etablissement_dpe, df_dpe_bg_id.classe_bilan_dpe_number,ls=':',marker='o')
+        for i in range(1,len(df_suspicious_dpe_bg_id)):
+            if df_suspicious_dpe_bg_id.days_difference.values[i-1:i+1][-1]<30 and df_suspicious_dpe_bg_id.classe_bilan_dpe_number.values[i-1]>df_suspicious_dpe_bg_id.classe_bilan_dpe_number.values[i]:
+                
+                if show_plots:
+                    ax.plot(df_suspicious_dpe_bg_id.date_etablissement_dpe.values[i-1:i+1], df_suspicious_dpe_bg_id.classe_bilan_dpe_number.values[i-1:i+1],ls=':',marker='o',color='red')
+                
+                if bg_id not in suspicious_batiment_group_dict_dpe_number.keys():
+                    suspicious_batiment_group_dict_dpe_number[bg_id] = []
+                    suspicious_batiment_group_dict_dpe_id[bg_id] = []
+                suspicious_batiment_group_dict_dpe_number[bg_id].append(list(df_suspicious_dpe_bg_id.classe_bilan_dpe_number.values[i-1:i+1]))
+                suspicious_batiment_group_dict_dpe_id[bg_id].append(list(df_suspicious_dpe_bg_id.identifiant_dpe.values[i-1:i+1]))
+        
+        if show_plots:
+            ax.set_title('{} ({} log)'.format(bg_id,df_dpe_bg_id.nb_log_batiment_groupe.values[0]))
+            ax.set_yticks(ticks:=list(range(1,8)),labels=[chr(ord('@')+n) for n in ticks])
+            locator = mdates.AutoDateLocator(minticks=1, maxticks=4)
+            ax.xaxis.set_major_locator(locator)
+            ax.xaxis.set_minor_locator(mdates.MonthLocator(interval=1))
+            plt.show()
+            plt.close()
+    
+    # print(suspicious_batiment_group_dict_dpe_number)
+    
+    # calcul du nombre de batiments concernés par des DPE suspects
+    number_batiment_groupe = 1000 # doit être égal à number_batiment_groupe définie plus haut
+    number_suspicious_bg = len(suspicious_batiment_group_dict_dpe_number)
+    
+    # calcul du nombre de gains d'étiquettes moyens et des principaux changements 
+    mean_dpe_gains = 0
+    counter = 0
+    dpe_gain_counter_dict = dict()
+    for k,v in suspicious_batiment_group_dict_dpe_number.items():
+        for dpe_ini,dpe_redo in v:
+            dpe_gain = dpe_ini-dpe_redo
+            mean_dpe_gains += dpe_gain
+            counter += 1
+            if (dpe_ini,dpe_redo) not in dpe_gain_counter_dict.keys():
+                dpe_gain_counter_dict[(dpe_ini,dpe_redo)] = 1
+            else:
+                dpe_gain_counter_dict[(dpe_ini,dpe_redo)] += 1 
+    mean_dpe_gains = mean_dpe_gains/counter
+    
+    # tri par ordre décroissant de valeur 
+    dpe_gain_counter_dict = {k: v for k, v in sorted(dpe_gain_counter_dict.items(), key=lambda item: item[1],reverse=True)}
+    number_to_letter_dict = {n:chr(ord('@')+n) for n in range(1,10)}
+    
+    if show_details:
+        print('\nPourcentage de bâtiments présentants des DPE suspicieux :')
+        print('\t- {:.1f}% ({}/{})'.format(number_suspicious_bg/number_batiment_groupe*100,number_suspicious_bg, number_batiment_groupe))
+        
+        print("\nGains moyens d'étiquettes :")
+        print('\t- {:.1f} ({} obs.)'.format(mean_dpe_gains,number_suspicious_bg))
+        
+        print("Détails des gains d'étiquettes :")
+        for (dpe_ini, dpe_redo), nb_chg in dpe_gain_counter_dict.items():
+            letter_ini, letter_redo = number_to_letter_dict.get(dpe_ini), number_to_letter_dict.get(dpe_redo)
+            print('\t- {} -> {} : {:>4.1f}% ({}/{})'.format(letter_ini, letter_redo, nb_chg/number_suspicious_bg*100, nb_chg, number_suspicious_bg))
+            
+            
+    
+    
+    # prochaine étape : regarder le fichier xml https://observatoire-dpe-audit.ademe.fr/pub/dpe/2375E4547621M/xml
+
+    test_chaudiere = 'bdnb-bg-FHEF-WAAZ-S5XC'
+    test_dpe_ids = suspicious_batiment_group_dict_dpe_id.get(test_chaudiere)[0]
+    
+    #https://github.com/martinblech/xmltodict
+
+    # test avec les xml
+    # test_dpe_xml_path = os.path.join('data','DPE','XML','{}.xml'.format(test_dpe_ids[0]))
+    # with open(test_dpe_xml_path,'r') as f:
+    #     test_dpe_xml = f.read()
+    # test_data = xmltodict.parse(test_dpe_xml)
+    
+    # test avec les xls
+    test_dpe_xls_path_1 = os.path.join('data','DPE','XLS','{}.xlsx'.format(test_dpe_ids[0]))
+    test_data_1 = pd.read_excel(test_dpe_xls_path_1, sheet_name='logement')
+    test_data_1 = test_data_1.fillna('nan')
+    test_dpe_xls_path_2 = os.path.join('data','DPE','XLS','{}.xlsx'.format(test_dpe_ids[1]))
+    test_data_2 = pd.read_excel(test_dpe_xls_path_2, sheet_name='logement')
+    test_data_2 = test_data_2.fillna('nan')
+    # difference_1 = test_data_1[(test_data_1['Unnamed: 0'].isna()) | (test_data_1[test_data_1.columns.values[1:]]!=test_data_2[test_data_2.columns.values[1:]]).any(axis=1)]
+    # difference_1 = test_data_1[test_data_1!=test_data_2]
+    difference_1 = test_data_1[(test_data_1[test_data_1.columns.values[1:]]!=test_data_2[test_data_2.columns.values[1:]]).any(axis=1)]
+    difference_1 = difference_1.replace('nan',np.nan)
+    difference_1.to_csv(os.path.join('output','{}.csv'.format(test_dpe_ids[0])))
+    difference_2 = test_data_2[(test_data_1[test_data_1.columns.values[1:]]!=test_data_2[test_data_2.columns.values[1:]]).any(axis=1)]
+    difference_2 = difference_2.replace('nan',np.nan)
+    difference_2.to_csv(os.path.join('output','{}.csv'.format(test_dpe_ids[1])))
+    
+    
+    # pour automatiser la recuperation des données 
+    # test_url = 'https://observatoire-dpe-audit.ademe.fr/afficher-dpe/2375E2258099Y'
+    # xml_button_xpath = '/html/body/app-root/div/app-page-dpe-detail/app-dpe-contenu-detail/app-panel/div[1]/div[2]/div/div[2]/div/app-action-link/button'
+    
+    
+    # passer par la base dpe, ça marche ok pour le chauffage a priori, mais pas assez précis pour les caractéristiques de mur
+    # test_url = 'https://data.ademe.fr/datasets/dpe-v2-logements-existants/full?N%C2%B0DPE_in=%22{}%22,%22{}%22'.format(*test_dpe_ids)
+    # https://data.ademe.fr/data-fair/api/v1/datasets/dpe-v2-logements-existants/lines?size=10000&page=1&q_mode=simple&qs=(N%C2%B0DPE:(%222375E2162413S%22+OR+%222375E2258099Y%22))&finalizedAt=2024-07-02T02:12:45.780Z&format=csv
+    # test_data = pd.read_csv(os.path.join('data','DPE','dpe-v2-logements-existants_test.csv'))
+    # test_data.iloc[0].T.compare(test_data.iloc[1].T)
+
+
+def neighbourhood_map(batiment_groupe_id,save=True):
+    """
+    carte des alentours d'un bâtiment de la BDNB
+
+    Parameters
+    ----------
+    batiment_groupe_id : TYPE
+        DESCRIPTION.
+    save : TYPE, optional
+        DESCRIPTION. The default is True.
+
+    Returns
+    -------
+    None.
+
+    """
+    
+    # batiment_groupe_id = 'bdnb-bg-9CBX-DZ3C-1DYC'
+    # batiment_groupe_id = 'bdnb-bg-7DCU-U457-HZB8'
+    # batiment_groupe_id ='bdnb-bg-FHEF-WAAZ-S5XC'
     
     # requête à la BDNB
     r = requests.get(f'https://api.bdnb.io/v1/bdnb/donnees/batiment_groupe_complet/adresse',
@@ -413,8 +556,18 @@ if True:
     # reprojection en longitude latitude
     gdf = gdf.to_crs(epsg=4326) 
     
-    fig,ax = draw_local_map(gdf.iloc[0].geometry)
-    plt.show()
+    folder = '{}_DPE_successifs'.format(today)
+    
+    if folder not in os.listdir(output_folder):
+        os.mkdir(os.path.join(output_folder,folder))
+    if 'figs' not in os.listdir(os.path.join(output_folder, folder)):
+        os.mkdir(os.path.join(output_folder,folder,'figs'))
+    
+    if save:
+        save_path = os.path.join('output',folder,'figs','{}_map.png'.format(batiment_groupe_id))
+    else:
+        save_path = None
+    fig,ax = draw_local_map(gdf.iloc[0].geometry, save_path=save_path)
     
     
     
@@ -428,13 +581,21 @@ def main():
     if False:
         layers = get_layer_names()
         
+        
     # benchmark opening 
     if False:
         print(speed_test_opening()) 
         print(speed_test_opening(dask_only=True, plot=True)) 
     
     
-            
+    # plot des diagnostics suspects
+    if False:
+        plot_raw_suspects()
+    
+    # neighbourhood map
+    if False:
+        bg_id = 'bdnb-bg-FHEF-WAAZ-S5XC' #'bdnb-bg-RGSM-7GV4-4QBK' #'bdnb-bg-9CBX-DZ3C-1DYC',
+        neighbourhood_map(batiment_groupe_id=bg_id)
     
     
     tac = time.time()
