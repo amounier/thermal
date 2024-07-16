@@ -42,6 +42,8 @@ output_folder = os.path.join('output')
 folder = '{}_DPE_successifs'.format(today)
 if folder not in os.listdir(output_folder):
     os.mkdir(os.path.join(output_folder,folder))
+if 'figs' not in os.listdir(os.path.join(output_folder, folder)):
+    os.mkdir(os.path.join(output_folder,folder,'figs'))
 
 
 # =============================================================================
@@ -144,62 +146,6 @@ def cull_empty_partitions(df):
     return df
 
 
-def draw_local_map(geometry,style='map',figsize=12, radius=370, grey_background=True, save_path=None):
-    """
-    based on https://www.theurbanist.com.au/2021/03/plotting-openstreetmap-images-with-cartopy/
-
-    """
-    
-    def image_spoof(self, tile):
-        """Reformat for cartopy"""
-        url = self._image_url(tile)                
-        req = Request(url)                         
-        req.add_header('User-agent','Anaconda 3')  
-        fh = urlopen(req) 
-        im_data = io.BytesIO(fh.read())            
-        fh.close()                                 
-        img = Image.open(im_data)  
-        if grey_background:
-            img = img.convert("L")             
-        img = img.convert(self.desired_tile_form)  
-        return img, self.tileextent(tile), 'lower' 
-    
-    # reformat web request for street map spoofing
-    cimgt.OSM.get_image = image_spoof 
-    img = cimgt.OSM()
-    
-    fig = plt.figure(figsize=(figsize,figsize)) 
-    
-    # project using coordinate reference system (CRS) of street map
-    ax = plt.axes(projection=img.crs) 
-    data_crs = ccrs.PlateCarree()
-    
-    # compute OSM scale
-    scale = int(100/np.log(radius))
-    scale = (scale<20) and scale or 19
-    
-    # compute extent of map
-    lon,lat = geometry.centroid.x, geometry.centroid.y
-    dist = radius*1.1
-    dist_cnr = np.sqrt(2*dist**2)
-    top_left = cgeo.Geodesic().direct(points=(lon,lat),azimuths=-45,distances=dist_cnr)[:,0:2][0]
-    bot_right = cgeo.Geodesic().direct(points=(lon,lat),azimuths=135,distances=dist_cnr)[:,0:2][0]
-    extent = [top_left[0], bot_right[0], bot_right[1], top_left[1]]
-    ax.set_extent(extent)
-    
-    # add OSM with zoom specification
-    ax.add_image(img, int(scale)) 
-    
-    # add building on map
-    ax.add_geometries(geometry, crs=data_crs, color='tab:blue')
-    
-    # sauvegarde de l'image
-    if save_path is not None:
-        plt.savefig(save_path, bbox_inches='tight')
-        
-    return fig,ax
-
-
 # =============================================================================
 # fonctions relatives à l'étude des DPE
 # =============================================================================
@@ -223,10 +169,9 @@ def suspect_identification(plot=False, force=False, number_batiment_groupe=1000)
     None.
 
     """
-
-    tic = time.time()
     
     # ouverture des données sous dask
+    print('Opening BDNB...')
     bdnb_dpe_logement, bdnb_rel_batiment_groupe_dpe_logement, bdnb_batiment_groupe_compile = get_bdnb()
     
     bdnb_batiment_groupe_compile = bdnb_batiment_groupe_compile[['batiment_groupe_id','ffo_bat_nb_log']]
@@ -255,7 +200,8 @@ def suspect_identification(plot=False, force=False, number_batiment_groupe=1000)
     
     batiment_group_list = base_multiple_dpe_batiment_groupe_df.batiment_groupe_id.to_list()
     
-    batiment_group_list = batiment_group_list[:number_batiment_groupe]
+    if isinstance(number_batiment_groupe,int):
+        batiment_group_list = batiment_group_list[:number_batiment_groupe]
     
     results = dict()
     pbar = tqdm.tqdm(enumerate(batiment_group_list), total=len(batiment_group_list))
@@ -280,7 +226,6 @@ def suspect_identification(plot=False, force=False, number_batiment_groupe=1000)
         except ValueError:
             continue
         
-        # print('{}/{}: {} ({} DPE toutes méthodes)'.format(i+1,number_batiment_groupe,bg_id, len(dpe_bg)))
         for dpe_id in dpe_bg:
             bdnb_dpe_logement_filtered = bdnb_dpe_logement.loc[dpe_id]#.compute()
             date_etablissement_dpe, classe_bilan_dpe, type_dpe, surface_habitable_logement = bdnb_dpe_logement_filtered.values
@@ -294,18 +239,10 @@ def suspect_identification(plot=False, force=False, number_batiment_groupe=1000)
             results[bg_id]['type_dpe'].append(type_dpe)
             results[bg_id]['surface_habitable_logement'].append(int(surface_habitable_logement))
             results[bg_id]['nb_log_batiment_groupe'].append(nb_logement)
-            
-    # print(results)
-    tac = time.time()
-    # print('Done in {:.2f}s.'.format(tac-tic))
     
     letter_to_number_dict = {chr(ord('@')+n):n for n in range(1,10)}
     
     for bg_id in batiment_group_list:
-    # for bg_id in ['bdnb-bg-2GSS-QG39-2CAH']:
-    # for bg_id in ['bdnb-bg-65F1-XL3D-CUER']:
-    # for bg_id in ['bdnb-bg-1HX6-5V4H-1L6W']:
-    # for bg_id in ['bdnb-bg-KP9N-M5LM-X8CB']:
         df_dpe_bg_id = pd.DataFrame().from_dict(results.get(bg_id))
         df_dpe_bg_id = df_dpe_bg_id.dropna(axis=0)
         df_dpe_bg_id = df_dpe_bg_id[df_dpe_bg_id.type_dpe=='dpe arrêté 2021 3cl logement']
@@ -341,7 +278,8 @@ def suspect_identification(plot=False, force=False, number_batiment_groupe=1000)
         if suspect_folder not in os.listdir(os.path.join(output_folder,folder)):
             os.mkdir(save_path)
         df_dpe_bg_id.to_csv(os.path.join(save_path,'{}.csv'.format(bg_id)),index=False)
-    return
+        
+    return len(batiment_group_list)
 
 
 def plot_raw_suspects():
@@ -437,6 +375,7 @@ def open_dpe_details(dpe_id, sheet_name='logement'):
         dpe_data = pd.read_excel(dpe_xls_path, sheet_name=sheet_name)
     except FileNotFoundError:
         print('Downloading XLS details of DPE {} from observatoire-dpe-audit.ademe.fr...'.format(dpe_id))
+        
         download_dpe_details(dpe_id, force=False)
         dpe_xls_path = os.path.join('data','DPE','XLS','{}.xlsx'.format(dpe_id))
         dpe_data = pd.read_excel(dpe_xls_path, sheet_name=sheet_name)
@@ -555,10 +494,41 @@ def difference_dpe_details(dpe_id_1,dpe_id_2):
     difference_2 = pd.concat([difference_admin_2, difference_logement_2])
     return difference_1, difference_2
         
-# analyse des gains de DPE parmi les suspects potentiels  
-if True:
-    show_plots = False
-    show_details = True
+
+
+def analysis_suspicious_DPE(plot=None,details=True,number_batiment_groupe=1000, force=False):
+    """
+    analyse des gains de DPE parmi les suspects potentiels  
+
+    Parameters
+    ----------
+    plot : TYPE, optional
+        DESCRIPTION. The default is None.
+    details : TYPE, optional
+        DESCRIPTION. The default is True.
+    number_batiment_groupe : TYPE, optional
+        DESCRIPTION. The default is 1000.
+    force : TYPE, optional
+        DESCRIPTION. The default is False.
+
+    Returns
+    -------
+    suspicious_batiment_group_dict_dpe_id : TYPE
+        DESCRIPTION.
+
+    """
+    if isinstance(plot,bool):
+        if plot:
+            show_plots = True
+        else:
+            show_plots = False
+    elif isinstance(plot,list):
+        bg_id_plot_list = plot
+        show_plots = False
+    else:
+        show_plots = False
+        bg_id_plot_list = []
+    show_details = details
     
     suspect_folder = 'raw_suspicious_DPE'
     path = os.path.join(output_folder,folder,suspect_folder)
@@ -568,8 +538,8 @@ if True:
     done_batiment_group_list = os.listdir(path)
     done_batiment_group_list = [s.replace('.csv','') for s in done_batiment_group_list if s.endswith('.csv')]
     
-    if len(done_batiment_group_list) == 0:
-        suspect_identification()
+    if len(done_batiment_group_list) == 0 or force:
+        suspect_identification(number_batiment_groupe=number_batiment_groupe)
         done_batiment_group_list = os.listdir(path)
         done_batiment_group_list = [s.replace('.csv','') for s in done_batiment_group_list if s.endswith('.csv')]
 
@@ -601,13 +571,14 @@ if True:
         if df_suspicious_dpe_bg_id.empty:
             continue
         
-        if show_plots:
+        if show_plots or bg_id in bg_id_plot_list:
             fig,ax = plt.subplots(dpi=300,figsize=(5,5))
             ax.plot(df_dpe_bg_id.date_etablissement_dpe, df_dpe_bg_id.classe_bilan_dpe_number,ls=':',marker='o')
+            
         for i in range(1,len(df_suspicious_dpe_bg_id)):
             if df_suspicious_dpe_bg_id.days_difference.values[i-1:i+1][-1]<30 and df_suspicious_dpe_bg_id.classe_bilan_dpe_number.values[i-1]>df_suspicious_dpe_bg_id.classe_bilan_dpe_number.values[i]:
                 
-                if show_plots:
+                if show_plots or bg_id in bg_id_plot_list:
                     ax.plot(df_suspicious_dpe_bg_id.date_etablissement_dpe.values[i-1:i+1], df_suspicious_dpe_bg_id.classe_bilan_dpe_number.values[i-1:i+1],ls=':',marker='o',color='red')
                 
                 if bg_id not in suspicious_batiment_group_dict_dpe_number.keys():
@@ -616,19 +587,18 @@ if True:
                 suspicious_batiment_group_dict_dpe_number[bg_id].append(list(df_suspicious_dpe_bg_id.classe_bilan_dpe_number.values[i-1:i+1]))
                 suspicious_batiment_group_dict_dpe_id[bg_id].append(list(df_suspicious_dpe_bg_id.identifiant_dpe.values[i-1:i+1]))
         
-        if show_plots:
+        if show_plots or bg_id in bg_id_plot_list:
             ax.set_title('{} ({} log)'.format(bg_id,df_dpe_bg_id.nb_log_batiment_groupe.values[0]))
             ax.set_yticks(ticks:=list(range(1,8)),labels=[chr(ord('@')+n) for n in ticks])
             locator = mdates.AutoDateLocator(minticks=1, maxticks=4)
             ax.xaxis.set_major_locator(locator)
             ax.xaxis.set_minor_locator(mdates.MonthLocator(interval=1))
+            save_path = os.path.join('output',folder,'figs','{}_dpe.png'.format(bg_id))
+            plt.savefig(save_path, bbox_inches='tight')
             plt.show()
             plt.close()
     
-    # print(suspicious_batiment_group_dict_dpe_number)
-    
     # calcul du nombre de batiments concernés par des DPE suspects
-    number_batiment_groupe = 1000 # doit être égal à number_batiment_groupe définie plus haut
     number_suspicious_bg = len(suspicious_batiment_group_dict_dpe_number)
     
     # calcul du nombre de gains d'étiquettes moyens et des principaux changements 
@@ -662,21 +632,65 @@ if True:
             letter_ini, letter_redo = number_to_letter_dict.get(dpe_ini), number_to_letter_dict.get(dpe_redo)
             print('\t- {} -> {} : {:>4.1f}% ({}/{})'.format(letter_ini, letter_redo, nb_chg/number_suspicious_bg*100, nb_chg, number_suspicious_bg))
         print('\n')
-            
-    
-# analyse des champs modifier pour obtenir des gains de DPE
-if True:       
-    
-    # test = 'bdnb-bg-RGSM-7GV4-4QBK'
-    # test = 'bdnb-bg-FHEF-WAAZ-S5XC'
-    test = 'bdnb-bg-9CBX-DZ3C-1DYC'
-    test_dpe_ids = suspicious_batiment_group_dict_dpe_id.get(test)[0]
-    
-    difference_1, difference_2 = difference_dpe_details(test_dpe_ids[0],test_dpe_ids[1])
+        
+    return suspicious_batiment_group_dict_dpe_id, suspicious_batiment_group_dict_dpe_number
 
-    difference_1.to_csv(os.path.join(output_folder,folder,'diff_{}.csv'.format(test_dpe_ids[0])))
-    difference_2.to_csv(os.path.join(output_folder,folder,'diff_{}.csv'.format(test_dpe_ids[1])))
+
+def draw_local_map(geometry,style='map',figsize=12, radius=370, grey_background=True, save_path=None):
+    """
+    based on https://www.theurbanist.com.au/2021/03/plotting-openstreetmap-images-with-cartopy/
+
+    """
     
+    def image_spoof(self, tile):
+        """Reformat for cartopy"""
+        url = self._image_url(tile)                
+        req = Request(url)                         
+        req.add_header('User-agent','Anaconda 3')  
+        fh = urlopen(req) 
+        im_data = io.BytesIO(fh.read())            
+        fh.close()                                 
+        img = Image.open(im_data)  
+        if grey_background:
+            img = img.convert("L")             
+        img = img.convert(self.desired_tile_form)  
+        return img, self.tileextent(tile), 'lower' 
+    
+    # reformat web request for street map spoofing
+    cimgt.OSM.get_image = image_spoof 
+    img = cimgt.OSM()
+    
+    fig = plt.figure(figsize=(figsize,figsize)) 
+    
+    # project using coordinate reference system (CRS) of street map
+    ax = plt.axes(projection=img.crs) 
+    data_crs = ccrs.PlateCarree()
+    
+    # compute OSM scale
+    scale = int(100/np.log(radius))
+    scale = (scale<20) and scale or 19
+    
+    # compute extent of map
+    lon,lat = geometry.centroid.x, geometry.centroid.y
+    dist = radius*1.1
+    dist_cnr = np.sqrt(2*dist**2)
+    top_left = cgeo.Geodesic().direct(points=(lon,lat),azimuths=-45,distances=dist_cnr)[:,0:2][0]
+    bot_right = cgeo.Geodesic().direct(points=(lon,lat),azimuths=135,distances=dist_cnr)[:,0:2][0]
+    extent = [top_left[0], bot_right[0], bot_right[1], top_left[1]]
+    ax.set_extent(extent)
+    
+    # add OSM with zoom specification
+    ax.add_image(img, int(scale)) 
+    
+    # add building on map
+    ax.add_geometries(geometry, crs=data_crs, color='tab:blue')
+    
+    # sauvegarde de l'image
+    if save_path is not None:
+        plt.savefig(save_path, bbox_inches='tight')
+        
+    return fig,ax
+
 
 
 def neighbourhood_map(batiment_groupe_id,save=True):
@@ -695,31 +709,22 @@ def neighbourhood_map(batiment_groupe_id,save=True):
     None.
 
     """
-    
-    # batiment_groupe_id = 'bdnb-bg-9CBX-DZ3C-1DYC'
-    # batiment_groupe_id = 'bdnb-bg-7DCU-U457-HZB8'
-    # batiment_groupe_id ='bdnb-bg-FHEF-WAAZ-S5XC'
-    
     # requête à la BDNB
-    r = requests.get(f'https://api.bdnb.io/v1/bdnb/donnees/batiment_groupe_complet/adresse',
+    r = requests.get('https://api.bdnb.io/v1/bdnb/donnees/batiment_groupe_complet/adresse',
                      params={'batiment_groupe_id': 'eq.'+batiment_groupe_id},
                      headers = {"Accept": "application/geo+json"})
 
+    print('test1')
     # lecture des données d'API
     gdf = gpd.read_file(io.StringIO(r.text))
     gdf = gdf.set_crs(epsg=2154, allow_override=True)
     gdf = gdf[gdf.columns[~gdf.isnull().all()]]
+    print('test2')
     
     # reprojection en longitude latitude
     gdf = gdf.to_crs(epsg=4326) 
     
-    folder = '{}_DPE_successifs'.format(today)
-    
-    if folder not in os.listdir(output_folder):
-        os.mkdir(os.path.join(output_folder,folder))
-    if 'figs' not in os.listdir(os.path.join(output_folder, folder)):
-        os.mkdir(os.path.join(output_folder,folder,'figs'))
-    
+    # sauvegarde de la carte
     if save:
         save_path = os.path.join('output',folder,'figs','{}_map.png'.format(batiment_groupe_id))
     else:
@@ -754,9 +759,41 @@ def main():
     
     # neighbourhood map
     if False:
-        bg_id_list = ['bdnb-bg-RGSM-7GV4-4QBK', 'bdnb-bg-FHEF-WAAZ-S5XC', 'bdnb-bg-9CBX-DZ3C-1DYC']
+        bg_id_list = ['bdnb-bg-RGSM-7GV4-4QBK', 'bdnb-bg-FHEF-WAAZ-S5XC', 'bdnb-bg-9CBX-DZ3C-1DYC','bdnb-bg-243J-HGRU-FVA5']
+        # bg_id_list = ['bdnb-bg-C1W3-KNUP-R5E2']
         for bg_id in bg_id_list:
             neighbourhood_map(batiment_groupe_id=bg_id)
+            
+            
+    # analyse des champs modifier pour obtenir des gains de DPE
+    if True:
+        number_batiment_groupe = 49304 #'all' 
+        # suspect_identification(number_batiment_groupe=number_batiment_groupe, plot=False)
+        # suspicious_batiment_group_dict_dpe_id, suspicious_batiment_group_dict_dpe_number = analysis_suspicious_DPE(number_batiment_groupe=number_batiment_groupe, plot=['bdnb-bg-C1W3-KNUP-R5E2'])
+        
+        # for k,v in suspiciou^
+                    
+        test = 'bdnb-bg-RGSM-7GV4-4QBK' # appartement avec un echangement d'isolation et de chauffage 
+        # test = 'bdnb-bg-FHEF-WAAZ-S5XC' # appartement avec un changement de chaudière collective
+        # test = 'bdnb-bg-9CBX-DZ3C-1DYC' # maison, aucun doute pratiquement
+        # test = 'bdnb-bg-243J-HGRU-FVA5' # incertitude sur les compléments d'adresse
+        # test = 'bdnb-bg-98CZ-MLWR-CH3E' # de G à C # faux positif, 1er etage et RDC
+        # test = 'bdnb-bg-C1W3-KNUP-R5E2' # de G à C # tout change
+        
+        suspicious_batiment_group_dict_dpe_id, suspicious_batiment_group_dict_dpe_number = analysis_suspicious_DPE(number_batiment_groupe=number_batiment_groupe, plot=[test])
+        neighbourhood_map(batiment_groupe_id=test)
+        
+        test_dpe_ids = suspicious_batiment_group_dict_dpe_id.get(test)[0]
+        gains_test_dpe = suspicious_batiment_group_dict_dpe_number.get(test)[0]
+        print(test_dpe_ids)
+        
+        difference_1, difference_2 = difference_dpe_details(test_dpe_ids[0],test_dpe_ids[1])
+        
+        if any(['adresse_bien' in e for e in difference_1.variables.values]):
+            print('Caution! Different address element')
+
+        difference_1.to_csv(os.path.join(output_folder,folder,'diff_{}.csv'.format(test_dpe_ids[0])))
+        difference_2.to_csv(os.path.join(output_folder,folder,'diff_{}.csv'.format(test_dpe_ids[1])))
     
     
     tac = time.time()
