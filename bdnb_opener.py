@@ -34,10 +34,19 @@ import xmltodict
 
 pd.set_option('future.no_silent_downcasting', True)
 
-
+# définition de la date du jour
 today = pd.Timestamp(date.today()).strftime('%Y%m%d')
-output_folder = os.path.join('output')
 
+# définition du fichier de sortie
+output_folder = os.path.join('output')
+folder = '{}_DPE_successifs'.format(today)
+if folder not in os.listdir(output_folder):
+    os.mkdir(os.path.join(output_folder,folder))
+
+
+# =============================================================================
+# Fonctions relatives à l'ouverture (optimale) de la BDNB
+# =============================================================================
 
 def get_layer_names():
     # tested file
@@ -192,7 +201,7 @@ def draw_local_map(geometry,style='map',figsize=12, radius=370, grey_background=
 
 
 # =============================================================================
-# # à mettre dans main plus tard 
+# fonctions relatives à l'étude des DPE
 # =============================================================================
 
 
@@ -327,19 +336,17 @@ def suspect_identification(plot=False, force=False, number_batiment_groupe=1000)
             continue
         
         # sortie des fichiers csv pour les bâtiments 'suspects'
-        output_folder = os.path.join('output')
-        folder = '{}_DPE_successifs'.format(today)
-        if folder not in os.listdir(output_folder):
-            os.mkdir(os.path.join(output_folder,folder))
-        df_dpe_bg_id.to_csv(os.path.join(output_folder,folder,'{}.csv'.format(bg_id)),index=False)
-        
-        # print(df_dpe_bg_id.identifiant_dpe)
+        suspect_folder = 'raw_suspicious_DPE'
+        save_path = os.path.join(output_folder,folder,suspect_folder)
+        if suspect_folder not in os.listdir(os.path.join(output_folder,folder)):
+            os.mkdir(save_path)
+        df_dpe_bg_id.to_csv(os.path.join(save_path,'{}.csv'.format(bg_id)),index=False)
     return
 
 
 def plot_raw_suspects():
     """
-    Première version peu utile en pratique (vérification brute)
+    Visualisation de la première sélection brute de suspects potentiels
 
     Returns
     -------
@@ -376,22 +383,200 @@ def plot_raw_suspects():
         plt.show()
         plt.close()
     return
+
+
+def download_dpe_details(dpe_id, force=False):
+    """
+    Téléchargement des fichiers de sorties des DPE (au format XLSX)
+
+    Parameters
+    ----------
+    dpe_id : str
+        DESCRIPTION.
+    force : boolean, optional
+        DESCRIPTION. The default is False.
+
+    Returns
+    -------
+    None.
+
+    """
+    if '{}.xlsx'.format(dpe_id) in os.listdir(os.path.join('data','DPE','XLS')) or force:
+        return
+    
+    dls = "https://observatoire-dpe-audit.ademe.fr/pub/dpe/{}/xml-excel".format(dpe_id)
+    req = Request(dls) 
+    req.add_header('User-Agent', 'Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:77.0) Gecko/20100101 Firefox/77.0') 
+    
+    content = urlopen(req)
+    
+    with open(os.path.join('data','DPE','XLS','{}.xlsx'.format(dpe_id)), 'wb') as output:
+        output.write(content.read())
+    return 
+
+
+def open_dpe_details(dpe_id, sheet_name='logement'):
+    """
+    Ouverture et formatage des données DPE XLSX
+
+    Parameters
+    ----------
+    dpe_id : str
+        DESCRIPTION.
+    sheet_name : str, optional
+        DESCRIPTION. The default is 'logement'.
+
+    Returns
+    -------
+    dpe_data : TYPE
+        DESCRIPTION.
+
+    """
+    try:
+        dpe_xls_path = os.path.join('data','DPE','XLS','{}.xlsx'.format(dpe_id))
+        dpe_data = pd.read_excel(dpe_xls_path, sheet_name=sheet_name)
+    except FileNotFoundError:
+        print('Downloading XLS details of DPE {} from observatoire-dpe-audit.ademe.fr...'.format(dpe_id))
+        download_dpe_details(dpe_id, force=False)
+        dpe_xls_path = os.path.join('data','DPE','XLS','{}.xlsx'.format(dpe_id))
+        dpe_data = pd.read_excel(dpe_xls_path, sheet_name=sheet_name)
         
+    group_name = {'logement':'caracteristique_generale','administratif':'administratif'}.get(sheet_name)
+    
+    dpe_data = dpe_data.rename(columns={'Unnamed: 0':'variables',group_name:'dpe_values'})
+    
+    new_col = []
+    
+    for val,group in zip(dpe_data.variables,dpe_data.dpe_values):
+        if pd.isnull(val) and not pd.isnull(group):
+            group_name = group
+        if pd.isnull(val):
+            new_val = np.nan
+        else:
+            new_val = '{}--{}'.format(group_name,val).replace('_0--','--')
+        new_col.append(new_val)
+    dpe_data['variables'] = new_col
+    
+    new_val_col = []
+    for cols in zip(*[dpe_data[c] for c in dpe_data.columns]):
+        var = cols[0]
+        if pd.isnull(var):
+            group_name = np.nan
+        else:
+            group_name = var.split('--')[0]
+        all_values = list(cols[1:])
+        new_val = []
+        for i,v in enumerate(all_values):
+            if i == 0 and pd.isnull(v):
+                new_val.append(np.nan)
+                continue
+                
+            if not pd.isnull(v):
+                new_val.append(v)
+                
+        if len(new_val) == 1:
+            new_val = new_val[0]
+        new_val_col.append(new_val)
+    dpe_data['dpe_values'] = new_val_col
+    
+    dpe_data = dpe_data[['variables','dpe_values']]
         
+    dpe_data = dpe_data[~dpe_data.variables.isna()]
+    dpe_data = dpe_data.fillna('nan')
+    return dpe_data
+
+
+def intersection_dpe_details(dpe_data_1,dpe_data_2):
+    """
+    Sélection des variables des données DPE communes entre deux jeux de données
+
+    Parameters
+    ----------
+    dpe_data_1 : pandas DataFrame
+        DESCRIPTION.
+    dpe_data_2 : pandas DataFrame
+        DESCRIPTION.
+
+    Returns
+    -------
+    dpe_data_1 : TYPE
+        DESCRIPTION.
+    dpe_data_2 : TYPE
+        DESCRIPTION.
+
+    """
+    minimal_variables = [e for e in dpe_data_1.variables.values if e in dpe_data_2.variables.values]
+    minimal_variables = [e for e in minimal_variables if not 'reference' in e]
+    dpe_data_1 = dpe_data_1[dpe_data_1.variables.isin(minimal_variables)].reset_index(drop=True)
+    dpe_data_2 = dpe_data_2[dpe_data_2.variables.isin(minimal_variables)].reset_index(drop=True)
+    return dpe_data_1, dpe_data_2
+    
+
+def difference_dpe_details(dpe_id_1,dpe_id_2):
+    """
+    Récupération des différences entre les jeux de données DPE de deux diagnostics
+
+    Parameters
+    ----------
+    dpe_id_1 : str
+        DESCRIPTION.
+    dpe_id_2 : str
+        DESCRIPTION.
+
+    Returns
+    -------
+    difference_1 : TYPE
+        DESCRIPTION.
+    difference_2 : TYPE
+        DESCRIPTION.
+
+    """
+    data_logement_1 = open_dpe_details(dpe_id_1,sheet_name='logement')
+    data_logement_2 = open_dpe_details(dpe_id_2,sheet_name='logement')
+    data_logement_1, data_logement_2 = intersection_dpe_details(data_logement_1, data_logement_2)
+    
+    data_admin_1 = open_dpe_details(dpe_id_1,sheet_name='administratif')
+    data_admin_2 = open_dpe_details(dpe_id_2,sheet_name='administratif')
+    data_admin_1, data_admin_2 = intersection_dpe_details(data_admin_1, data_admin_2)
+    
+    diff_logement = (data_logement_1[data_logement_1.columns.values[1:]]!=data_logement_2[data_logement_2.columns.values[1:]]).any(axis=1)
+    difference_logement_1 = data_logement_1[diff_logement]
+    difference_logement_1 = difference_logement_1.replace('nan',np.nan)
+    difference_logement_2 = data_logement_2[diff_logement]
+    difference_logement_2 = difference_logement_2.replace('nan',np.nan)
+    
+    diff_admin = (data_admin_1[data_admin_1.columns.values[1:]]!=data_admin_2[data_admin_2.columns.values[1:]]).any(axis=1)
+    difference_admin_1 = data_admin_1[diff_admin]
+    difference_admin_1 = difference_admin_1.replace('nan',np.nan)
+    difference_admin_2 = data_admin_2[diff_admin]
+    difference_admin_2 = difference_admin_2.replace('nan',np.nan)
+    
+    difference_1 = pd.concat([difference_admin_1, difference_logement_1])
+    difference_2 = pd.concat([difference_admin_2, difference_logement_2])
+    return difference_1, difference_2
         
+# analyse des gains de DPE parmi les suspects potentiels  
 if True:
     show_plots = False
     show_details = True
     
-    output_folder = os.path.join('output')
-    folder = '{}_DPE_successifs'.format(today)
-    done_batiment_group_list = os.listdir(os.path.join(output_folder, folder))
+    suspect_folder = 'raw_suspicious_DPE'
+    path = os.path.join(output_folder,folder,suspect_folder)
+    if suspect_folder not in os.listdir(os.path.join(output_folder,folder)):
+        os.mkdir(path)
+        
+    done_batiment_group_list = os.listdir(path)
     done_batiment_group_list = [s.replace('.csv','') for s in done_batiment_group_list if s.endswith('.csv')]
     
+    if len(done_batiment_group_list) == 0:
+        suspect_identification()
+        done_batiment_group_list = os.listdir(path)
+        done_batiment_group_list = [s.replace('.csv','') for s in done_batiment_group_list if s.endswith('.csv')]
+
     suspicious_batiment_group_dict_dpe_number = dict()
     suspicious_batiment_group_dict_dpe_id = dict()
     for bg_id in tqdm.tqdm(done_batiment_group_list):
-        df_dpe_bg_id = pd.read_csv(os.path.join(output_folder, folder,'{}.csv'.format(bg_id)))
+        df_dpe_bg_id = pd.read_csv(os.path.join(path,'{}.csv'.format(bg_id)))
         df_dpe_bg_id['date_etablissement_dpe'] = [pd.to_datetime(t) for t in df_dpe_bg_id.date_etablissement_dpe]
         
         # filtre pour une période de 30 jours
@@ -410,7 +595,7 @@ if True:
         df_suspicious_dpe_bg_id = df_suspicious_dpe_bg_id[np.asarray(filter_dpe_gains)]
                 
         # affichage des trajectoires de DPE
-        if 'figs' not in os.listdir(os.path.join(output_folder, folder)):
+        if show_plots and 'figs' not in os.listdir(os.path.join(output_folder, folder)):
             os.mkdir(os.path.join(output_folder,folder,'figs'))
         
         if df_suspicious_dpe_bg_id.empty:
@@ -476,50 +661,22 @@ if True:
         for (dpe_ini, dpe_redo), nb_chg in dpe_gain_counter_dict.items():
             letter_ini, letter_redo = number_to_letter_dict.get(dpe_ini), number_to_letter_dict.get(dpe_redo)
             print('\t- {} -> {} : {:>4.1f}% ({}/{})'.format(letter_ini, letter_redo, nb_chg/number_suspicious_bg*100, nb_chg, number_suspicious_bg))
+        print('\n')
             
-            
     
+# analyse des champs modifier pour obtenir des gains de DPE
+if True:       
     
-    # prochaine étape : regarder le fichier xml https://observatoire-dpe-audit.ademe.fr/pub/dpe/2375E4547621M/xml
+    # test = 'bdnb-bg-RGSM-7GV4-4QBK'
+    # test = 'bdnb-bg-FHEF-WAAZ-S5XC'
+    test = 'bdnb-bg-9CBX-DZ3C-1DYC'
+    test_dpe_ids = suspicious_batiment_group_dict_dpe_id.get(test)[0]
+    
+    difference_1, difference_2 = difference_dpe_details(test_dpe_ids[0],test_dpe_ids[1])
 
-    test_chaudiere = 'bdnb-bg-FHEF-WAAZ-S5XC'
-    test_dpe_ids = suspicious_batiment_group_dict_dpe_id.get(test_chaudiere)[0]
+    difference_1.to_csv(os.path.join(output_folder,folder,'diff_{}.csv'.format(test_dpe_ids[0])))
+    difference_2.to_csv(os.path.join(output_folder,folder,'diff_{}.csv'.format(test_dpe_ids[1])))
     
-    #https://github.com/martinblech/xmltodict
-
-    # test avec les xml
-    # test_dpe_xml_path = os.path.join('data','DPE','XML','{}.xml'.format(test_dpe_ids[0]))
-    # with open(test_dpe_xml_path,'r') as f:
-    #     test_dpe_xml = f.read()
-    # test_data = xmltodict.parse(test_dpe_xml)
-    
-    # test avec les xls
-    test_dpe_xls_path_1 = os.path.join('data','DPE','XLS','{}.xlsx'.format(test_dpe_ids[0]))
-    test_data_1 = pd.read_excel(test_dpe_xls_path_1, sheet_name='logement')
-    test_data_1 = test_data_1.fillna('nan')
-    test_dpe_xls_path_2 = os.path.join('data','DPE','XLS','{}.xlsx'.format(test_dpe_ids[1]))
-    test_data_2 = pd.read_excel(test_dpe_xls_path_2, sheet_name='logement')
-    test_data_2 = test_data_2.fillna('nan')
-    # difference_1 = test_data_1[(test_data_1['Unnamed: 0'].isna()) | (test_data_1[test_data_1.columns.values[1:]]!=test_data_2[test_data_2.columns.values[1:]]).any(axis=1)]
-    # difference_1 = test_data_1[test_data_1!=test_data_2]
-    difference_1 = test_data_1[(test_data_1[test_data_1.columns.values[1:]]!=test_data_2[test_data_2.columns.values[1:]]).any(axis=1)]
-    difference_1 = difference_1.replace('nan',np.nan)
-    difference_1.to_csv(os.path.join('output','{}.csv'.format(test_dpe_ids[0])))
-    difference_2 = test_data_2[(test_data_1[test_data_1.columns.values[1:]]!=test_data_2[test_data_2.columns.values[1:]]).any(axis=1)]
-    difference_2 = difference_2.replace('nan',np.nan)
-    difference_2.to_csv(os.path.join('output','{}.csv'.format(test_dpe_ids[1])))
-    
-    
-    # pour automatiser la recuperation des données 
-    # test_url = 'https://observatoire-dpe-audit.ademe.fr/afficher-dpe/2375E2258099Y'
-    # xml_button_xpath = '/html/body/app-root/div/app-page-dpe-detail/app-dpe-contenu-detail/app-panel/div[1]/div[2]/div/div[2]/div/app-action-link/button'
-    
-    
-    # passer par la base dpe, ça marche ok pour le chauffage a priori, mais pas assez précis pour les caractéristiques de mur
-    # test_url = 'https://data.ademe.fr/datasets/dpe-v2-logements-existants/full?N%C2%B0DPE_in=%22{}%22,%22{}%22'.format(*test_dpe_ids)
-    # https://data.ademe.fr/data-fair/api/v1/datasets/dpe-v2-logements-existants/lines?size=10000&page=1&q_mode=simple&qs=(N%C2%B0DPE:(%222375E2162413S%22+OR+%222375E2258099Y%22))&finalizedAt=2024-07-02T02:12:45.780Z&format=csv
-    # test_data = pd.read_csv(os.path.join('data','DPE','dpe-v2-logements-existants_test.csv'))
-    # test_data.iloc[0].T.compare(test_data.iloc[1].T)
 
 
 def neighbourhood_map(batiment_groupe_id,save=True):
@@ -568,6 +725,9 @@ def neighbourhood_map(batiment_groupe_id,save=True):
     else:
         save_path = None
     fig,ax = draw_local_map(gdf.iloc[0].geometry, save_path=save_path)
+    plt.show()
+    plt.close()
+    return
     
     
     
@@ -594,8 +754,9 @@ def main():
     
     # neighbourhood map
     if False:
-        bg_id = 'bdnb-bg-FHEF-WAAZ-S5XC' #'bdnb-bg-RGSM-7GV4-4QBK' #'bdnb-bg-9CBX-DZ3C-1DYC',
-        neighbourhood_map(batiment_groupe_id=bg_id)
+        bg_id_list = ['bdnb-bg-RGSM-7GV4-4QBK', 'bdnb-bg-FHEF-WAAZ-S5XC', 'bdnb-bg-9CBX-DZ3C-1DYC']
+        for bg_id in bg_id_list:
+            neighbourhood_map(batiment_groupe_id=bg_id)
     
     
     tac = time.time()
