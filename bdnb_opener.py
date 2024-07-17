@@ -31,6 +31,8 @@ import cartopy.geodesic as cgeo
 from urllib.request import urlopen, Request
 from PIL import Image
 import xmltodict
+import json
+from urllib.error import HTTPError
 
 pd.set_option('future.no_silent_downcasting', True)
 
@@ -342,15 +344,19 @@ def download_dpe_details(dpe_id, force=False):
     if '{}.xlsx'.format(dpe_id) in os.listdir(os.path.join('data','DPE','XLS')) or force:
         return
     
-    dls = "https://observatoire-dpe-audit.ademe.fr/pub/dpe/{}/xml-excel".format(dpe_id)
-    req = Request(dls) 
-    req.add_header('User-Agent', 'Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:77.0) Gecko/20100101 Firefox/77.0') 
-    
-    content = urlopen(req)
-    
-    with open(os.path.join('data','DPE','XLS','{}.xlsx'.format(dpe_id)), 'wb') as output:
-        output.write(content.read())
+    try:
+        dls = "https://observatoire-dpe-audit.ademe.fr/pub/dpe/{}/xml-excel".format(dpe_id)
+        req = Request(dls) 
+        req.add_header('User-Agent', 'Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:77.0) Gecko/20100101 Firefox/77.0') 
+        
+        content = urlopen(req)
+        
+        with open(os.path.join('data','DPE','XLS','{}.xlsx'.format(dpe_id)), 'wb') as output:
+            output.write(content.read())
+    except HTTPError:
+        return 
     return 
+
 
 
 def open_dpe_details(dpe_id, sheet_name='logement'):
@@ -377,8 +383,13 @@ def open_dpe_details(dpe_id, sheet_name='logement'):
         print('Downloading XLS details of DPE {} from observatoire-dpe-audit.ademe.fr...'.format(dpe_id))
         
         download_dpe_details(dpe_id, force=False)
-        dpe_xls_path = os.path.join('data','DPE','XLS','{}.xlsx'.format(dpe_id))
-        dpe_data = pd.read_excel(dpe_xls_path, sheet_name=sheet_name)
+        
+        try:
+            dpe_xls_path = os.path.join('data','DPE','XLS','{}.xlsx'.format(dpe_id))
+            dpe_data = pd.read_excel(dpe_xls_path, sheet_name=sheet_name)
+        except FileNotFoundError:
+            print('Error: {} is not available from observatoire-dpe-audit.ademe.fr :('.format(dpe_id))
+            return pd.DataFrame()
         
     group_name = {'logement':'caracteristique_generale','administratif':'administratif'}.get(sheet_name)
     
@@ -636,7 +647,7 @@ def analysis_suspicious_DPE(plot=None,details=True,number_batiment_groupe=1000, 
     return suspicious_batiment_group_dict_dpe_id, suspicious_batiment_group_dict_dpe_number
 
 
-def draw_local_map(geometry,style='map',figsize=12, radius=370, grey_background=True, save_path=None):
+def draw_local_map(geometry,style='map',figsize=12, radius=370, grey_background=True, save_path=None, include_OSM_copyright=True):
     """
     based on https://www.theurbanist.com.au/2021/03/plotting-openstreetmap-images-with-cartopy/
 
@@ -685,6 +696,10 @@ def draw_local_map(geometry,style='map',figsize=12, radius=370, grey_background=
     # add building on map
     ax.add_geometries(geometry, crs=data_crs, color='tab:blue')
     
+    # add OSM copyright
+    if include_OSM_copyright:
+        ax.text(0.5, -0.035, '\xa9 OpenStreetMap contributors', fontsize='x-large', horizontalalignment='center',verticalalignment='bottom', transform=ax.transAxes)
+        
     # sauvegarde de l'image
     if save_path is not None:
         plt.savefig(save_path, bbox_inches='tight')
@@ -711,15 +726,17 @@ def neighbourhood_map(batiment_groupe_id,save=True):
     """
     # requête à la BDNB
     r = requests.get('https://api.bdnb.io/v1/bdnb/donnees/batiment_groupe_complet/adresse',
-                     params={'batiment_groupe_id': 'eq.'+batiment_groupe_id},
-                     headers = {"Accept": "application/geo+json"})
+                     params={'batiment_groupe_id': 'eq.'+batiment_groupe_id,#},
+                             'select': 'batiment_groupe_id, s_geom_groupe, contient_fictive_geom_groupe, geom_groupe'},
+                     headers = {"Accept": "application/geo+json"},)
 
-    print('test1')
+    # print(r.text)
+    
     # lecture des données d'API
     gdf = gpd.read_file(io.StringIO(r.text))
+    gdf = gdf[['geometry']]
     gdf = gdf.set_crs(epsg=2154, allow_override=True)
     gdf = gdf[gdf.columns[~gdf.isnull().all()]]
-    print('test2')
     
     # reprojection en longitude latitude
     gdf = gdf.to_crs(epsg=4326) 
@@ -733,6 +750,43 @@ def neighbourhood_map(batiment_groupe_id,save=True):
     plt.show()
     plt.close()
     return
+
+
+def get_batiment_groupe_infos(batiment_groupe_id,variables=None):
+    """
+    requete à l'API de la BDNB pour récupérer les informations d'un bâtiment
+    (par l'usage de l'identifiant batiment_groupe_id)
+
+    Parameters
+    ----------
+    batiment_groupe_id : str
+        DESCRIPTION.
+    variables : list, optional
+        DESCRIPTION. The default is None.
+
+    Returns
+    -------
+    res : TYPE
+        DESCRIPTION.
+
+    """
+    # requête à la BDNB
+    r = requests.get('https://api.bdnb.io/v1/bdnb/donnees/batiment_groupe_complet/adresse',
+                     params={'batiment_groupe_id': 'eq.'+batiment_groupe_id},
+                     headers = {"Accept": "application/geo+json"},)
+
+    data = json.loads(r.text)
+    
+    if isinstance(variables, list):
+        res = dict()
+        for key in variables:
+            res[key] = data.get('features')[0].get('properties').get(key)
+    elif isinstance(variables, str):
+        res = dict()
+        res[variables] = data.get('features')[0].get('properties').get(variables)
+    else:
+        res = data
+    return res
     
     
     
@@ -773,18 +827,31 @@ def main():
         
         # for k,v in suspiciou^
                     
-        test = 'bdnb-bg-RGSM-7GV4-4QBK' # appartement avec un echangement d'isolation et de chauffage 
+        # test = 'bdnb-bg-RGSM-7GV4-4QBK' # appartement avec un echangement d'isolation et de chauffage 
         # test = 'bdnb-bg-FHEF-WAAZ-S5XC' # appartement avec un changement de chaudière collective
         # test = 'bdnb-bg-9CBX-DZ3C-1DYC' # maison, aucun doute pratiquement
         # test = 'bdnb-bg-243J-HGRU-FVA5' # incertitude sur les compléments d'adresse
-        # test = 'bdnb-bg-98CZ-MLWR-CH3E' # de G à C # faux positif, 1er etage et RDC
+        test = 'bdnb-bg-98CZ-MLWR-CH3E' # de G à C # faux positif, 1er etage et RDC
         # test = 'bdnb-bg-C1W3-KNUP-R5E2' # de G à C # tout change
+        # test = 'bdnb-bg-G9F7-7KST-V2YN' # logement collectif classique, passage de F à E
+        
+        infos_test = get_batiment_groupe_infos(test,variables=['l_libelle_adr','nb_log','annee_construction'])
         
         suspicious_batiment_group_dict_dpe_id, suspicious_batiment_group_dict_dpe_number = analysis_suspicious_DPE(number_batiment_groupe=number_batiment_groupe, plot=[test])
         neighbourhood_map(batiment_groupe_id=test)
         
         test_dpe_ids = suspicious_batiment_group_dict_dpe_id.get(test)[0]
         gains_test_dpe = suspicious_batiment_group_dict_dpe_number.get(test)[0]
+        
+        print('Adresse du bâtiment : {} ({} logements)'.format(infos_test.get('l_libelle_adr'),infos_test.get('nb_log')))
+        print('Passage de {} à {}'.format(*[{n:chr(ord('@')+n) for n in range(1,10)}.get(int(e)) for e in gains_test_dpe]))
+        
+        suspect_folder = 'raw_suspicious_DPE'
+        path = os.path.join(output_folder,folder,suspect_folder)
+        dpe_dates_data_test = pd.read_csv(os.path.join(path,'{}.csv'.format(test)))
+        dpe_dates_data_test = dpe_dates_data_test[dpe_dates_data_test.identifiant_dpe.isin(test_dpe_ids)]
+        print("Date d'établissement des DPE : {}, {}".format(*dpe_dates_data_test.date_etablissement_dpe.values))
+        
         print(test_dpe_ids)
         
         difference_1, difference_2 = difference_dpe_details(test_dpe_ids[0],test_dpe_ids[1])
@@ -795,7 +862,19 @@ def main():
         difference_1.to_csv(os.path.join(output_folder,folder,'diff_{}.csv'.format(test_dpe_ids[0])))
         difference_2.to_csv(os.path.join(output_folder,folder,'diff_{}.csv'.format(test_dpe_ids[1])))
     
-    
+        print(difference_1.set_index('variables').index.to_list())
+        print(difference_2.set_index('variables').index.to_list())
+        # print()
+        # print(difference_1.set_index('variables').loc['mur--description'].values)
+        # print(difference_2.set_index('variables').loc['mur--description'].values)
+        # print()
+        # print(difference_1.set_index('variables').loc['plancher_bas--methode_saisie_u'].values)
+        # print(difference_2.set_index('variables').loc['plancher_bas--methode_saisie_u'].values)
+        # print()
+        # print(difference_1.set_index('variables').loc['baie_vitree--methode_saisie_perf_vitrage'].values)
+        # print(difference_2.set_index('variables').loc['baie_vitree--methode_saisie_perf_vitrage'].values)
+        
+        
     tac = time.time()
     print('Done in {:.2f}s.'.format(tac-tic))
     
