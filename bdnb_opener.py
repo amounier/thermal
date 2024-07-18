@@ -17,22 +17,23 @@ import matplotlib.pyplot as plt
 import tqdm
 from collections import Counter
 import dask.dataframe as dd
-from matplotlib.ticker import MaxNLocator
+# from matplotlib.ticker import MaxNLocator
 from datetime import date
 import matplotlib.dates as mdates
 import seaborn as sns
-import re
+# import re
 import requests
 import io
 import cartopy.crs as ccrs
-import cartopy.feature as cfeature
+# import cartopy.feature as cfeature
 import cartopy.io.img_tiles as cimgt
 import cartopy.geodesic as cgeo
 from urllib.request import urlopen, Request
 from PIL import Image
-import xmltodict
+# import xmltodict
 import json
 from urllib.error import HTTPError
+# from pyproj import Transformer
 
 pd.set_option('future.no_silent_downcasting', True)
 
@@ -75,7 +76,7 @@ def speed_test_opening(dask_only=False, plot=False):
             opening_speed_list = []
             for npartitions in npartitions_list:
                 tic = time.time()
-                bdnb = dask_geopandas.read_file(file, npartitions=npartitions, layer='dpe_logement')
+                _ = dask_geopandas.read_file(file, npartitions=npartitions, layer='dpe_logement')
                 tac = time.time()
                 opening_speed_list.append(tac-tic)
                 
@@ -89,7 +90,7 @@ def speed_test_opening(dask_only=False, plot=False):
             opening_speed_list = []
             for cs in tqdm.tqdm(chunksize_list):
                 tic = time.time()
-                bdnb = dask_geopandas.read_file(file, chunksize=cs, layer='dpe_logement')
+                _ = dask_geopandas.read_file(file, chunksize=cs, layer='dpe_logement')
                 tac = time.time()
                 opening_speed_list.append(tac-tic)
                 
@@ -105,19 +106,19 @@ def speed_test_opening(dask_only=False, plot=False):
         
         # geopandas vanilla
         tic = time.time()
-        bdnb = gpd.read_file(file, layer='adresse_compile')
+        _ = gpd.read_file(file, layer='adresse_compile')
         tac = time.time()
         methods_speed_dict['gpd_vanilla'] = tac-tic
         
         # geopandas pyogrio
         tic = time.time()
-        bdnb = gpd.read_file(file, engine='pyogrio', layer='adresse_compile')
+        _ = gpd.read_file(file, engine='pyogrio', layer='adresse_compile')
         tac = time.time()
         methods_speed_dict['gpd_pyogrio'] = tac-tic
         
         # dask-geopandas
         tic = time.time()
-        bdnb = dask_geopandas.read_file(file, npartitions=4, layer='adresse_compile')
+        _ = dask_geopandas.read_file(file, npartitions=4, layer='adresse_compile')
         tac = time.time()
         methods_speed_dict['dask_gpd'] = tac-tic
     
@@ -219,8 +220,6 @@ def suspect_identification(plot=False, force=False, number_batiment_groupe=1000)
                           'nb_log_batiment_groupe':[]}
         
         dpe_bg = bdnb_rel_batiment_groupe_dpe_logement[bdnb_rel_batiment_groupe_dpe_logement.batiment_groupe_id==bg_id].identifiant_dpe
-        # dpe_bg = dpe_bg.compute()
-        
         nb_logement = bdnb_batiment_groupe_compile[bdnb_batiment_groupe_compile.batiment_groupe_id==bg_id].ffo_bat_nb_log
         
         try: 
@@ -359,7 +358,7 @@ def download_dpe_details(dpe_id, force=False):
 
 
 
-def open_dpe_details(dpe_id, sheet_name='logement'):
+def open_dpe_details(dpe_id, sheet_name='logement', retry=True):
     """
     Ouverture et formatage des données DPE XLSX
 
@@ -379,7 +378,10 @@ def open_dpe_details(dpe_id, sheet_name='logement'):
     try:
         dpe_xls_path = os.path.join('data','DPE','XLS','{}.xlsx'.format(dpe_id))
         dpe_data = pd.read_excel(dpe_xls_path, sheet_name=sheet_name)
+        
     except FileNotFoundError:
+        if not retry:
+            return pd.DataFrame()
         print('Downloading XLS details of DPE {} from observatoire-dpe-audit.ademe.fr...'.format(dpe_id))
         
         download_dpe_details(dpe_id, force=False)
@@ -436,16 +438,18 @@ def open_dpe_details(dpe_id, sheet_name='logement'):
     return dpe_data
 
 
-def intersection_dpe_details(dpe_data_1,dpe_data_2):
+def intersection_dpe_details(dpe_data_1,dpe_data_2,duplicates_keep='first'):
     """
     Sélection des variables des données DPE communes entre deux jeux de données
 
     Parameters
     ----------
-    dpe_data_1 : pandas DataFrame
+    dpe_data_1 : TYPE
         DESCRIPTION.
-    dpe_data_2 : pandas DataFrame
+    dpe_data_2 : TYPE
         DESCRIPTION.
+    duplicates_keep : {‘first’, ‘last’, False}, optional
+        DESCRIPTION. The default is 'first'.
 
     Returns
     -------
@@ -459,10 +463,14 @@ def intersection_dpe_details(dpe_data_1,dpe_data_2):
     minimal_variables = [e for e in minimal_variables if not 'reference' in e]
     dpe_data_1 = dpe_data_1[dpe_data_1.variables.isin(minimal_variables)].reset_index(drop=True)
     dpe_data_2 = dpe_data_2[dpe_data_2.variables.isin(minimal_variables)].reset_index(drop=True)
+    
+    dpe_data_1 = dpe_data_1.drop_duplicates(subset=['variables'], keep=duplicates_keep).reset_index(drop=True)
+    dpe_data_2 = dpe_data_2.drop_duplicates(subset=['variables'], keep=duplicates_keep).reset_index(drop=True)
+    
     return dpe_data_1, dpe_data_2
     
 
-def difference_dpe_details(dpe_id_1,dpe_id_2):
+def difference_dpe_details(dpe_id_1,dpe_id_2,download_retry=True):
     """
     Récupération des différences entre les jeux de données DPE de deux diagnostics
 
@@ -481,13 +489,17 @@ def difference_dpe_details(dpe_id_1,dpe_id_2):
         DESCRIPTION.
 
     """
-    data_logement_1 = open_dpe_details(dpe_id_1,sheet_name='logement')
-    data_logement_2 = open_dpe_details(dpe_id_2,sheet_name='logement')
-    data_logement_1, data_logement_2 = intersection_dpe_details(data_logement_1, data_logement_2)
+    data_logement_1 = open_dpe_details(dpe_id_1,sheet_name='logement',retry=download_retry)
+    data_logement_2 = open_dpe_details(dpe_id_2,sheet_name='logement',retry=download_retry)
     
-    data_admin_1 = open_dpe_details(dpe_id_1,sheet_name='administratif')
-    data_admin_2 = open_dpe_details(dpe_id_2,sheet_name='administratif')
-    data_admin_1, data_admin_2 = intersection_dpe_details(data_admin_1, data_admin_2)
+    if data_logement_1.empty or data_logement_2.empty:
+        return pd.DataFrame(), pd.DataFrame()
+    
+    data_logement_1, data_logement_2 = intersection_dpe_details(data_logement_1, data_logement_2, duplicates_keep='first')
+    
+    data_admin_1 = open_dpe_details(dpe_id_1,sheet_name='administratif',retry=download_retry)
+    data_admin_2 = open_dpe_details(dpe_id_2,sheet_name='administratif',retry=download_retry)
+    data_admin_1, data_admin_2 = intersection_dpe_details(data_admin_1, data_admin_2, duplicates_keep='first')
     
     diff_logement = (data_logement_1[data_logement_1.columns.values[1:]]!=data_logement_2[data_logement_2.columns.values[1:]]).any(axis=1)
     difference_logement_1 = data_logement_1[diff_logement]
@@ -528,11 +540,14 @@ def analysis_suspicious_DPE(plot=None,details=True,number_batiment_groupe=1000, 
         DESCRIPTION.
 
     """
+    # TODO: ajouter un dump json comme sauvegarde du résultat
+    
     if isinstance(plot,bool):
         if plot:
             show_plots = True
         else:
             show_plots = False
+            bg_id_plot_list = []
     elif isinstance(plot,list):
         bg_id_plot_list = plot
         show_plots = False
@@ -540,6 +555,8 @@ def analysis_suspicious_DPE(plot=None,details=True,number_batiment_groupe=1000, 
         show_plots = False
         bg_id_plot_list = []
     show_details = details
+    
+    save_path = os.path.join(output_folder,folder)
     
     suspect_folder = 'raw_suspicious_DPE'
     path = os.path.join(output_folder,folder,suspect_folder)
@@ -556,7 +573,12 @@ def analysis_suspicious_DPE(plot=None,details=True,number_batiment_groupe=1000, 
 
     suspicious_batiment_group_dict_dpe_number = dict()
     suspicious_batiment_group_dict_dpe_id = dict()
-    for bg_id in tqdm.tqdm(done_batiment_group_list):
+    
+    pbar = tqdm.tqdm(done_batiment_group_list, total=len(done_batiment_group_list))
+    for bg_id in pbar:
+        pbar.set_description(bg_id)
+        pbar.refresh()
+        
         df_dpe_bg_id = pd.read_csv(os.path.join(path,'{}.csv'.format(bg_id)))
         df_dpe_bg_id['date_etablissement_dpe'] = [pd.to_datetime(t) for t in df_dpe_bg_id.date_etablissement_dpe]
         
@@ -576,8 +598,8 @@ def analysis_suspicious_DPE(plot=None,details=True,number_batiment_groupe=1000, 
         df_suspicious_dpe_bg_id = df_suspicious_dpe_bg_id[np.asarray(filter_dpe_gains)]
                 
         # affichage des trajectoires de DPE
-        if show_plots and 'figs' not in os.listdir(os.path.join(output_folder, folder)):
-            os.mkdir(os.path.join(output_folder,folder,'figs'))
+        if show_plots and 'figs' not in os.listdir(save_path):
+            os.mkdir(os.path.join(save_path,'figs'))
         
         if df_suspicious_dpe_bg_id.empty:
             continue
@@ -604,7 +626,7 @@ def analysis_suspicious_DPE(plot=None,details=True,number_batiment_groupe=1000, 
             locator = mdates.AutoDateLocator(minticks=1, maxticks=4)
             ax.xaxis.set_major_locator(locator)
             ax.xaxis.set_minor_locator(mdates.MonthLocator(interval=1))
-            save_path = os.path.join('output',folder,'figs','{}_dpe.png'.format(bg_id))
+            save_path = os.path.join(save_path,'figs','{}_dpe.png'.format(bg_id))
             plt.savefig(save_path, bbox_inches='tight')
             plt.show()
             plt.close()
@@ -632,6 +654,8 @@ def analysis_suspicious_DPE(plot=None,details=True,number_batiment_groupe=1000, 
     number_to_letter_dict = {n:chr(ord('@')+n) for n in range(1,10)}
     
     if show_details:
+        if number_batiment_groupe == 'all':
+            number_batiment_groupe = 49304
         print('\nPourcentage de bâtiments présentants des DPE suspicieux :')
         print('\t- {:.1f}% ({}/{})'.format(number_suspicious_bg/number_batiment_groupe*100,number_suspicious_bg, number_batiment_groupe))
         
@@ -787,7 +811,74 @@ def get_batiment_groupe_infos(batiment_groupe_id,variables=None):
     else:
         res = data
     return res
-    
+
+
+def draw_city_map(list_bg_id, city='Paris', style='map',figsize=20, grey_background=True, save_path=None, include_OSM_copyright=True):
+        """
+        based on https://www.theurbanist.com.au/2021/03/plotting-openstreetmap-images-with-cartopy/
+
+        """
+        
+        def image_spoof(self, tile):
+            """Reformat for cartopy"""
+            url = self._image_url(tile)                
+            req = Request(url)                         
+            req.add_header('User-agent','Anaconda 3')  
+            fh = urlopen(req) 
+            im_data = io.BytesIO(fh.read())            
+            fh.close()                                 
+            img = Image.open(im_data)  
+            if grey_background:
+                img = img.convert("L")             
+            img = img.convert(self.desired_tile_form)  
+            return img, self.tileextent(tile), 'lower' 
+        
+        # reformat web request for street map spoofing
+        cimgt.OSM.get_image = image_spoof 
+        img = cimgt.OSM()
+        
+        fig = plt.figure(figsize=(figsize,figsize)) 
+        
+        # project using coordinate reference system (CRS) of street map
+        ax = plt.axes(projection=img.crs) 
+        data_crs = ccrs.PlateCarree()
+        
+        # define map parameters
+        dict_city_map_parameters = {'Paris':{'scale':13,
+                                             'extent':[2.2199,2.4723,48.8091,48.9065],
+                                             }
+                                    }
+        
+        scale = dict_city_map_parameters.get(city).get('scale')
+        extent = dict_city_map_parameters.get(city).get('extent')
+        
+        # retrive geometry info from bdnb
+        _, _, bdnb_batiment_groupe_compile = get_bdnb()
+        bdnb_batiment_groupe_compile = bdnb_batiment_groupe_compile[['batiment_groupe_id','geometry']]
+        bdnb_batiment_groupe_compile = bdnb_batiment_groupe_compile.compute()
+        bdnb_batiment_groupe_compile = bdnb_batiment_groupe_compile[bdnb_batiment_groupe_compile.batiment_groupe_id.isin(list_bg_id)]
+        bdnb_batiment_groupe_compile = bdnb_batiment_groupe_compile.set_crs(epsg=2154, allow_override=True)
+        
+        # reprojection en longitude latitude
+        bdnb_batiment_groupe_compile = bdnb_batiment_groupe_compile.to_crs(epsg=4326) 
+        
+        ax.set_extent(extent)
+        
+        # add OSM with zoom specification
+        ax.add_image(img, int(scale)) 
+        
+        # add building on map
+        ax.add_geometries(bdnb_batiment_groupe_compile.geometry, crs=data_crs, color='tab:blue')
+        
+        # add OSM copyright
+        if include_OSM_copyright:
+            ax.text(0.5, -0.035, '\xa9 OpenStreetMap contributors', fontsize='x-large', horizontalalignment='center',verticalalignment='bottom', transform=ax.transAxes)
+            
+        # sauvegarde de l'image
+        if save_path is not None:
+            plt.savefig(save_path, bbox_inches='tight')
+            
+        return fig,ax
     
     
 # =============================================================================
@@ -799,14 +890,55 @@ def main():
     # get layers name
     if False:
         layers = get_layer_names()
-        
+        print(layers)
         
     # benchmark opening 
     if False:
         print(speed_test_opening()) 
         print(speed_test_opening(dask_only=True, plot=True)) 
     
-    
+
+    # graphe des distribution des DPE présents dans la BDNB (paris pour l'instant)
+    if False:
+        def get_dpe_conso():
+            dpe_data, _ , _ = get_bdnb()
+            dpe_data = dpe_data[dpe_data.type_dpe=='dpe arrêté 2021 3cl logement'][['conso_5_usages_ep_m2','conso_5_usages_ef_m2']].compute() 
+            return dpe_data
+        
+        save = True
+        
+        dpe_data = get_dpe_conso()
+        dpe_data = dpe_data.map(int)
+        counter_dict = dict(Counter(dpe_data.conso_5_usages_ep_m2))
+        counter_dict_sorted = {k: v for k, v in sorted(counter_dict.items(), key=lambda item: item[0])}
+        
+        etiquette_colors_dict = {'A':(0, 156, 109),'B':(82, 177, 83),'C':(120, 189, 118),'D':(244, 231, 15),'E':(240, 181, 15),'F':(235, 130, 53),'G':(215, 34, 31)}
+        etiquette_colors_dict = {k: tuple(map(lambda x: x/255, v)) for k,v in etiquette_colors_dict.items()}
+        etiquette_ep_dict = {'A':[0,70],'B':[70,110],'C':[110,180],'D':[180,250],'E':[250,330],'F':[330,420],'G':[420,np.inf]}
+        
+        fig, ax = plt.subplots(figsize=(5,5), dpi=300,)
+        for eti in etiquette_colors_dict.keys():
+            inf_ep, sup_ep = etiquette_ep_dict.get(eti)
+            color = etiquette_colors_dict.get(eti)
+            counter_dict_eti = {k:v for k,v in counter_dict_sorted.items() if k > inf_ep and k <= sup_ep}
+            ax.bar(list(counter_dict_eti.keys()), list(counter_dict_eti.values()), width=1., color=color, label=eti)
+        
+        max_xlim = 600
+        ax.set_xlim([0,max_xlim])
+        ax.set_ylabel("Nombre d'observations")
+        ax.legend()
+        ax.set_xlabel("Consommation annuelle en énergie primaire (kWh.m$^{-2}$)")
+        ax.set_xticks(ticks=[int(x) for x in list(set(list(np.asarray(list(etiquette_ep_dict.values())).flatten()))) if not np.isinf(x)] + [max_xlim])
+        if save:
+            save_path = os.path.join('output',folder,'figs','distribution_dpe.png')
+        else:
+            save_path = None
+        plt.savefig(save_path, bbox_inches='tight')
+        plt.show()
+        plt.close()
+        
+        
+        
     # plot des diagnostics suspects
     if False:
         plot_raw_suspects()
@@ -818,31 +950,43 @@ def main():
         for bg_id in bg_id_list:
             neighbourhood_map(batiment_groupe_id=bg_id)
             
+    if False:
+        number_batiment_groupe = 'all' 
+        suspicious_batiment_group_dict_dpe_id, _ = analysis_suspicious_DPE(number_batiment_groupe=number_batiment_groupe, details=False)
+        bg_id_list = list(suspicious_batiment_group_dict_dpe_id.keys())
+        draw_city_map(list_bg_id=bg_id_list)
             
-    # analyse des champs modifier pour obtenir des gains de DPE
+            
+    # analyse des champs modifier pour obtenir des gains de DPE pour un bâtiment individuel (tests)
     if True:
-        number_batiment_groupe = 49304 #'all' 
+        number_batiment_groupe = 'all' 
         # suspect_identification(number_batiment_groupe=number_batiment_groupe, plot=False)
         # suspicious_batiment_group_dict_dpe_id, suspicious_batiment_group_dict_dpe_number = analysis_suspicious_DPE(number_batiment_groupe=number_batiment_groupe, plot=['bdnb-bg-C1W3-KNUP-R5E2'])
         
-        # for k,v in suspiciou^
                     
         # test = 'bdnb-bg-RGSM-7GV4-4QBK' # appartement avec un echangement d'isolation et de chauffage 
         # test = 'bdnb-bg-FHEF-WAAZ-S5XC' # appartement avec un changement de chaudière collective
         # test = 'bdnb-bg-9CBX-DZ3C-1DYC' # maison, aucun doute pratiquement
         # test = 'bdnb-bg-243J-HGRU-FVA5' # incertitude sur les compléments d'adresse
-        test = 'bdnb-bg-98CZ-MLWR-CH3E' # de G à C # faux positif, 1er etage et RDC
+        # test = 'bdnb-bg-98CZ-MLWR-CH3E' # de G à C # faux positif, 1er etage et RDC
         # test = 'bdnb-bg-C1W3-KNUP-R5E2' # de G à C # tout change
         # test = 'bdnb-bg-G9F7-7KST-V2YN' # logement collectif classique, passage de F à E
         
+        # tests pour le filtre général qui marche pas 
+        # test = 'bdnb-bg-8GU6-RUCE-MAGP'
+        # test = 'bdnb-bg-JP7N-2Q3J-2J8P'
+        # test = 'bdnb-bg-NFA2-348V-RQZF'
+        test = 'bdnb-bg-LHGG-Y4PK-1R3C'
+        
         infos_test = get_batiment_groupe_infos(test,variables=['l_libelle_adr','nb_log','annee_construction'])
         
-        suspicious_batiment_group_dict_dpe_id, suspicious_batiment_group_dict_dpe_number = analysis_suspicious_DPE(number_batiment_groupe=number_batiment_groupe, plot=[test])
+        suspicious_batiment_group_dict_dpe_id, suspicious_batiment_group_dict_dpe_number = analysis_suspicious_DPE(number_batiment_groupe=number_batiment_groupe, plot=[test], details=False)
         neighbourhood_map(batiment_groupe_id=test)
         
         test_dpe_ids = suspicious_batiment_group_dict_dpe_id.get(test)[0]
         gains_test_dpe = suspicious_batiment_group_dict_dpe_number.get(test)[0]
         
+        print()
         print('Adresse du bâtiment : {} ({} logements)'.format(infos_test.get('l_libelle_adr'),infos_test.get('nb_log')))
         print('Passage de {} à {}'.format(*[{n:chr(ord('@')+n) for n in range(1,10)}.get(int(e)) for e in gains_test_dpe]))
         
@@ -865,14 +1009,139 @@ def main():
         print(difference_1.set_index('variables').index.to_list())
         print(difference_2.set_index('variables').index.to_list())
         # print()
-        # print(difference_1.set_index('variables').loc['mur--description'].values)
-        # print(difference_2.set_index('variables').loc['mur--description'].values)
-        # print()
-        # print(difference_1.set_index('variables').loc['plancher_bas--methode_saisie_u'].values)
-        # print(difference_2.set_index('variables').loc['plancher_bas--methode_saisie_u'].values)
-        # print()
-        # print(difference_1.set_index('variables').loc['baie_vitree--methode_saisie_perf_vitrage'].values)
-        # print(difference_2.set_index('variables').loc['baie_vitree--methode_saisie_perf_vitrage'].values)
+        # print(difference_1.set_index('variables').loc['inertie--classe_inertie'].values)
+        # print(difference_2.set_index('variables').loc['inertie--classe_inertie'].values)
+        # # print()
+        # print(difference_1.set_index('variables').loc['generateur_ecs--description'].values)
+        # print(difference_2.set_index('variables').loc['generateur_ecs--description'].values)
+        # # print()
+        # print(difference_1.set_index('variables').loc['emetteur_chauffage--type_emission_distribution'].values)
+        # print(difference_2.set_index('variables').loc['emetteur_chauffage--type_emission_distribution'].values)
+        
+    
+    # téléchargement des XLS des DPE
+    if False:
+        number_batiment_groupe = 'all' 
+        suspicious_batiment_group_dict_dpe_id, suspicious_batiment_group_dict_dpe_number = analysis_suspicious_DPE(number_batiment_groupe=number_batiment_groupe, plot=False, details=False)
+        list_dpe_ids = [dpe for dpe_list_list in list(suspicious_batiment_group_dict_dpe_id.values()) for dpe_list in dpe_list_list for dpe in dpe_list]
+        
+        pbar = tqdm.tqdm(enumerate(list_dpe_ids), total=len(list_dpe_ids))
+        for i,dpe_id in pbar:
+            pbar.set_description(dpe_id)
+            pbar.refresh()
+            download_dpe_details(dpe_id)
+            
+    # filtre des couples de DPE faux positifs 
+    if False:
+        number_batiment_groupe = 'all' 
+        suspicious_batiment_group_dict_dpe_id, suspicious_batiment_group_dict_dpe_number = analysis_suspicious_DPE(number_batiment_groupe=number_batiment_groupe, plot=False, details=False)
+        
+        suspicious_batiment_group_dict_dpe_id_filtered = dict()
+        suspicious_batiment_group_dict_dpe_number_filtered = dict()
+        
+        pbar = tqdm.tqdm(suspicious_batiment_group_dict_dpe_id.keys(), total=len(suspicious_batiment_group_dict_dpe_id.keys()))
+        for bg_id in pbar:
+            pbar.set_description(bg_id)
+            pbar.refresh()
+            
+            for i,(dpe_id_1, dpe_id_2) in enumerate(suspicious_batiment_group_dict_dpe_id.get(bg_id)):
+                
+                # TODO : deal with strange error
+                manual_exception_bg_id = ['bdnb-bg-LHGG-Y4PK-1R3C']
+                if bg_id in manual_exception_bg_id:
+                    continue
+                else:
+                    difference_1, difference_2 = difference_dpe_details(dpe_id_1,dpe_id_2,download_retry=False)
+                
+                if difference_1.empty or difference_2.empty:
+                    continue
+                
+                difference_1 = difference_1.set_index('variables')
+                difference_2 = difference_2.set_index('variables')
+                
+                # filtre sur au moins un élément de l'adresse qui ne coincide pas (très large)
+                filter_address_infos = any(['adresse_bien' in e for e in difference_1.index.values])
+                
+                # filtre sur le nombre de mur et leur orientation (filtre fin)
+                filter_walls_orientation = False
+                if 'mur--orientation' in difference_1.index.values:
+                    murs_1 = sorted(difference_1.loc['mur--orientation'].values[0])
+                    murs_2 = sorted(difference_2.loc['mur--orientation'].values[0])
+                    if murs_1 != murs_2:
+                        filter_walls_orientation = True
+                
+                # avec ces deux filtres, peut-être que les logements superposés à plans identiques peuvent passer
+                # difficile d'estimer cette probabilité sachant les autres filtres utilisés précédemment
+                
+                if filter_address_infos and filter_walls_orientation:
+                    if bg_id not in suspicious_batiment_group_dict_dpe_id_filtered.keys():
+                        suspicious_batiment_group_dict_dpe_id_filtered[bg_id] = []
+                        suspicious_batiment_group_dict_dpe_number_filtered[bg_id] = []
+                    suspicious_batiment_group_dict_dpe_id_filtered[bg_id].append([dpe_id_1, dpe_id_2])
+                    suspicious_batiment_group_dict_dpe_number_filtered[bg_id].append(suspicious_batiment_group_dict_dpe_number.get(bg_id)[i])
+                    
+        with open(os.path.join(output_folder,folder,'suspicious_batiment_group_dict_dpe_id_filtered.json'), 'w') as fp:
+            json.dump(suspicious_batiment_group_dict_dpe_id_filtered, fp)
+            
+        class numpy_Encoder(json.JSONEncoder):
+            def default(self, obj):
+                if isinstance(obj, np.integer):
+                    return int(obj)
+                if isinstance(obj, np.floating):
+                    return float(obj)
+                if isinstance(obj, np.ndarray):
+                    return obj.tolist()
+                return super(numpy_Encoder, self).default(obj)
+            
+        with open(os.path.join(output_folder,folder,'suspicious_batiment_group_dict_dpe_number_filtered.json'), 'w') as fp:
+            json.dump(suspicious_batiment_group_dict_dpe_number_filtered, fp, cls=numpy_Encoder)
+                 
+        
+        with open(os.path.join(output_folder,folder,'suspicious_batiment_group_dict_dpe_id_filtered.json')) as f:
+            suspicious_batiment_group_dict_dpe_id_filtered = json.load(f)
+        with open(os.path.join(output_folder,folder,'suspicious_batiment_group_dict_dpe_number_filtered.json')) as f:
+            suspicious_batiment_group_dict_dpe_number_filtered = json.load(f)
+
+        show_details = True
+        
+        # calcul du nombre de batiments concernés par des DPE suspects
+        number_suspicious_bg = len(suspicious_batiment_group_dict_dpe_number_filtered)
+        
+        # calcul du nombre de gains d'étiquettes moyens et des principaux changements 
+        mean_dpe_gains = 0
+        counter = 0
+        dpe_gain_counter_dict = dict()
+        for k,v in suspicious_batiment_group_dict_dpe_number_filtered.items():
+            for dpe_ini,dpe_redo in v:
+                dpe_gain = dpe_ini-dpe_redo
+                mean_dpe_gains += dpe_gain
+                counter += 1
+                if (dpe_ini,dpe_redo) not in dpe_gain_counter_dict.keys():
+                    dpe_gain_counter_dict[(dpe_ini,dpe_redo)] = 1
+                else:
+                    dpe_gain_counter_dict[(dpe_ini,dpe_redo)] += 1 
+        mean_dpe_gains = mean_dpe_gains/counter
+        
+        # tri par ordre décroissant de valeur 
+        dpe_gain_counter_dict = {k: v for k, v in sorted(dpe_gain_counter_dict.items(), key=lambda item: item[1],reverse=True)}
+        number_to_letter_dict = {n:chr(ord('@')+n) for n in range(1,10)}
+        
+        if show_details:
+            if number_batiment_groupe == 'all':
+                number_batiment_groupe = 49304
+            print('\nPourcentage de bâtiments présentants des DPE suspicieux :')
+            print('\t- {:.1f}% ({}/{})'.format(number_suspicious_bg/number_batiment_groupe*100,number_suspicious_bg, number_batiment_groupe))
+            
+            print("\nGains moyens d'étiquettes :")
+            print('\t- {:.1f} ({} obs.)'.format(mean_dpe_gains,number_suspicious_bg))
+            
+            print("Détails des gains d'étiquettes :")
+            for (dpe_ini, dpe_redo), nb_chg in dpe_gain_counter_dict.items():
+                letter_ini, letter_redo = number_to_letter_dict.get(dpe_ini), number_to_letter_dict.get(dpe_redo)
+                print('\t- {} -> {} : {:>4.1f}% ({}/{})'.format(letter_ini, letter_redo, nb_chg/number_suspicious_bg*100, nb_chg, number_suspicious_bg))
+            print('\n')
+        
+        
         
         
     tac = time.time()
