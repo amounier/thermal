@@ -1109,8 +1109,6 @@ def get_dpe_change_details(force=False,add_bdnb_data=True):
         DESCRIPTION.
 
     """
-    # TODO: rajouter les données diagnistiqueurs systématiquement 
-    # TODO: faire le croisement BDNB (dans une autre fonction?)
     sbgd_filtered_dpe_id, sbgd_filtered_dpe_number = get_filtered_suspicious_DPE(show_details=False, force=force)
     
     data_details = {'bg_id':[],'dpe_id_1':[],'dpe_id_2':[],'dpe_letter_1':[],'dpe_letter_2':[]}
@@ -1165,7 +1163,7 @@ def get_dpe_change_details(force=False,add_bdnb_data=True):
                 
                 for variable_1, value_1, variable_2, value_2 in zip(difference_1.variables, difference_1.dpe_values, difference_2.variables, difference_2.dpe_values):
                     
-                    if any([e in variable_1 for e in ['administratif','adresse_bien','diagnostiqueur']]):
+                    if any([e in variable_1 for e in ['administratif','diagnostiqueur']]):
                         continue
                     
                     # ajout du suffixe du dpe (1 ou 2)
@@ -1247,7 +1245,7 @@ def main():
             
             
     # analyse des champs modifier pour obtenir des gains de DPE pour un bâtiment individuel (tests)
-    if True:
+    if False:
         number_batiment_groupe = 'all' 
                     
         # test = 'bdnb-bg-RGSM-7GV4-4QBK' # appartement avec un echangement d'isolation et de chauffage 
@@ -1352,6 +1350,89 @@ def main():
         ax.set_yticks(range(len(sorted_res_group)), list(sorted_res_group.keys()))
         ax.set_xlim(right=len(dpe_change))
         plt.show()
+        
+    if False:
+        dpe_change = get_dpe_change_details(force=False)
+        
+        # s = 0
+        # for i,(rc1, rc2) in enumerate(zip(dpe_change['adresse_bien--compl_etage_appartement--1'], dpe_change['adresse_bien--compl_etage_appartement--2'])):
+        #     if i < 1e7:
+        #         if pd.isnull(rc1) or rc1==0. or rc2==0.:
+        #             continue
+        #         s+=1
+        #         print(rc1,' ET ',rc2)
+        # print(s)
+        
+        # TODO c'est avec ça qu'il faut filtrer, après avoir nettoyer les données
+        from unidecode import unidecode
+        # import re
+        
+        
+        def decode_floor_number(s):
+            """
+            Récupération de l'étage du logement du DPE
+
+            Parameters
+            ----------
+            s : str
+                Chaine de caractère correspondant au champ 'adresse_bien--compl_ref_logement' dans les données XLS DPE.
+
+            Returns
+            -------
+            floor_number : TYPE
+                DESCRIPTION.
+
+            """
+            s = unidecode(s.lower()).replace('-eme','').replace('eme','').replace(':','').replace('rdc','0').replace(' ',',').replace(';',',').replace('er','').replace('iem','')
+            s_list = s.split(',')
+            s_list = [e for e in s_list if len(e)>0]
+            try:
+                floor_idx = s_list.index("etage")
+            except ValueError:
+                try:
+                    floor_idx = s_list.index("etag")
+                except ValueError:
+                    floor_idx = None
+                    floor_number = -1
+            
+            if floor_idx is not None:
+                prev_idx, next_idx = max(floor_idx-1,0), min(floor_idx+1,len(s_list)-1)
+                if prev_idx != floor_idx:
+                    try:
+                        prev_floor_number = int(s_list[prev_idx])
+                    except ValueError:
+                        prev_floor_number = -1
+                else:
+                    prev_floor_number = -1
+                    
+                if next_idx != floor_idx:
+                    try:
+                        next_floor_number = int(s_list[next_idx])
+                    except ValueError:
+                        next_floor_number = -1
+                else:
+                    next_floor_number = -1
+                floor_number = max(prev_floor_number, next_floor_number)
+            return floor_number
+            
+            
+        s = 0
+        for i,(rc1, rc2) in enumerate(zip(dpe_change['adresse_bien--compl_ref_logement--1'], dpe_change['adresse_bien--compl_ref_logement--2'])):
+            if i < 1e9:
+                if pd.isnull(rc1):
+                    continue
+                
+                rc1_floor_number = decode_floor_number(rc1)
+                rc2_floor_number = decode_floor_number(rc2)
+                
+                if rc1_floor_number == rc2_floor_number and rc1_floor_number!=-1:
+                    print(rc1,'(',rc1_floor_number,')',' ET ',rc2,'(',rc2_floor_number,')')
+                    # print()
+                else:
+                    s+=1
+        print(len(dpe_change)-s,'/',len(dpe_change))
+        
+        
         
         
                         

@@ -25,6 +25,7 @@ dependencies:
   - eppy-core
   - xmltodict
   - openpyxl
+  - unidecode
  # - pip
  # - pip:
  #     - eppy
