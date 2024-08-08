@@ -33,6 +33,7 @@ from PIL import Image
 # import xmltodict
 import json
 from urllib.error import HTTPError
+from unidecode import unidecode
 # from pyproj import Transformer
 
 pd.set_option('future.no_silent_downcasting', True)
@@ -393,7 +394,7 @@ def open_dpe_details(dpe_id, sheet_name='logement', retry=True):
             print('Error: {} is not available from observatoire-dpe-audit.ademe.fr :('.format(dpe_id))
             return pd.DataFrame()
         
-    group_name = {'logement':'caracteristique_generale','administratif':'administratif'}.get(sheet_name)
+    group_name = {'logement':'caracteristique_generale','administratif':'administratif', 'lexique':'lexique'}.get(sheet_name)
     
     dpe_data = dpe_data.rename(columns={'Unnamed: 0':'variables',group_name:'dpe_values'})
     
@@ -728,7 +729,7 @@ def get_filtered_suspicious_DPE(force=False, show_details=True):
             
             for i,(dpe_id_1, dpe_id_2) in enumerate(suspicious_batiment_group_dict_dpe_id.get(bg_id)):
                 
-                # TODO : deal with strange error
+                # deal with strange error
                 manual_exception_bg_id = ['bdnb-bg-LHGG-Y4PK-1R3C']
                 if bg_id in manual_exception_bg_id:
                     continue
@@ -742,20 +743,28 @@ def get_filtered_suspicious_DPE(force=False, show_details=True):
                 difference_2 = difference_2.set_index('variables')
                 
                 # filtre sur au moins un élément de l'adresse qui ne coincide pas (très large)
-                filter_address_infos = any(['adresse_bien' in e for e in difference_1.index.values])
+                filter_address_infos = not any(['adresse_bien' in e for e in difference_1.index.values])
                 
                 # filtre sur le nombre de mur et leur orientation (filtre fin)
-                filter_walls_orientation = False
+                filter_walls_orientation = True
                 if 'mur--orientation' in difference_1.index.values:
                     murs_1 = sorted(difference_1.loc['mur--orientation'].values[0])
                     murs_2 = sorted(difference_2.loc['mur--orientation'].values[0])
                     if murs_1 != murs_2:
-                        filter_walls_orientation = True
+                        filter_walls_orientation = False
                 
-                # avec ces deux filtres, peut-être que les logements superposés à plans identiques peuvent passer
-                # difficile d'estimer cette probabilité sachant les autres filtres utilisés précédemment
+                # ajout d'un filtre sur l'étage du logement (si donnée disponible)
+                filter_floor_number = True
+                if 'adresse_bien--compl_ref_logement' in difference_1.index:
+                    floor_number_1 = decode_floor_number(difference_1.loc['adresse_bien--compl_ref_logement'].values[0])
+                    floor_number_2 = decode_floor_number(difference_2.loc['adresse_bien--compl_ref_logement'].values[0])
+                    if floor_number_1 != floor_number_2 or floor_number_1==-1 or floor_number_2==-1:
+                        filter_floor_number = False
                 
-                if filter_address_infos and filter_walls_orientation:
+                # test en ne regardant que la coincidence explicite de l'étage
+                # TODO: tester plusieurs forces de filtres
+                global_filter = filter_floor_number
+                if global_filter:
                     if bg_id not in suspicious_batiment_group_dict_dpe_id_filtered.keys():
                         suspicious_batiment_group_dict_dpe_id_filtered[bg_id] = []
                         suspicious_batiment_group_dict_dpe_number_filtered[bg_id] = []
@@ -1094,6 +1103,62 @@ def plot_dpe_distribution(save=True, max_xlim=600):
     return 
 
 
+def plot_var_distribution(var, save=True, max_xlim=None,min_xlim=None,var_label=None,alpha=0.7,rounder=1,percentage=True,show=True):
+    """
+    graphe de la distribution des DPE, en indiquant les limites entre catégories
+
+    Parameters
+    ----------
+    save : TYPE, optional
+        DESCRIPTION. The default is True.
+    max_xlim : TYPE, optional
+        DESCRIPTION. The default is 600.
+
+    Returns
+    -------
+    dpe_data : TYPE
+        DESCRIPTION.
+
+    """
+    def get_bdnb_var(var=var):
+        _, _ , bdnb = get_bdnb()
+        # dpe_data = dpe_data[dpe_data.type_dpe=='dpe arrêté 2021 3cl logement'][['conso_5_usages_ep_m2','conso_5_usages_ef_m2']].compute() 
+        return bdnb[var].compute()
+    
+    save = True
+    
+    bdnb_var_data = get_bdnb_var(var).dropna()
+    bdnb_var_data = round(bdnb_var_data/rounder)*rounder
+    counter_var = dict(Counter(bdnb_var_data))
+    
+    fig, ax = plt.subplots(figsize=(5,5), dpi=300,)
+    if percentage:
+        ax.bar(list(counter_var.keys()), np.asarray(list(counter_var.values()))/sum(counter_var.values())*100, width=rounder, color='k',alpha=alpha,label='BDNB ({})'.format(sum(counter_var.values())))
+        ylabel = "Pourcentage d'observations"
+    else:
+        ax.bar(list(counter_var.keys()), list(counter_var.values()), width=rounder, color='k',alpha=alpha,label='BDNB ({})'.format(sum(counter_var.values())))
+        ylabel = "Nombre d'observations"
+    
+    if max_xlim is not None:
+        ax.set_xlim(right=max_xlim)
+    if min_xlim is not None:
+        ax.set_xlim(left=min_xlim)
+        
+    ax.set_ylabel(ylabel)
+    ax.legend()
+    ax.set_xlabel(var_label)
+    # ax.set_xticks(ticks=[int(x) for x in list(set(list(np.asarray(list(etiquette_ep_dict.values())).flatten()))) if not np.isinf(x)] + [max_xlim])
+    if save:
+        save_path = os.path.join('output',folder,'figs','distribution_{}.png'.format(var))
+    else:
+        save_path = None
+    plt.savefig(save_path, bbox_inches='tight')
+    if show:
+        plt.show()
+        plt.close()
+    return fig,ax
+
+
 def get_dpe_change_details(force=False,add_bdnb_data=True):
     """
     données de changement de champs d'un DPE à un autre
@@ -1145,10 +1210,11 @@ def get_dpe_change_details(force=False,add_bdnb_data=True):
                 
                 # ajout des données diagnostiqueurs dans le dictionnaire de résultat
                 diagnostiqueur_variables = [(admin_data_1, diagnostiqueur_variables_1), (admin_data_2, diagnostiqueur_variables_2)]
+                
                 for i,(admin_data, diag_vars) in enumerate(diagnostiqueur_variables):
                     for variable, value in zip(admin_data.variables, admin_data.dpe_values):
                         
-                        if variable not in diagnostiqueur_variables:
+                        if variable not in diag_vars:
                             continue
                         
                         # ajout du suffixe du dpe (1 ou 2)
@@ -1157,7 +1223,8 @@ def get_dpe_change_details(force=False,add_bdnb_data=True):
                         # ajout de l'entrée dans le distionnaire de résultat si nouveau
                         if variable not in data_details.keys():
                             data_details[variable] = [np.nan]*(len(data_details.get('dpe_id_1'))-1)
-                            
+                        
+                        # print(variable)
                         data_details[variable].append(value)
                 
                 
@@ -1175,7 +1242,17 @@ def get_dpe_change_details(force=False,add_bdnb_data=True):
                         data_details[variable_1] = [np.nan]*(len(data_details.get('dpe_id_1'))-1)
                     if variable_2 not in data_details.keys():
                         data_details[variable_2] = [np.nan]*(len(data_details.get('dpe_id_1'))-1)
-                        
+                    
+                    # suppresion des virgules pour enregistrement en csv
+                    if isinstance(value_1, str):
+                        value_1 = value_1.replace(',',';')
+                    elif isinstance(value_1, list):
+                        value_1 = [e.replace(',',';') for e in value_1 if isinstance(e, str)]
+                    if isinstance(value_2, str):
+                        value_2 = value_2.replace(',',';')
+                    elif isinstance(value_2, list):
+                        value_2 = [e.replace(',',';') for e in value_2 if isinstance(e, str)]
+                    
                     data_details[variable_1].append(value_1)
                     data_details[variable_2].append(value_2)
                 
@@ -1183,7 +1260,6 @@ def get_dpe_change_details(force=False,add_bdnb_data=True):
                 for k,v in data_details.items():
                     if len(v) < data_details_len:
                         data_details[k] = data_details.get(k) + [np.nan]*(data_details_len-len(v))
-                    
                     
         data_details = pd.DataFrame().from_dict(data_details)
         
@@ -1199,12 +1275,67 @@ def get_dpe_change_details(force=False,add_bdnb_data=True):
         bg_infos = bg_infos.reset_index(drop=True)
         
         data_details = data_details.join(bg_infos)
-        
         data_details.to_csv(os.path.join(output_folder,folder,'dpe_change_details.csv'), index=False)
         
-    data_details = pd.read_csv(os.path.join(output_folder,folder,'dpe_change_details.csv'), low_memory=False)
+    data_details = pd.read_csv(os.path.join(output_folder,folder,'dpe_change_details.csv'), low_memory=False, sep=',')
     return data_details
+
+
+def decode_floor_number(s):
+    """
+    Récupération de l'étage du logement du DPE
+
+    Parameters
+    ----------
+    s : str
+        Chaine de caractère correspondant au champ 'adresse_bien--compl_ref_logement' dans les données XLS DPE.
+
+    Returns
+    -------
+    floor_number : TYPE
+        DESCRIPTION.
+
+    """
+    s = unidecode(s.lower()).replace('-eme','').replace('eme','').replace(':','').replace('rdc','0').replace(' ',',').replace(';',',').replace('er','').replace('iem','')
+    s_list = s.split(',')
+    s_list = [e for e in s_list if len(e)>0]
+    try:
+        floor_idx = s_list.index("etage")
+    except ValueError:
+        try:
+            floor_idx = s_list.index("etag")
+        except ValueError:
+            floor_idx = None
+            floor_number = -1
     
+    if floor_idx is not None:
+        prev_idx, next_idx = max(floor_idx-1,0), min(floor_idx+1,len(s_list)-1)
+        if prev_idx != floor_idx:
+            try:
+                prev_floor_number = int(s_list[prev_idx])
+            except ValueError:
+                prev_floor_number = -1
+        else:
+            prev_floor_number = -1
+            
+        if next_idx != floor_idx:
+            try:
+                next_floor_number = int(s_list[next_idx])
+            except ValueError:
+                next_floor_number = -1
+        else:
+            next_floor_number = -1
+        floor_number = max(prev_floor_number, next_floor_number)
+    return floor_number
+
+
+def get_lexique_DPE():
+    random_dpe_id = '2175E0016996P'
+    lexique = open_dpe_details(random_dpe_id,sheet_name='lexique',retry=True)
+    res_dict = dict()
+    for k,v in zip(lexique.variables,lexique.dpe_values):
+        res_dict[k.replace('lexique--','')] = v
+    return res_dict
     
 # =============================================================================
 # main script
@@ -1224,7 +1355,7 @@ def main():
 
     # graphe des distribution des DPE présents dans la BDNB (paris pour l'instant)
     if False:
-        plot_dpe_distribution()
+        plot_dpe_distribution(max_xlim=600)
     
     # plot des diagnostics suspects
     if False:
@@ -1317,105 +1448,12 @@ def main():
             pbar.set_description(dpe_id)
             pbar.refresh()
             download_dpe_details(dpe_id)
-            
-            
-    # filtre des couples de DPE faux positifs 
-    if False: 
-        # TODO : a améliorer fortement
-        sbgd_filtered_dpe_id, sbgd_filtered_dpe_number = get_filtered_suspicious_DPE(show_details=True, force=False)
-        
-    # statistiques sur les données DPE de différence
-    if False:
-        dpe_change = get_dpe_change_details(force=False)
     
-        # TODO: il faut trier les données pour avoir les mêmes orientations des murs etc
-        res = {c:len(dpe_change[c].dropna()) for c in dpe_change.columns if c not in ['bg_id', 'bdtopo_bat_hauteur_mean','ffo_bat_annee_construction', 'dpe_letter_1', 'dpe_letter_2','dpe_id_1','dpe_id_2','batiment_groupe_id']}
-        sorted_res = dict(sorted(res.items(), key=lambda kv: kv[1], reverse=False))
-        
-        res_group_list = list(set([elem.split('--')[0] for elem in res.keys()]))
-        res_group = dict()
-        for g in res_group_list:
-            res_g_dict = {k:v for k,v in sorted_res.items() if g in k}
-            
-            # drop colonnes qui correspondent aux calculs finaux de conso
-            # 'generateur_chauffage--conso_ch', 'generateur_chauffage--conso_ch_depensier'
-            
-            res_group[g] = max(res_g_dict.values())
-            
-        sorted_res_group = dict(sorted(res_group.items(), key=lambda kv: kv[1], reverse=False))
-        
-        
-        fig, ax = plt.subplots(dpi=300,figsize=(6,12))
-        ax.barh(range(len(sorted_res_group)), list(sorted_res_group.values()), align='center')
-        ax.set_yticks(range(len(sorted_res_group)), list(sorted_res_group.keys()))
-        ax.set_xlim(right=len(dpe_change))
-        plt.show()
-        
+    
+    # test d'un nouveau filtre entre les appartements
     if False:
         dpe_change = get_dpe_change_details(force=False)
         
-        # s = 0
-        # for i,(rc1, rc2) in enumerate(zip(dpe_change['adresse_bien--compl_etage_appartement--1'], dpe_change['adresse_bien--compl_etage_appartement--2'])):
-        #     if i < 1e7:
-        #         if pd.isnull(rc1) or rc1==0. or rc2==0.:
-        #             continue
-        #         s+=1
-        #         print(rc1,' ET ',rc2)
-        # print(s)
-        
-        # TODO c'est avec ça qu'il faut filtrer, après avoir nettoyer les données
-        from unidecode import unidecode
-        # import re
-        
-        
-        def decode_floor_number(s):
-            """
-            Récupération de l'étage du logement du DPE
-
-            Parameters
-            ----------
-            s : str
-                Chaine de caractère correspondant au champ 'adresse_bien--compl_ref_logement' dans les données XLS DPE.
-
-            Returns
-            -------
-            floor_number : TYPE
-                DESCRIPTION.
-
-            """
-            s = unidecode(s.lower()).replace('-eme','').replace('eme','').replace(':','').replace('rdc','0').replace(' ',',').replace(';',',').replace('er','').replace('iem','')
-            s_list = s.split(',')
-            s_list = [e for e in s_list if len(e)>0]
-            try:
-                floor_idx = s_list.index("etage")
-            except ValueError:
-                try:
-                    floor_idx = s_list.index("etag")
-                except ValueError:
-                    floor_idx = None
-                    floor_number = -1
-            
-            if floor_idx is not None:
-                prev_idx, next_idx = max(floor_idx-1,0), min(floor_idx+1,len(s_list)-1)
-                if prev_idx != floor_idx:
-                    try:
-                        prev_floor_number = int(s_list[prev_idx])
-                    except ValueError:
-                        prev_floor_number = -1
-                else:
-                    prev_floor_number = -1
-                    
-                if next_idx != floor_idx:
-                    try:
-                        next_floor_number = int(s_list[next_idx])
-                    except ValueError:
-                        next_floor_number = -1
-                else:
-                    next_floor_number = -1
-                floor_number = max(prev_floor_number, next_floor_number)
-            return floor_number
-            
-            
         s = 0
         for i,(rc1, rc2) in enumerate(zip(dpe_change['adresse_bien--compl_ref_logement--1'], dpe_change['adresse_bien--compl_ref_logement--2'])):
             if i < 1e9:
@@ -1431,6 +1469,233 @@ def main():
                 else:
                     s+=1
         print(len(dpe_change)-s,'/',len(dpe_change))
+        
+            
+    # filtre des couples de DPE faux positifs 
+    if False:
+        # TODO : à vérifier 
+        sbgd_filtered_dpe_id, sbgd_filtered_dpe_number = get_filtered_suspicious_DPE(show_details=True, force=False)
+        
+    # statistiques sur les données DPE de différence
+    if True:
+        import ast
+        
+        dpe_change = get_dpe_change_details(force=False)
+        
+        # TODO: il faut trier les données pour avoir les mêmes orientations des murs etc
+        dpe_change_mur = dpe_change[[c for c in dpe_change.columns if 'mur--' in c]]
+        tot_n = 0
+        eglenmur_n = 0
+        noneglenmur_n = 0
+        for mur_or_1, mur_or_2 in zip(dpe_change_mur['mur--orientation--1'],dpe_change_mur['mur--orientation--2']):
+            tot_n += 1
+            if isinstance(mur_or_1, str):
+                try:
+                    mur_or_1 = ast.literal_eval(mur_or_1)
+                except ValueError:
+                    mur_or_1 = [mur_or_1]
+                try:
+                    mur_or_2 = ast.literal_eval(mur_or_2)
+                except ValueError:
+                    mur_or_2 = [mur_or_2]
+                
+                if len(mur_or_1)==len(mur_or_2):
+                    eglenmur_n += 1
+                else:
+                    noneglenmur_n += 1
+        
+        # print(eglenmur_n, noneglenmur_n, tot_n)
+        
+        # exclusion des variables de consommations (resultats de calculs finaux)
+        conso_var_list = ['installation_chauffage--besoin_ch--1',
+                          'installation_chauffage--besoin_ch--2',
+                          'installation_chauffage--besoin_ch_depensier--1',
+                          'installation_chauffage--besoin_ch_depensier--2',
+                          'installation_chauffage--conso_ch--1',
+                          'installation_chauffage--conso_ch--2',
+                          'installation_chauffage--conso_ch_depensier--1',
+                          'installation_chauffage--conso_ch_depensier--2',
+                          'generateur_chauffage--conso_ch--1',
+                          'generateur_chauffage--conso_ch--2',
+                          'generateur_chauffage--conso_ch_depensier--1',
+                          'generateur_chauffage--conso_ch_depensier--2',
+                          'installation_ecs--conso_ecs--1',
+                          'installation_ecs--conso_ecs--2',
+                          'installation_ecs--conso_ecs_depensier--1',
+                          'installation_ecs--conso_ecs_depensier--2',
+                          'installation_ecs--besoin_ecs--1', 
+                          'installation_ecs--besoin_ecs--2',
+                          'installation_ecs--besoin_ecs_depensier--1',
+                          'installation_ecs--besoin_ecs_depensier--2',
+                          'generateur_ecs--conso_ecs--1',
+                          'generateur_ecs--conso_ecs--2',
+                          'generateur_ecs--conso_ecs_depensier--1',
+                          'generateur_ecs--conso_ecs_depensier--2',
+                          'climatisation--conso_fr--1',
+                          'climatisation--conso_fr--2',
+                          'climatisation--besoin_fr--1',
+                          'climatisation--besoin_fr--2',
+                          'climatisation--conso_fr_depensier--1',
+                          'climatisation--conso_fr_depensier--2']
+        
+        # exclusion des variables génériques
+        generic_var_list = ['bg_id', 
+                            'bdtopo_bat_hauteur_mean',
+                            'ffo_bat_annee_construction', 
+                            'dpe_letter_1', 
+                            'dpe_letter_2',
+                            'dpe_id_1',
+                            'dpe_id_2',
+                            'batiment_groupe_id',
+                            'caracteristique_generale--surface_habitable_logement--1',
+                            'caracteristique_generale--surface_habitable_logement--2',
+                            'caracteristique_generale--hsp--1',
+                            'caracteristique_generale--hsp--2',
+                            'caracteristique_generale--surface_habitable_immeuble--1',
+                            'caracteristique_generale--surface_habitable_immeuble--2']
+        
+        # exclusison des variables étant des résultats de calculs intermédiaires
+        computation_results_var_list = ['ventilation--hvent--1',
+                                        'ventilation--hvent--2',
+                                        'ventilation--hperm--1',
+                                        'ventilation--hperm--2',
+                                        'ventilation--conso_auxiliaire_ventilation--1',
+                                        'ventilation--conso_auxiliaire_ventilation--2']
+        
+        # exclusion des données diagnostiqueurs et adresse
+        diag_var_list = [c for c in dpe_change.columns if c.startswith('diagnostiqueur')]
+        adresse_var_list = [c for c in dpe_change.columns if c.startswith('adresse_bien')]
+        
+        excluded_cols = generic_var_list+conso_var_list+diag_var_list+computation_results_var_list+adresse_var_list
+        
+        res = {c:len(dpe_change[c].dropna()) for c in dpe_change.columns if c not in excluded_cols}
+        sorted_res = dict(sorted(res.items(), key=lambda kv: kv[1], reverse=False))
+        
+        res_group_list = list(set([elem.split('--')[0] for elem in res.keys()]))
+        res_group = dict()
+        for g in res_group_list:
+            res_g_dict = {k:v for k,v in sorted_res.items() if g in k}
+            if g=='installation_ecs':
+                # print(res_g_dict)
+                pass
+            res_group[g] = max(res_g_dict.values())
+            
+        sorted_res_group = dict(sorted(res_group.items(), key=lambda kv: kv[1], reverse=False))
+        sorted_res_group = {k:v for k,v in sorted_res_group.items() if v > 10}
+        
+        
+        fig, ax = plt.subplots(dpi=300,figsize=(6,len(sorted_res_group)//2))
+        ax.barh(range(len(sorted_res_group)), list(sorted_res_group.values()), align='center')
+        ax.set_yticks(range(len(sorted_res_group)), list(sorted_res_group.keys()))
+        ax.set_xlim(right=len(dpe_change))
+        plt.show()
+        
+        
+        specific_group = 'mur'
+        
+        res_specific = {c:len(dpe_change[c].dropna()) for c in dpe_change.columns if c.startswith('{}--'.format(specific_group)) and c.endswith('--1') and c not in excluded_cols}
+        sorted_res_specific = dict(sorted(res_specific.items(), key=lambda kv: kv[1], reverse=False))
+        
+        fig, ax = plt.subplots(dpi=300,figsize=(6,len(sorted_res_specific)//2))
+        ax.barh(range(len(sorted_res_specific)), list(sorted_res_specific.values()), align='center')
+        ax.set_yticks(range(len(sorted_res_specific)), [e[len(specific_group)+2:-3] for e in list(sorted_res_specific.keys())])
+        ax.set_xlim(right=len(dpe_change))
+        ax.set_title(specific_group)
+        plt.show()
+        
+        lexique = get_lexique_DPE()
+        var = 'umur'
+        print(lexique.get(var))
+        
+        # print(dict(Counter(dpe_change['{}--{}--1'.format(specific_group,var)].dropna())))
+        print(sum(dict(Counter(dpe_change['{}--{}--1'.format(specific_group,var)].dropna())).values()))
+        
+        change_var_dict = {'no_change':0}
+        for version_1, version_2 in zip(dpe_change['{}--{}--1'.format(specific_group,var)],dpe_change['{}--{}--2'.format(specific_group,var)]):
+            if isinstance(version_1, float):
+                if np.isnan(version_1) or np.isnan(version_2):
+                    continue
+            
+            if version_1 != version_2:
+                key = '{} -> {}'.format(version_1, version_2)
+                if key not in change_var_dict.keys():
+                    change_var_dict[key] = 0
+                change_var_dict[key] += 1
+            else:
+                change_var_dict['no_change'] += 1
+        
+        change_var_dict = dict(sorted(change_var_dict.items(), key=lambda item: item[1], reverse=True))
+        
+        print()
+        print('Changement de valeur')
+        for k,v in change_var_dict.items():
+            if v > 1:
+                print(k,v)
+        
+    
+    # affichage de la distribution d'une variable dans la bdnb parisienne
+    if False:
+        plot_var_distribution(var='ffo_bat_annee_construction', min_xlim=1600,rounder=20,percentage=True,max_xlim=2020)
+        
+    # statistiques sur les liens entre période de construction et gains dans la manipulation des DPE
+    if False:
+        dpe_change = get_dpe_change_details(force=False)
+        
+        letter_to_number_dict = {chr(ord('@')+n):n for n in range(1,10)}
+        gains_etiquette = []
+        
+        for eti1, eti2 in zip(dpe_change.dpe_letter_1, dpe_change.dpe_letter_2):
+            eti1_number = letter_to_number_dict.get(eti1)
+            eti2_number = letter_to_number_dict.get(eti2)
+            
+            gain = eti1_number-eti2_number
+            gains_etiquette.append(gain)
+        dpe_change['dpe_gain'] = gains_etiquette
+        
+        if True:
+            rounder = 10
+            alpha = 0.5
+            
+            dpe_change_plot = dpe_change.copy()
+            # dpe_change_plot = dpe_change[dpe_change.dpe_gain>1]
+
+            counter_var = dict(Counter(round(dpe_change_plot.ffo_bat_annee_construction.dropna()/rounder)*rounder))
+            
+            fig,ax = plot_var_distribution(var='ffo_bat_annee_construction', min_xlim=1600,rounder=rounder,percentage=True,max_xlim=2020,show=False,alpha=alpha,save=False)
+            ax.bar(np.asarray(list(counter_var.keys())), np.asarray(list(counter_var.values()))/sum(counter_var.values())*100, width=rounder, color='tab:blue',alpha=alpha,label='Changement DPE ({})'.format(sum(counter_var.values())))
+            ax.legend()
+            ax.set_xlabel('Année de construction (arrondie à 10 ans)')
+
+
+    # étude du logiciel de calcul
+    if False:
+        dpe_change = get_dpe_change_details(force=False)
+        # dpe_change_logiciel = dpe_change[[c for c in dpe_change.columns if 'diagnostiqueur' in c]+['dpe_letter_1','dpe_letter_2']]
+        
+        # 'usr_logiciel_id--1',
+        # 'version_logiciel--1',
+        # 'version_moteur_calcul--1'
+               
+        change_logiciel_version_dict = {'no_change':0}
+        for version_1, version_2 in zip(dpe_change['diagnostiqueur--version_moteur_calcul--1'],dpe_change['diagnostiqueur--version_moteur_calcul--2']):
+            if version_1 != version_2:
+                key = '{} -> {}'.format(version_1, version_2)
+                if key not in change_logiciel_version_dict.keys():
+                    change_logiciel_version_dict[key] = 0
+                change_logiciel_version_dict[key] += 1
+            else:
+                change_logiciel_version_dict['no_change'] += 1
+        
+        change_logiciel_version_dict = dict(sorted(change_logiciel_version_dict.items(), key=lambda item: item[1], reverse=True))
+        
+        for k,v in change_logiciel_version_dict.items():
+            print(k,v)
+        # print(change_logiciel_version_dict)
+                    
+            
+            
+    
+   
         
         
         
