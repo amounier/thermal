@@ -26,6 +26,9 @@ dependencies:
   - xmltodict
   - openpyxl
   - unidecode
- # - pip
+  - pysolar
+ # - requests_cache
  # - pip:
+  #	- retry-requests
+  #	- openmeteo-requests
  #     - eppy
