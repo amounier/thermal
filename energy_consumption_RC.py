@@ -20,6 +20,8 @@ from sklearn.metrics import r2_score
 from scipy.optimize import curve_fit
 from scipy.linalg import expm
 from numpy.linalg import inv
+from geopy.geocoders import Nominatim
+from geopy.exc import GeocoderUnavailable
 
 # Défintion de la date du jour
 today = pd.Timestamp(date.today()).strftime('%Y%m%d')
@@ -28,7 +30,6 @@ today = pd.Timestamp(date.today()).strftime('%Y%m%d')
 output = 'output'
 folder = '{}_RC_models'.format(today)
 figs_folder = os.path.join(output, folder, 'figs')
-
 
 
 def get_coordinates(city):
@@ -48,23 +49,21 @@ def get_coordinates(city):
         DESCRIPTION.
 
     """
-    coordinates_dict = {'Paris':(2.352222, 48.856614),
-                        'Marseille':(5.369780, 43.296482)
+    coordinates_dict = {'Paris':(2.320041, 48.85889),
+                        'Marseille':(5.369953, 43.296174)
                        }
     
-    headers = {'User-Agent': 'Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:129.0) Gecko/20100101 Firefox/129.0',
-               'Accept':'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/png,image/svg+xml,*/*;q=0.8'}
-    try:
-        url = 'https://nominatim.openstreetmap.org/search?q={},France&format=json'.format(city)
-        response = requests.get(url, headers=headers)
-        json_data = response.json()
-        longitude = float(json_data[0].get('lon'))
-        latitude = float(json_data[0].get('lat'))
-    except (requests.exceptions.ConnectionError, requests.exceptions.JSONDecodeError):
+    if city in coordinates_dict.keys():
+        longitude, latitude = coordinates_dict[city]
+        return longitude, latitude
+    else:
         try:
-            longitude, latitude = coordinates_dict[city]
-        except KeyError:
-            raise KeyError('No internet connexion, only availables cities are : {}'.format(', '.join(list(coordinates_dict.keys()))))
+            # initialisation de l'instance Nominatim (API OSM), changer l'agent si besoin
+            geolocator = Nominatim(user_agent="amounier")
+            location = geolocator.geocode(city)
+            longitude, latitude = round(location.longitude,ndigits=6), round(location.latitude, ndigits=6)
+        except GeocoderUnavailable:
+            raise KeyError('No internet connexion, offline availables cities are : {}'.format(', '.join(list(coordinates_dict.keys()))))
     return longitude, latitude
 
     
@@ -347,10 +346,17 @@ def run_R1C0_model_simulation(data, R1, R2, C1, C2, Ti_min, Ti_max, P_heater_max
 def main():
     tic = time.time()
     
+    # Création des dossiers de sortie 
+    if folder not in os.listdir(output):
+        os.mkdir(os.path.join(output,folder))
+    if 'figs' not in os.listdir(os.path.join(output, folder)):
+        os.mkdir(figs_folder)
+        
+        
     # Unité temporelle de base : horaire 
     
     # Définition des paramètres spatio-temporels
-    year = 2019
+    year = 2003
     city = 'Marseille'
     
     # Définition des paramètres géométriques
@@ -393,13 +399,6 @@ def main():
     surface_windows = 4 # m2
     q_solar_gain =  surface_windows * 0.4 # m2
     # q_solar_gain *= 0
-    
-    
-    # Création des dossiers de sortie 
-    if folder not in os.listdir(output):
-        os.mkdir(os.path.join(output,folder))
-    if 'figs' not in os.listdir(os.path.join(output, folder)):
-        os.mkdir(figs_folder)
     
     # Récupération des données météo
     coordinates = get_coordinates(city)

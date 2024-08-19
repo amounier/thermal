@@ -27,6 +27,7 @@ dependencies:
   - openpyxl
   - unidecode
   - pysolar
+  - geopy
  # - requests_cache
  # - pip:
   #	- retry-requests
