@@ -15,21 +15,14 @@ from datetime import date
 import pandas as pd
 import requests
 import matplotlib.pyplot as plt
-import matplotlib.dates as mdates
-from sklearn.metrics import r2_score
-from scipy.optimize import curve_fit
+# from sklearn.metrics import r2_score
+# from scipy.optimize import curve_fit
 from scipy.linalg import expm
 from numpy.linalg import inv
 from geopy.geocoders import Nominatim
 from geopy.exc import GeocoderUnavailable
 
-# Défintion de la date du jour
-today = pd.Timestamp(date.today()).strftime('%Y%m%d')
-
-# Défintion des dossiers de sortie 
-output = 'output'
-folder = '{}_RC_models'.format(today)
-figs_folder = os.path.join(output, folder, 'figs')
+from utils import plot_timeserie
 
 
 def get_coordinates(city):
@@ -50,7 +43,8 @@ def get_coordinates(city):
 
     """
     coordinates_dict = {'Paris':(2.320041, 48.85889),
-                        'Marseille':(5.369953, 43.296174)
+                        'Marseille':(5.369953, 43.296174),
+                        'Brest':(-4.486009, 48.390528)
                        }
     
     if city in coordinates_dict.keys():
@@ -88,9 +82,19 @@ def get_open_meteo_url(longitude, latitude, year, hourly_variables):
         DESCRIPTION.
 
     """
+    # TODO : à bouger dans un autre fichier python dédié à la méteo
     if isinstance(hourly_variables, list):
         hourly_variables = ','.join(hourly_variables)
-    url = 'https://archive-api.open-meteo.com/v1/archive?latitude={}&longitude={}&start_date={}-01-01&end_date={}-12-31&hourly={}&timezone=Europe%2FBerlin'.format(latitude,longitude,year,year,hourly_variables)
+    tod = pd.Timestamp(date.today())
+    
+    # Si l'année demandée n'est pas terminée, il faut modifier les périodes requêtées
+    end_month, end_day = 12, 31
+    if year == tod.year:
+        end_day = tod.strftime('%d')
+        end_month = tod.strftime('%m')
+        
+    url = 'https://archive-api.open-meteo.com/v1/archive?latitude={}&longitude={}&start_date={}-01-01&end_date={}-{}-{}&hourly={}&timezone=Europe%2FBerlin'.format(latitude,longitude,year,year,end_month,end_day,hourly_variables)
+    print(url)
     return url
 
 
@@ -117,6 +121,7 @@ def open_meteo_historical_data(longitude, latitude, year, hourly_variables=['tem
         DESCRIPTION.
 
     """
+    # TODO : peut-etre mettre un nom de ville en entrée et en faire des nom de sauvegarde pluis lisible
     if isinstance(hourly_variables, list):
         hourly_variables_str = ','.join(hourly_variables)
     else:
@@ -129,6 +134,7 @@ def open_meteo_historical_data(longitude, latitude, year, hourly_variables=['tem
     if save_name not in os.listdir(save_path) or force:
         url = get_open_meteo_url(longitude, latitude, year, hourly_variables)
         response = requests.get(url)
+        print(year, response)
         json_data = response.json()
 
         units = json_data.get('hourly_units')
@@ -143,6 +149,18 @@ def open_meteo_historical_data(longitude, latitude, year, hourly_variables=['tem
     data = data.set_index('time')
     data.index = pd.to_datetime(data.index)
     return data
+
+
+def get_meteo_data(city, period=[2020,2024]):
+    longitude, latitude = get_coordinates(city)
+    data = None
+    for y in range(period[0],period[1]+1):
+        yearly_data = open_meteo_historical_data(longitude, latitude, y)
+        if data is None:
+            data = yearly_data
+        else:
+            data = pd.concat([data, yearly_data])
+    return data 
 
 
 def get_meteo_units(longitude, latitude, year, hourly_variables=['temperature_2m','direct_radiation_instant']):
@@ -178,48 +196,31 @@ def get_meteo_units(longitude, latitude, year, hourly_variables=['temperature_2m
     return d
 
 
-def plot_timeserie(data,figsize=(5,5),dpi=300,labels=None,save_fig=None,show=True,xlim=None,figax=None,**kwargs):
-    """
-    Fonction d'affichage de séries temporelles
-
-    """
-    if figax is None:
-        fig,ax = plt.subplots(dpi=dpi,figsize=figsize)
-    else:
-        fig,ax = figax
-    
-    data_plot = data.copy()
-    if xlim is not None:
-        ax.set_xlim(xlim)
-        data_plot = data_plot[(data_plot.index >= xlim[0])&(data_plot.index <= xlim[1])]
-    
-    if labels is None:
-        labels = data_plot.columns
-        
-    for i,c in enumerate(data_plot.columns):
-        ax.plot(data_plot[c],label=labels[i],**kwargs)
-    ax.legend()
-        
-    locator = mdates.AutoDateLocator()
-    formatter = mdates.ConciseDateFormatter(locator)
-    #formatter = mdates.DateFormatter('%b')
-    ax.xaxis.set_major_locator(locator)
-    ax.xaxis.set_major_formatter(formatter)
-    
-    if save_fig is not None:
-        plt.savefig(os.path.join(figs_folder,'{}.png'.format(save_fig)),bbox_inches='tight')
-    if show:
-        plt.show()
-        plt.close()
-        return 
-    return fig,ax
-
-
 def dot3(A,B,C):
     return np.dot(A,np.dot(B,C))
 
 
 def get_P_heater(Ti, Ti_min, Pmax, method='all_or_nothing'):
+    """
+    Renvoie la puissance des équipemetns de chauffage
+
+    Parameters
+    ----------
+    Ti : float
+        DESCRIPTION.
+    Ti_min : float
+        DESCRIPTION.
+    Pmax : float
+        DESCRIPTION.
+    method : str, optional
+        DESCRIPTION. The default is 'all_or_nothing'.
+
+    Returns
+    -------
+    P_heater : float
+        DESCRIPTION.
+
+    """
     if method == 'all_or_nothing':
         if Ti < Ti_min:
             P_heater = Pmax
@@ -238,6 +239,26 @@ def get_P_heater(Ti, Ti_min, Pmax, method='all_or_nothing'):
 
 
 def get_P_cooler(Ti, Ti_max, Pmax, method='all_or_nothing'):
+    """
+    Renvoie la puissance des équipements de refroidissement
+
+    Parameters
+    ----------
+    Ti : float
+        DESCRIPTION.
+    Ti_max : float
+        DESCRIPTION.
+    Pmax : float
+        DESCRIPTION.
+    method : str, optional
+        DESCRIPTION. The default is 'all_or_nothing'.
+
+    Returns
+    -------
+    P_cooler : float
+        DESCRIPTION.
+
+    """
     if method == 'all_or_nothing':
         if Ti > Ti_max:
             P_cooler = Pmax
@@ -252,10 +273,54 @@ def get_P_cooler(Ti, Ti_max, Pmax, method='all_or_nothing'):
              P_cooler = 0
          else:
              P_cooler = ((Ti-(Ti_max-tolerance))/(2*tolerance))*Pmax
-    return -P_cooler
+    
+    # flux de refroidissement négatif
+    P_cooler = - P_cooler
+    return P_cooler
     
 
 def run_R2C2_model_simulation(data, R1, R2, C1, C2, Ti_min, Ti_max, P_heater_max, P_cooler_max, P_internal, solar_gain, heater_method, cooler_method):
+    """
+    Simulation d'évolution de la température intéreiure et des consommations associés
+    pour un système thermique R2C2
+
+    Parameters
+    ----------
+    data : pandas DataFrame
+        DESCRIPTION.
+    R1 : float
+        DESCRIPTION.
+    R2 : float
+        DESCRIPTION.
+    C1 : float
+        DESCRIPTION.
+    C2 : float
+        DESCRIPTION.
+    Ti_min : float
+        DESCRIPTION.
+    Ti_max : float
+        DESCRIPTION.
+    P_heater_max : float
+        DESCRIPTION.
+    P_cooler_max : float
+        DESCRIPTION.
+    P_internal : float
+        DESCRIPTION.
+    solar_gain : float
+        DESCRIPTION.
+    heater_method : str
+        DESCRIPTION.
+    cooler_method : str
+        DESCRIPTION.
+
+    Returns
+    -------
+    X : numpy Array
+        DESCRIPTION.
+    P_flux : numpy Array
+        DESCRIPTION.
+
+    """
     time_ = np.asarray(data.index)
     delta_t = (time_[1]-time_[0]) / np.timedelta64(1, 's')
     
@@ -283,7 +348,7 @@ def run_R2C2_model_simulation(data, R1, R2, C1, C2, Ti_min, Ti_max, P_heater_max
         DSI = data.direct_radiation_instant.values[i]
         
         Ti = X[i-1,1]
-        Te = X[i-1,0]
+        # Te = X[i-1,0]
         P_heater = get_P_heater(Ti, Ti_min=Ti_min, Pmax=P_heater_max,method=heater_method)
         P_cooler = get_P_cooler(Ti, Ti_max=Ti_max, Pmax=P_cooler_max,method=cooler_method)
         P_emitters = P_heater + P_cooler
@@ -298,6 +363,48 @@ def run_R2C2_model_simulation(data, R1, R2, C1, C2, Ti_min, Ti_max, P_heater_max
 
 
 def run_R1C0_model_simulation(data, R1, R2, C1, C2, Ti_min, Ti_max, P_heater_max, P_cooler_max, P_internal, solar_gain, heater_method, cooler_method):
+    """
+    Simulation d'évolution de la température intéreiure et des consommations associés
+    pour un système thermique R1
+
+    Parameters
+    ----------
+    data : pandas DataFrame
+        DESCRIPTION.
+    R1 : float
+        DESCRIPTION.
+    R2 : float
+        DESCRIPTION.
+    C1 : float
+        DESCRIPTION.
+    C2 : float
+        DESCRIPTION.
+    Ti_min : float
+        DESCRIPTION.
+    Ti_max : float
+        DESCRIPTION.
+    P_heater_max : float
+        DESCRIPTION.
+    P_cooler_max : float
+        DESCRIPTION.
+    P_internal : float
+        DESCRIPTION.
+    solar_gain : float
+        DESCRIPTION.
+    heater_method : str
+        DESCRIPTION.
+    cooler_method : str
+        DESCRIPTION.
+
+    Returns
+    -------
+    X : numpy Array
+        DESCRIPTION.
+    P_flux : numpy Array
+        DESCRIPTION.
+
+    """
+    # TODO : supprimer les variables d'entrée non utilisées
     time_ = np.asarray(data.index)
     
     # État initial
@@ -314,7 +421,7 @@ def run_R1C0_model_simulation(data, R1, R2, C1, C2, Ti_min, Ti_max, P_heater_max
         DSI = data.direct_radiation_instant.values[i]
         
         Ti = X[i-1,1]
-        Te = X[i-1,0]
+        # Te = X[i-1,0]
         
         P_solar  = DSI*solar_gain
         if Ti<Ti_min:
@@ -346,13 +453,22 @@ def run_R1C0_model_simulation(data, R1, R2, C1, C2, Ti_min, Ti_max, P_heater_max
 def main():
     tic = time.time()
     
+    # Défintion de la date du jour
+    today = pd.Timestamp(date.today()).strftime('%Y%m%d')
+
+    # Défintion des dossiers de sortie 
+    output = 'output'
+    folder = '{}_RC_models'.format(today)
+    figs_folder = os.path.join(output, folder, 'figs')
+    
     # Création des dossiers de sortie 
     if folder not in os.listdir(output):
         os.mkdir(os.path.join(output,folder))
     if 'figs' not in os.listdir(os.path.join(output, folder)):
         os.mkdir(figs_folder)
         
-        
+    #--------------------------------------------------------------------------
+    
     # Unité temporelle de base : horaire 
     
     # Définition des paramètres spatio-temporels
@@ -364,7 +480,7 @@ def main():
     floor_surface     = 60 # m2
     height            = 3 # m
     wall_thickness    = 0.3 # m
-    volume            = floor_surface * height
+    # volume            = floor_surface * height
     wall_length       = np.sqrt(floor_surface)
     perimeter         = wall_length * 4
     heat_loss_surface = perimeter * height
@@ -409,7 +525,6 @@ def main():
     data_high_res = data_high_res.join(data,how='left')
     data_high_res = data_high_res.interpolate()
     
-    R1_test, R2_test, C1_test, C2_test = 2.13e-2, 2.37e-3, 1.56e7, 1.93e6
     
     # Résolution du modèle R2C2
     X_R2C2, P_th = run_R2C2_model_simulation(data=data_high_res, 
@@ -426,6 +541,7 @@ def main():
                                              heater_method='all_or_nothing',
                                              cooler_method='all_or_nothing')
     
+    # R1_test, R2_test, C1_test, C2_test = 2.13e-2, 2.37e-3, 1.56e7, 1.93e6
     # X_R2C2, P_th = run_R2C2_model_simulation(data=data_high_res, 
     #                                          R1=R1_test, 
     #                                          R2=R2_test, 
@@ -483,24 +599,24 @@ def main():
     
     if False:
         cols = ['temperature_2m', 'internal_wall_temperature', 'indoor_temperature']
-        plot_timeserie(data[cols], labels=['{} (°C)'.format(c) for c in cols], figsize=(15,5),
+        plot_timeserie(data[cols], labels=['{} (°C)'.format(c) for c in cols], figsize=(15,5), figs_folder = figs_folder,
                        xlim=[pd.to_datetime('{}-01-01'.format(year)), pd.to_datetime('{}-12-31'.format(year))])
   
                   
     if False:
         cols = ['q_heater', 'q_cooler', 'q_solar', 'q_internal', 'q_thermal']
-        plot_timeserie(data[cols], labels=['{} (W)'.format(c) for c in cols], figsize=(15,5),
+        plot_timeserie(data[cols], labels=['{} (W)'.format(c) for c in cols], figsize=(15,5), figs_folder = figs_folder,
                        xlim=[pd.to_datetime('{}-01-01'.format(year)), pd.to_datetime('{}-12-31'.format(year))])
         
     if False:
         cols = ['temperature_2m', 'internal_wall_temperature_linear', 'indoor_temperature_linear']
-        plot_timeserie(data[cols], labels=['{} (°C)'.format(c) for c in cols], figsize=(15,5),
+        plot_timeserie(data[cols], labels=['{} (°C)'.format(c) for c in cols], figsize=(15,5), figs_folder = figs_folder,
                        xlim=[pd.to_datetime('{}-01-01'.format(year)), pd.to_datetime('{}-12-31'.format(year))])
   
                   
     if False:
         cols = [e+'_linear' for e in ['q_heater', 'q_cooler', 'q_solar', 'q_internal', 'q_thermal']]
-        plot_timeserie(data[cols], labels=['{} (W)'.format(c) for c in cols], figsize=(15,5),
+        plot_timeserie(data[cols], labels=['{} (W)'.format(c) for c in cols], figsize=(15,5), figs_folder = figs_folder,
                        xlim=[pd.to_datetime('{}-01-01'.format(year)), pd.to_datetime('{}-12-31'.format(year))])
     
     if False:
@@ -522,8 +638,8 @@ def main():
             print('{} : {:.0f} kW'.format(d.strftime('%b'), -monthly_data.loc[d].q_cooler/1000))
         print('Total : {:.0f} kW'.format(-monthly_data.q_cooler.sum()/1000))
         
-        fig,ax = plot_timeserie(monthly_data[['q_heater']], show=False)
-        fig,ax = plot_timeserie(-1*monthly_data[['q_cooler']], show=False, figax=(fig,ax))
+        fig,ax = plot_timeserie(monthly_data[['q_heater']], show=False, figs_folder = figs_folder,)
+        fig,ax = plot_timeserie(-1*monthly_data[['q_cooler']], show=False, figax=(fig,ax), figs_folder = figs_folder,)
         
         
     monthly_data_linear = data[[e+'_linear' for e in ['q_heater', 'q_cooler', 'q_solar', 'q_internal', 'q_thermal']]].groupby(pd.Grouper(freq='MS')).sum()
@@ -539,8 +655,8 @@ def main():
             print('{} : {:.0f} kW'.format(d.strftime('%b'), -monthly_data_linear.loc[d].q_cooler_linear/1000))
         print('Total : {:.0f} kW'.format(-monthly_data_linear.q_cooler_linear.sum()/1000))
         
-        fig,ax = plot_timeserie(monthly_data_linear[['q_heater_linear']], show=False, figax=(fig,ax))
-        plot_timeserie(-1*monthly_data_linear[['q_cooler_linear']], figax=(fig,ax))
+        fig,ax = plot_timeserie(monthly_data_linear[['q_heater_linear']], show=False, figax=(fig,ax), figs_folder = figs_folder,)
+        plot_timeserie(-1*monthly_data_linear[['q_cooler_linear']], figax=(fig,ax), figs_folder = figs_folder,)
     
     
     
@@ -551,7 +667,7 @@ def main():
     # Affichage des données météo
     if False:
         for c in ['temperature_2m','direct_radiation_instant']:
-            plot_timeserie(data[[c]], labels=['{} ({})'.format(c,meteo_units.get(c))], figsize=(15,5),
+            plot_timeserie(data[[c]], labels=['{} ({})'.format(c,meteo_units.get(c))], figsize=(15,5),figs_folder = figs_folder,
                            xlim=[pd.to_datetime('{}-01-01'.format(year)), pd.to_datetime('{}-12-31'.format(year))])
     
     
