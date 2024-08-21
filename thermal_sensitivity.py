@@ -131,6 +131,30 @@ def open_electricity_consumption(scale='national', force=False):
     return data
 
 
+def piecewise_linear(T, Th, Tc, C0, kh, kc):
+    # on force Tc à être supérieure à Th
+    Tc = max(Tc,Th)
+    Th = min(Tc,Th)
+    res = np.piecewise(T, [T < Th, (T >= Th)&(T<=Tc), T>Tc], [lambda T: -kh*(T-Th) + C0, lambda T: C0, lambda T: kc*(T-Tc)+C0])
+    return res
+
+
+def identify_thermal_sensitivity(temperature, consumption):
+    temperature = np.asarray(temperature)
+    consumption = np.asarray(consumption)
+
+    # estimation initiale
+    p0 = (10, 20, 200, 1,1)
+    
+    # optimisation sur la fonction piecewise_linear
+    popt , e = curve_fit(piecewise_linear, temperature, consumption, p0=p0)
+    pw_linear_consumption = piecewise_linear(temperature, *popt)
+    r2_value = r2_score(consumption,pw_linear_consumption)
+    
+    Th_opt, Tc_opt, C0_opt, kh_opt, kc_opt = popt
+    Tc_opt = min(temperature.max(),Tc_opt)
+    return Th_opt, Tc_opt, C0_opt, kh_opt, kc_opt, r2_value
+    
     
 def main():
     tic = time.time()
@@ -180,61 +204,66 @@ def main():
     
     # Premiers tests de thermosensibilité
     if True:
-        reg_code = 93#11#93#76#93
-        year = 2022
-        city = dict_region_code_chef_lieu.get(reg_code)
-        reg_name = dict_region_code_region_name.get(reg_code)
-        
-        meteo_data = get_meteo_data(city,[2022,2024])
-        meteo_data = get_meteo_data(city,[year,year])
-        data = meteo_data.join(regional_consumption_data,how='inner')
-        
-        # data['weekday'] = data.index.weekday
-        # weekday_data = dict()
-        # for i in range(0,7):
-        #     weekday_data[i] = (data[data.weekday==i]).total_energie_soutiree_wh.values
+        for reg_code in dict_region_code_region_name.keys():
+            # la Corse n'est pas intégrée par Enedis
+            if reg_code == 94:
+                continue
+            # reg_code = 76#11#93#76#93
+            year = None
+            city = dict_region_code_chef_lieu.get(reg_code)
+            reg_name = dict_region_code_region_name.get(reg_code)
             
-        # fig,ax = plt.subplots(figsize=(5,5),dpi=300)
-        # ax.errorbar(list(weekday_data.keys()),[np.nanmean(weekday_data.get(i)) for i in range(0,7)], yerr = [np.nanstd(weekday_data.get(i)) for i in range(0,7)])
+            if year is None:
+                meteo_data = get_meteo_data(city,[2022,2024])
+                year = '2022-2024'
+            else:
+                meteo_data = get_meteo_data(city,[year,year])
+            data = meteo_data.join(regional_consumption_data,how='inner')
+            
+            # data['weekday'] = data.index.weekday
+            # weekday_data = dict()
+            # for i in range(0,7):
+            #     weekday_data[i] = (data[data.weekday==i]).total_energie_soutiree_wh.values
+                
+            # fig,ax = plt.subplots(figsize=(5,5),dpi=300)
+            # ax.errorbar(list(weekday_data.keys()),[np.nanmean(weekday_data.get(i)) for i in range(0,7)], yerr = [np.nanstd(weekday_data.get(i)) for i in range(0,7)])
+            
+            
+            data = data.dropna(axis=0)#[:20000]
+            data_temperature_sorted = data.copy().sort_values(by='temperature_2m')
+            
+            x = data_temperature_sorted.temperature_2m.values
+            y = data_temperature_sorted['total_energie_soutiree_wh_reg_{}'.format(reg_code)].values/data_temperature_sorted['nb_points_soutirage_reg_{}'.format(reg_code)].values
+            
+            # p0 = (10, 20, 200, 1,1)
+            # popt , e = curve_fit(piecewise_linear, x, y, p0=p0)
+            
+            # r2 = r2_score(y,yd)
+            
+            Th_opt, Tc_opt, C0_opt, kh_opt, kc_opt, r2_value = identify_thermal_sensitivity(x, y)
+            yd = piecewise_linear(x, *(Th_opt, Tc_opt, C0_opt, kh_opt, kc_opt))
+            # Tc_opt = min(x.max(),Tc_opt)
+            # print(reg_name, popt)
         
-        def piecewise_linear(T, Th, Tc, C0, kh, kc):
-            res = np.piecewise(T, [T < Th, (T >= Th)&(T<=Tc), T>Tc], [lambda T: -kh*(T-Th) + C0, lambda T: C0, lambda T: kc*(T-Tc)+C0])
-            return res
-        
-
-        data = data.dropna(axis=0)#[:20000]
-        data_temperature_sorted = data.copy().sort_values(by='temperature_2m')
-        
-        x = data_temperature_sorted.temperature_2m.values
-        y = data_temperature_sorted['total_energie_soutiree_wh_reg_{}'.format(reg_code)].values/data_temperature_sorted['nb_points_soutirage_reg_{}'.format(reg_code)].values
-        
-        p0 = (10, 20, 200, 1,1)
-        popt , e = curve_fit(piecewise_linear, x, y, p0=p0)
-        yd = piecewise_linear(x, *popt)
-        r2 = r2_score(y,yd)
-        
-        Th_opt, Tc_opt, C0_opt, kh_opt, kc_opt = popt
-        print(popt)
-    
-        fig,ax = plt.subplots(figsize=(5,5),dpi=300)
-        ax.plot(x,y,alpha=0.1, ls='',marker='.',label='raw_data')
-        label_fit = 'pw linear (R$^2$ = {:.2f})\n   kh=-{:.1f} Wh/K\n   kc={:.2f} Wh/K'.format(r2,kh_opt,kc_opt)
-        ax.plot(x,yd ,label=label_fit)
-        
-        ax.set_ylim(bottom=0.)
-        ylim = ax.get_ylim()
-        
-        ax.plot([Th_opt,Th_opt],ylim,color='k',alpha=0.4)
-        ax.text(Th_opt,10,'{:.1f}°C '.format(Th_opt),horizontalalignment='right',verticalalignment='bottom')
-        ax.plot([Tc_opt,Tc_opt],ylim,color='k',alpha=0.4)
-        ax.text(Tc_opt,10,' {:.1f}°C'.format(Tc_opt),horizontalalignment='left',verticalalignment='bottom')
-        
-        ax.set_ylim(ylim)
-        
-        ax.set_title('{} ({})'.format(reg_name, year))
-        ax.legend(loc='upper right')
-        plt.savefig(os.path.join(figs_folder,'{}.png'.format('thermosensibilite_reg{}_{}'.format(reg_code, year))),bbox_inches='tight')
-        plt.show()
+            fig,ax = plt.subplots(figsize=(5,5),dpi=300)
+            ax.plot(x,y,alpha=0.1, ls='',marker='.',label='raw_data')
+            label_fit = 'pw linear (R$^2$ = {:.2f})\n   kh=-{:.1f} Wh/K\n   kc={:.2f} Wh/K\n   C0={:.2f} Wh'.format(r2_value,kh_opt,kc_opt,C0_opt)
+            ax.plot(x,yd ,label=label_fit)
+            
+            ax.set_ylim(bottom=0.)
+            ylim = ax.get_ylim()
+            
+            ax.plot([Th_opt,Th_opt],ylim,color='k',alpha=0.4)
+            ax.text(Th_opt,10,'{:.1f}°C '.format(Th_opt),horizontalalignment='right',verticalalignment='bottom')
+            ax.plot([Tc_opt,Tc_opt],ylim,color='k',alpha=0.4)
+            ax.text(Tc_opt,10,' {:.1f}°C'.format(Tc_opt),horizontalalignment='left',verticalalignment='bottom')
+            
+            ax.set_ylim(ylim)
+            
+            ax.set_title('{} ({})'.format(reg_name, year))
+            ax.legend(loc='upper right')
+            plt.savefig(os.path.join(figs_folder,'{}.png'.format('thermosensibilite_reg{}_{}'.format(reg_code, year))),bbox_inches='tight')
+            plt.show()
         
         
         
