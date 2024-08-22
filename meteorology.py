@@ -187,6 +187,7 @@ def get_meteo_units(longitude, latitude, year, hourly_variables=['temperature_2m
     return d
 
 
+
 def main():
     tic = time.time()
     
@@ -207,7 +208,7 @@ def main():
     # -------------------------------------------------------------------------
     
     # Affichage des données météo
-    if True:
+    if False:
         city = 'Paris'
         year = 2022
         
