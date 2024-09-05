@@ -308,26 +308,35 @@ def main():
     floor_surface     = 60 # m2
     height            = 3 # m
     wall_thickness    = 0.3 # m
-    # volume            = floor_surface * height
+    volume            = floor_surface * height
     wall_length       = np.sqrt(floor_surface)
     perimeter         = wall_length * 4
     heat_loss_surface = perimeter * height
     
-    # Définition des paramètres matériaux (https://rt-re-batiment.developpement-durable.gouv.fr/IMG/pdf/2-fascicule_materiaux.pdf)
+    # Définition des paramètres matériaux (https://rt-re-batiment.developpement-durable.gouv.fr/IMG/pdf/2-fascicule_materiaux.pdf )
     lambda_wall = 2.8 # W/(m.K)
     rho_wall    = 2600 # kg/m3
     Cp_wall     = 1000 # J/(kg.K)
     volume_wall = heat_loss_surface * wall_thickness
     mass_wall   = rho_wall * volume_wall
     
-    # lambda_air = 0.025 # W/(m.K)
-    # rho_air    = 1.2 # kg/m3
-    # Cp_air     = 1000 # J/(kg.K)
-    # mass_air   = rho_air * volume
+    # Caractéristiques thermiques pour la laine de verre
+    lambda_wool = 0.044 # W/(m.K)
+    rho_wool    = 100 # kg/m3
+    Cp_wool     = 1030 # J/(kg.K)
+    wool_thickness = 0.1 # m
+    volume_wool = heat_loss_surface * wool_thickness
+    mass_wool = rho_wool * volume_wool
+    
+    lambda_air = 0.025 # W/(m.K)
+    rho_air    = 1.2 # kg/m3
+    Cp_air     = 1000 # J/(kg.K)
+    mass_air   = rho_air * volume
     
     R_wall = wall_thickness/(lambda_wall*heat_loss_surface)
+    R_wool = wool_thickness/(lambda_wool*heat_loss_surface)
     C_wall = Cp_wall*mass_wall
-    # C_air = Cp_air*mass_air
+    C_air = Cp_air*mass_air
     
     # Définition des consignes de température
     Ti_min = 20 # °C
@@ -355,19 +364,33 @@ def main():
     
     
     # Résolution du modèle R2C2
+    # X_R2C2, P_th = run_R2C2_model_simulation(data=data_high_res, 
+    #                                           R1=R_wall/2, 
+    #                                           R2=R_wall/2, 
+    #                                           C1=C_wall/2, 
+    #                                           C2=C_wall/2, 
+    #                                           Ti_min=Ti_min, 
+    #                                           Ti_max=Ti_max, 
+    #                                           P_heater_max=q_max_heater*0, 
+    #                                           P_cooler_max=q_max_cooler*0,
+    #                                           P_internal=q_internal,
+    #                                           solar_gain=q_solar_gain,
+    #                                           heater_method='linear_tolerance',
+    #                                           cooler_method='all_or_nothing')
+    
     X_R2C2, P_th = run_R2C2_model_simulation(data=data_high_res, 
-                                             R1=R_wall/2, 
-                                             R2=R_wall/2, 
-                                             C1=C_wall/2, 
-                                             C2=C_wall/2, 
-                                             Ti_min=Ti_min, 
-                                             Ti_max=Ti_max, 
-                                             P_heater_max=q_max_heater, 
-                                             P_cooler_max=q_max_cooler,
-                                             P_internal=q_internal,
-                                             solar_gain=q_solar_gain,
-                                             heater_method='linear_tolerance',
-                                             cooler_method='all_or_nothing')
+                                              R1=R_wall/2+R_wool, # TODO prendre en compte la présence d'isolants
+                                              R2=R_wall/2, 
+                                              C1=C_wall, 
+                                              C2=C_air, 
+                                              Ti_min=Ti_min, 
+                                              Ti_max=Ti_max, 
+                                              P_heater_max=q_max_heater, 
+                                              P_cooler_max=q_max_cooler,
+                                              P_internal=q_internal*0,
+                                              solar_gain=q_solar_gain,
+                                              heater_method='linear_tolerance',
+                                              cooler_method='linear_tolerance')
     
     # R1_test, R2_test, C1_test, C2_test = 2.13e-2, 2.37e-3, 1.56e7, 1.93e6
     # X_R2C2, P_th = run_R2C2_model_simulation(data=data_high_res, 
@@ -398,8 +421,8 @@ def main():
     X_R2C0, P_th_lin = run_R1C0_model_simulation(data=data_high_res, 
                                                   R1=R_wall/2, 
                                                   R2=R_wall/2, 
-                                                  C1=C_wall/2, 
-                                                  C2=C_wall/2, 
+                                                  C1=C_wall, 
+                                                  C2=C_air, 
                                                   Ti_min=Ti_min, 
                                                   Ti_max=Ti_max, 
                                                   P_heater_max=q_max_heater*10, 
@@ -425,13 +448,13 @@ def main():
     
     
     
-    if False:
+    if True:
         cols = ['temperature_2m', 'internal_wall_temperature', 'indoor_temperature']
         plot_timeserie(data[cols], labels=['{} (°C)'.format(c) for c in cols], figsize=(15,5), figs_folder = figs_folder,
                        xlim=[pd.to_datetime('{}-01-01'.format(year)), pd.to_datetime('{}-12-31'.format(year))])
   
                   
-    if False:
+    if True:
         cols = ['q_heater', 'q_cooler', 'q_solar', 'q_internal', 'q_thermal']
         plot_timeserie(data[cols], labels=['{} (W)'.format(c) for c in cols], figsize=(15,5), figs_folder = figs_folder,
                        xlim=[pd.to_datetime('{}-01-01'.format(year)), pd.to_datetime('{}-12-31'.format(year))])
@@ -449,13 +472,13 @@ def main():
     
     if True:
         fig,ax = plt.subplots(dpi=300,figsize=(5,5))
-        ax.plot(data[data.q_heater>0]['temperature_2m'], data[data.q_heater>0]['q_heater'], ls='',marker='.',color='k',alpha=0.4)
-        ax.plot(data[data.q_cooler<0]['temperature_2m'], -data[data.q_cooler<0]['q_cooler'], ls='',marker='.',color='k',alpha=0.4)
+        ax.plot(data[data.q_heater>0]['temperature_2m'].iloc[100:], data[data.q_heater>0]['q_heater'].iloc[100:], ls='',marker='.',color='k',alpha=0.4)
+        ax.plot(data[data.q_cooler<0]['temperature_2m'].iloc[100:], -data[data.q_cooler<0]['q_cooler'].iloc[100:], ls='',marker='.',color='k',alpha=0.4)
         plt.show()
         
     monthly_data = data[['q_heater', 'q_cooler', 'q_solar', 'q_internal', 'q_thermal']].groupby(pd.Grouper(freq='MS')).sum()
     
-    if False:
+    if True:
         print('Consommation de chauffage :')
         for d in monthly_data.index:
             print('{} : {:.0f} kW'.format(d.strftime('%b'), monthly_data.loc[d].q_heater/1000))
