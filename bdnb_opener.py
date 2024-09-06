@@ -34,6 +34,7 @@ from PIL import Image
 import json
 from urllib.error import HTTPError
 from unidecode import unidecode
+from pyogrio.errors import DataSourceError
 # from pyproj import Transformer
 
 pd.set_option('future.no_silent_downcasting', True)
@@ -45,9 +46,9 @@ pd.set_option('future.no_silent_downcasting', True)
 # Fonctions relatives à l'ouverture (optimale) de la BDNB
 # =============================================================================
 
-def get_layer_names():
+def get_layer_names(dep='75'):
     # tested file
-    file = os.path.join('data','BDNB','open_data_millesime_2023-11-a_dep75_gpkg','gpkg','bdnb.gpkg')
+    file = os.path.join('data','BDNB','open_data_millesime_2023-11-a_dep{}_gpkg'.format(dep),'gpkg','bdnb.gpkg')
     
     # list of layers in file
     layers_list = fiona.listlayers(file)
@@ -55,9 +56,9 @@ def get_layer_names():
     return layers_list
     
 
-def speed_test_opening(dask_only=False, plot=False):
+def speed_test_opening(dep='75',dask_only=False, plot=False):
     # tested file
-    file = os.path.join('data','BDNB','open_data_millesime_2023-11-a_dep75_gpkg','gpkg','bdnb.gpkg')
+    file = os.path.join('data','BDNB','open_data_millesime_2023-11-a_dep{}_gpkg'.format(dep),'gpkg','bdnb.gpkg')
     
     if dask_only:
         test_npartitions = False
@@ -117,12 +118,15 @@ def speed_test_opening(dask_only=False, plot=False):
         return methods_speed_dict
 
 
-def get_bdnb(chunksize=5e4):
-    file = os.path.join('data','BDNB','open_data_millesime_2023-11-a_dep75_gpkg','gpkg','bdnb.gpkg')
-    bdnb_dpe_logement = dask_geopandas.read_file(file, chunksize=chunksize, layer='dpe_logement')
-    bdnb_rel_batiment_groupe_dpe_logement = dask_geopandas.read_file(file, chunksize=chunksize, layer='rel_batiment_groupe_dpe_logement')
-    bdnb_batiment_groupe_compile = dask_geopandas.read_file(file, chunksize=chunksize, layer='batiment_groupe_compile')
-    # batiment_groupe_id
+def get_bdnb(dep='75',chunksize=5e4):
+    file = os.path.join('data','BDNB','open_data_millesime_2023-11-a_dep{}_gpkg'.format(dep),'gpkg','bdnb.gpkg')
+    try:
+        bdnb_dpe_logement = dask_geopandas.read_file(file, chunksize=chunksize, layer='dpe_logement')
+        bdnb_rel_batiment_groupe_dpe_logement = dask_geopandas.read_file(file, chunksize=chunksize, layer='rel_batiment_groupe_dpe_logement')
+        bdnb_batiment_groupe_compile = dask_geopandas.read_file(file, chunksize=chunksize, layer='batiment_groupe_compile')
+    except DataSourceError:
+        # TODO: télécharger le fichier manquant
+        raise DataSourceError('Fichier {} indisponible.'.format(file))
     return bdnb_dpe_logement, bdnb_rel_batiment_groupe_dpe_logement, bdnb_batiment_groupe_compile
     
 
@@ -732,16 +736,16 @@ def get_filtered_suspicious_DPE(path, force=False, show_details=True):
                 difference_1 = difference_1.set_index('variables')
                 difference_2 = difference_2.set_index('variables')
                 
-                # filtre sur au moins un élément de l'adresse qui ne coincide pas (très large)
-                filter_address_infos = not any(['adresse_bien' in e for e in difference_1.index.values])
+                # # filtre sur au moins un élément de l'adresse qui ne coincide pas (très large)
+                # filter_address_infos = not any(['adresse_bien' in e for e in difference_1.index.values])
                 
-                # filtre sur le nombre de mur et leur orientation (filtre fin)
-                filter_walls_orientation = True
-                if 'mur--orientation' in difference_1.index.values:
-                    murs_1 = sorted(difference_1.loc['mur--orientation'].values[0])
-                    murs_2 = sorted(difference_2.loc['mur--orientation'].values[0])
-                    if murs_1 != murs_2:
-                        filter_walls_orientation = False
+                # # filtre sur le nombre de mur et leur orientation (filtre fin)
+                # filter_walls_orientation = True
+                # if 'mur--orientation' in difference_1.index.values:
+                #     murs_1 = sorted(difference_1.loc['mur--orientation'].values[0])
+                #     murs_2 = sorted(difference_2.loc['mur--orientation'].values[0])
+                #     if murs_1 != murs_2:
+                #         filter_walls_orientation = False
                 
                 # ajout d'un filtre sur l'étage du logement (si donnée disponible)
                 filter_floor_number = True
@@ -1038,7 +1042,7 @@ def draw_city_map(list_bg_id, city='Paris', style='map',figsize=20, grey_backgro
         return fig,ax
     
     
-def plot_dpe_distribution(path, save=True, max_xlim=600):
+def plot_dpe_distribution(path, dep='75', save=True, max_xlim=600):
     """
     graphe de la distribution des DPE, en indiquant les limites entre catégories
 
@@ -1055,14 +1059,13 @@ def plot_dpe_distribution(path, save=True, max_xlim=600):
         DESCRIPTION.
 
     """
-    def get_dpe_conso():
-        dpe_data, _ , _ = get_bdnb()
+    def get_dpe_conso(dep):
+        dpe_data, _ , _ = get_bdnb(dep)
         dpe_data = dpe_data[dpe_data.type_dpe=='dpe arrêté 2021 3cl logement'][['conso_5_usages_ep_m2','conso_5_usages_ef_m2']].compute() 
         return dpe_data
     
-    save = True
-    
-    dpe_data = get_dpe_conso()
+    dpe_data = get_dpe_conso(dep=dep)
+    dpe_data = dpe_data.dropna()
     dpe_data = dpe_data.map(int)
     counter_dict = dict(Counter(dpe_data.conso_5_usages_ep_m2))
     counter_dict_sorted = {k: v for k, v in sorted(counter_dict.items(), key=lambda item: item[0])}
@@ -1079,15 +1082,14 @@ def plot_dpe_distribution(path, save=True, max_xlim=600):
         ax.bar(list(counter_dict_eti.keys()), list(counter_dict_eti.values()), width=1., color=color, label=eti)
     
     ax.set_xlim([0,max_xlim])
-    ax.set_ylabel("Nombre d'observations")
+    ax.set_ylabel("Nombre d'observations (département {})".format(dep))
     ax.legend()
     ax.set_xlabel("Consommation annuelle en énergie primaire (kWh.m$^{-2}$)")
     ax.set_xticks(ticks=[int(x) for x in list(set(list(np.asarray(list(etiquette_ep_dict.values())).flatten()))) if not np.isinf(x)] + [max_xlim])
     if save:
-        save_path = os.path.join(path,'figs','distribution_dpe.png')
-    else:
-        save_path = None
-    plt.savefig(save_path, bbox_inches='tight')
+        save_path = os.path.join(path,'figs','distribution_dpe_{}.png'.format(dep))
+        plt.savefig(save_path, bbox_inches='tight')
+
     plt.show()
     plt.close()
     return 
@@ -1347,6 +1349,7 @@ def main():
     output_path = os.path.join(output_folder,folder)
     
     departement = '75' # pas encore prévu pour que ça puisse être différent
+    departement = '24'
     
     # get layers name
     if False:
@@ -1360,7 +1363,8 @@ def main():
 
     # graphe des distribution des DPE présents dans la BDNB (paris pour l'instant)
     if True:
-        plot_dpe_distribution(path=output_path,max_xlim=600)
+        # uniquement cette fonction a été mise à jour pour le changement le département 
+        plot_dpe_distribution(dep=departement, path=output_path,max_xlim=600)
     
     # plot des diagnostics suspects
     if False:
@@ -1477,7 +1481,7 @@ def main():
         
             
     # filtre des couples de DPE faux positifs 
-    if True:
+    if False:
         # TODO : à vérifier 
         sbgd_filtered_dpe_id, sbgd_filtered_dpe_number = get_filtered_suspicious_DPE(path=output_path,show_details=True, force=False)
         
