@@ -224,9 +224,10 @@ def main():
             plot_timeserie(data[[c]], labels=['{} ({})'.format(c,meteo_units.get(c))], figsize=(15,5),figs_folder = figs_folder,
                            xlim=[pd.to_datetime('{}-01-01'.format(year)), pd.to_datetime('{}-12-31'.format(year))])
     
+    
     # étude de la température du sol en fonction de la température de surface 
     if True:
-        city = 'Paris'
+        city = 'Marseille'
         year = 2022
         variables = ['temperature_2m','soil_temperature_0_to_7cm','soil_temperature_7_to_28cm','soil_temperature_28_to_100cm','soil_temperature_100_to_255cm']
         
@@ -275,8 +276,6 @@ def main():
                 D = lambda_th/(rho*cp) #m2/s
             
                 t = np.arange(0,len(data_high_res))
-                # theta_g0 = data_res.temperature_2m.mean()-4 # TODO, à modifier en fonction de la profondeur
-                
                 
                 depth_col_list = []
                 for depth in tqdm.tqdm(depth_list):
@@ -294,19 +293,13 @@ def main():
                 return data_res
                 
             
-            # list des profondeur modélisées
-            # depth_list = [x/100 for x in [7, 28, 100, 255, 500]]
-            # depth_list = [x/100 for x in np.linspace(5,1000,30)]
-            
-            # data = model_ground_temperature(depth_list, data)
-            
             # Affichage des séries temporelles
-            if True:
+            if False:
                 depth_list = [x/100 for x in [64,178]]
-                data = model_ground_temperature(depth_list, data)
+                ground_data = model_ground_temperature(depth_list, data)
                 
-                plot_timeserie(data[['soil_temperature_28_to_100cm','modelled_soil_temperature_64cm',
-                                     'soil_temperature_100_to_255cm','modelled_soil_temperature_178cm']], 
+                plot_timeserie(ground_data[['soil_temperature_28_to_100cm','modelled_soil_temperature_64cm',
+                                            'soil_temperature_100_to_255cm','modelled_soil_temperature_178cm']], 
                                figsize=(15,5),figs_folder = figs_folder,
                                xlim=[pd.to_datetime('{}-01-01'.format(year)), pd.to_datetime('{}-12-31'.format(year))])
             
@@ -330,46 +323,86 @@ def main():
                     
                 ax.plot([data.temperature_2m.median(),data.temperature_2m.median()],[min(depth_list), max(depth_list)],color='k')
                 plt.show()
-                
-            # Affichage de la température en fonction de la profondeur par modélisation
+        
+        
+            # Affichage (moche) de la température en fonction de la profondeur par modélisation
             if False:
+                # liste des profondeur modélisées
+                depth_list = [x/100 for x in np.linspace(5,1000,20)]
+                ground_data = model_ground_temperature(depth_list, data)
+                
                 fig, ax = plt.subplots(figsize=(5,5),dpi=300)
                 for depth in depth_list:
                     modelled_col = 'modelled_soil_temperature_{:.0f}cm'.format(depth*100)
-                    ax.plot(data[modelled_col].values, [depth]*len(data),ls='',marker='.',color='tab:blue',alpha=0.01)
+                    ax.plot(ground_data[modelled_col].values, [depth]*len(ground_data),ls='',marker='.',color='tab:blue',alpha=0.01)
                 ax.set_ylim(ax.get_ylim()[::-1])
-                ax.plot([data.temperature_2m.median(),data.temperature_2m.median()],[min(depth_list), max(depth_list)],color='k')
+                ax.plot([ground_data.temperature_2m.median(),ground_data.temperature_2m.median()],[min(depth_list), max(depth_list)],color='k')
                 ax.set_ylabel('Profondeur (m)')
                 ax.set_ylabel('Température du sol (°C)')
                 plt.show()
             
             
-            # Même affichage avec des moyennes par saison (ou par mois ?)
+            # Affichage des températures sous terraines avec des moyennes par saison (ou par mois ?)
             if False:
-                fig, ax = plt.subplots(figsize=(5,5),dpi=300)
-                seasons_dict = {'DJF':([12,1,2],'tab:blue'),
-                                'MAM':([3,4,5],'tab:green'),
-                                'JJA':([6,7,8],'tab:red'),
-                                'SON':([9,10,11],'tab:orange')}
-                for season in seasons_dict.keys():
-                    season_months, season_color = seasons_dict.get(season)
-                    season_mean = data[data.index.month.isin(season_months)]
-                    season_mean = pd.DataFrame(season_mean.mean()).T
-                    
-                    season_plot = []
-                    for depth in depth_list:
-                        modelled_col = 'modelled_soil_temperature_{:.0f}cm'.format(depth*100)
-                        season_plot.append(season_mean[modelled_col].values[0])
+                season = True
+                month = True
+                
+                # liste des profondeur modélisées
+                depth_list = [x/100 for x in np.linspace(5,1000,30)]
+                ground_data = model_ground_temperature(depth_list, data)
+                
+                if season:
+                    fig, ax = plt.subplots(figsize=(5,5),dpi=300)
+                    seasons_dict = {'DJF':([12,1,2],'tab:blue'),
+                                    'MAM':([3,4,5],'tab:green'),
+                                    'JJA':([6,7,8],'tab:red'),
+                                    'SON':([9,10,11],'tab:orange')}
+                    for season in seasons_dict.keys():
+                        season_months, season_color = seasons_dict.get(season)
+                        season_mean = ground_data[ground_data.index.month.isin(season_months)]
+                        season_mean = pd.DataFrame(season_mean.mean()).T
                         
-                    ax.plot(season_plot, depth_list,color=season_color,label=season)
+                        season_plot = []
+                        for depth in depth_list:
+                            modelled_col = 'modelled_soil_temperature_{:.0f}cm'.format(depth*100)
+                            season_plot.append(season_mean[modelled_col].values[0])
+                            
+                        ax.plot(season_plot, depth_list,color=season_color,label=season)
+                        
+                    ax.set_ylim(ax.get_ylim()[::-1])
+                    ax.legend()
+                    ax.plot([ground_data.temperature_2m.median(),ground_data.temperature_2m.median()],[min(depth_list), max(depth_list)],color='k')
+                    ax.set_ylabel('Profondeur (m)')
+                    ax.set_xlabel('Température du sol (°C)')
+                    plt.savefig(os.path.join(figs_folder,'{}.png'.format('modelling_of_ground_temperature_seasons')),bbox_inches='tight')
+                    plt.show()
                     
-                ax.set_ylim(ax.get_ylim()[::-1])
-                ax.legend()
-                ax.plot([data.temperature_2m.median(),data.temperature_2m.median()],[min(depth_list), max(depth_list)],color='k')
-                ax.set_ylabel('Profondeur (m)')
-                ax.set_xlabel('Température du sol (°C)')
-                plt.savefig(os.path.join(figs_folder,'{}.png'.format('modelling_of_ground_temperature')),bbox_inches='tight')
-                plt.show()
+                if month:
+                    fig, ax = plt.subplots(figsize=(5,5),dpi=300)
+                    cmap = plt.colormaps.get_cmap('viridis')
+                    line_styles = ['-',':','--','-.']
+                    
+                    month_dict = {pd.to_datetime('2000-{:02d}-01'.format(m)).strftime('%B'):([m],cmap(0.5-np.cos(2*np.pi*(m-1)/12)/2),line_styles[m%4]) for m in range(1,13)}
+
+                    for month in month_dict.keys():
+                        month_months, month_color, ls_month = month_dict.get(month)
+                        month_mean = ground_data[ground_data.index.month.isin(month_months)]
+                        month_mean = pd.DataFrame(month_mean.mean()).T
+                        
+                        month_plot = []
+                        for depth in depth_list:
+                            modelled_col = 'modelled_soil_temperature_{:.0f}cm'.format(depth*100)
+                            month_plot.append(month_mean[modelled_col].values[0])
+                            
+                        ax.plot(month_plot, depth_list,color=month_color,ls=ls_month,label=month)
+                        
+                    ax.set_ylim(ax.get_ylim()[::-1])
+                    ax.legend()
+                    ax.plot([ground_data.temperature_2m.median(),ground_data.temperature_2m.median()],[min(depth_list), max(depth_list)],color='k')
+                    ax.set_ylabel('Profondeur (m)')
+                    ax.set_xlabel('Température du sol (°C)')
+                    plt.savefig(os.path.join(figs_folder,'{}.png'.format('modelling_of_ground_temperature_months')),bbox_inches='tight')
+                    plt.show()
             
             
         
