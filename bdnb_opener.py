@@ -873,7 +873,8 @@ def draw_local_map(geometry,style='map',figsize=12, radius=370, grey_background=
     top_left = cgeo.Geodesic().direct(points=(lon,lat),azimuths=-45,distances=dist_cnr)[:,0:2][0]
     bot_right = cgeo.Geodesic().direct(points=(lon,lat),azimuths=135,distances=dist_cnr)[:,0:2][0]
     extent = [float(f) for f in [top_left[0], bot_right[0], bot_right[1], top_left[1]]]
-    ax.set_extent(extent, crs=ccrs.PlateCarree()) # ça marche plus 
+    # TODO mettre à jour conda et vérifier si ça remarche
+    ax.set_extent(extent, crs=ccrs.PlateCarree()) # ça marche plus, bug dans les maj de l'environnement
     
     # add OSM with zoom specification
     ax.add_image(img, int(scale)) 
@@ -1349,7 +1350,7 @@ def main():
     output_path = os.path.join(output_folder,folder)
     
     departement = '75' # pas encore prévu pour que ça puisse être différent
-    departement = '24'
+    # departement = '24'
     
     # get layers name
     if False:
@@ -1360,9 +1361,11 @@ def main():
     if False:
         print(speed_test_opening()) 
         print(speed_test_opening(dask_only=True, plot=True)) 
+    
 
+    
     # graphe des distribution des DPE présents dans la BDNB (paris pour l'instant)
-    if True:
+    if False:
         # uniquement cette fonction a été mise à jour pour le changement le département 
         plot_dpe_distribution(dep=departement, path=output_path,max_xlim=600)
     
