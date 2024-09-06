@@ -275,7 +275,7 @@ def suspect_identification(path,plot=False, force=False, number_batiment_groupe=
     return len(batiment_group_list)
 
 
-def plot_raw_suspects(folder,output_folder):
+def plot_raw_suspects(folder,output_folder,suspect_folder):
     """
     Visualisation de la première sélection brute de suspects potentiels
 
@@ -287,7 +287,7 @@ def plot_raw_suspects(folder,output_folder):
     if folder not in os.listdir(output_folder):
         suspect_identification(path=os.path.join(output_folder,folder))
     
-    done_batiment_group_list = os.listdir(os.path.join(output_folder, folder))
+    done_batiment_group_list = os.listdir(os.path.join(output_folder, folder,suspect_folder))
     done_batiment_group_list = [s.replace('.csv','') for s in done_batiment_group_list if s.endswith('.csv')]
     
     if len(done_batiment_group_list) == 0:
@@ -296,7 +296,8 @@ def plot_raw_suspects(folder,output_folder):
         done_batiment_group_list = [s.replace('.csv','') for s in done_batiment_group_list if s.endswith('.csv')]
         
     for bg_id in tqdm.tqdm(done_batiment_group_list):
-        df_dpe_bg_id = pd.read_csv(os.path.join(output_folder, folder,'{}.csv'.format(bg_id)))
+        df_dpe_bg_id = pd.read_csv(os.path.join(output_folder, folder, suspect_folder,'{}.csv'.format(bg_id)))
+        # print(bg_id, df_dpe_bg_id.columns)
         df_dpe_bg_id['date_etablissement_dpe'] = [pd.to_datetime(t) for t in df_dpe_bg_id.date_etablissement_dpe]
         
         if 'figs' not in os.listdir(os.path.join(output_folder, folder)):
@@ -811,7 +812,7 @@ def get_filtered_suspicious_DPE(path, force=False, show_details=True):
     if show_details:
         if number_batiment_groupe == 'all':
             number_batiment_groupe = 49304
-        print('\nPourcentage de bâtiments présentants des DPE suspicieux :')
+        print('\nPourcentage de bâtiments présentants des DPE suspects :')
         print('\t- {:.1f}% ({}/{})'.format(number_suspicious_bg/number_batiment_groupe*100,number_suspicious_bg, number_batiment_groupe))
         
         print("\nGains moyens d'étiquettes :")
@@ -1345,6 +1346,8 @@ def main():
     
     output_path = os.path.join(output_folder,folder)
     
+    departement = '75' # pas encore prévu pour que ça puisse être différent
+    
     # get layers name
     if False:
         layers = get_layer_names()
@@ -1356,12 +1359,12 @@ def main():
         print(speed_test_opening(dask_only=True, plot=True)) 
 
     # graphe des distribution des DPE présents dans la BDNB (paris pour l'instant)
-    if False:
+    if True:
         plot_dpe_distribution(path=output_path,max_xlim=600)
     
     # plot des diagnostics suspects
     if False:
-        plot_raw_suspects(folder,output_folder)
+        plot_raw_suspects(folder,output_folder,'raw_suspicious_DPE')
     
     # neighbourhood map
     if False:
@@ -1378,7 +1381,7 @@ def main():
             
             
     # analyse des champs modifier pour obtenir des gains de DPE pour un bâtiment individuel (tests)
-    if True:
+    if False:
         number_batiment_groupe = 'all' 
                     
         # test = 'bdnb-bg-RGSM-7GV4-4QBK' # appartement avec un echangement d'isolation et de chauffage 
@@ -1401,7 +1404,7 @@ def main():
         infos_test = get_batiment_groupe_infos(test,variables=['l_libelle_adr','nb_log','annee_construction'])
         
         suspicious_batiment_group_dict_dpe_id, suspicious_batiment_group_dict_dpe_number = analysis_suspicious_DPE(save_path=output_path, number_batiment_groupe=number_batiment_groupe, plot=[test], details=False)
-        neighbourhood_map(path=output_path, batiment_groupe_id=test)
+        # neighbourhood_map(path=output_path, batiment_groupe_id=test)
         
         test_dpe_ids = suspicious_batiment_group_dict_dpe_id.get(test)[0]
         gains_test_dpe = suspicious_batiment_group_dict_dpe_number.get(test)[0]
@@ -1426,8 +1429,8 @@ def main():
         difference_1.to_csv(os.path.join(output_folder,folder,'diff_{}.csv'.format(test_dpe_ids[0])))
         difference_2.to_csv(os.path.join(output_folder,folder,'diff_{}.csv'.format(test_dpe_ids[1])))
     
-        print(difference_1.set_index('variables').index.to_list())
-        print(difference_2.set_index('variables').index.to_list())
+        # print(difference_1.set_index('variables').index.to_list())
+        # print(difference_2.set_index('variables').index.to_list())
         # print()
         # print(difference_1.set_index('variables').loc['inertie--classe_inertie'].values)
         # print(difference_2.set_index('variables').loc['inertie--classe_inertie'].values)
@@ -1474,7 +1477,7 @@ def main():
         
             
     # filtre des couples de DPE faux positifs 
-    if False:
+    if True:
         # TODO : à vérifier 
         sbgd_filtered_dpe_id, sbgd_filtered_dpe_number = get_filtered_suspicious_DPE(path=output_path,show_details=True, force=False)
         
