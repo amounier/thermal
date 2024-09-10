@@ -1489,7 +1489,7 @@ def main():
         sbgd_filtered_dpe_id, sbgd_filtered_dpe_number = get_filtered_suspicious_DPE(path=output_path,show_details=True, force=False)
         
     # statistiques sur les données DPE de différence
-    if False:
+    if True:
         import ast
         
         dpe_change = get_dpe_change_details(path=output_path,force=False)
@@ -1600,6 +1600,8 @@ def main():
         ax.barh(range(len(sorted_res_group)), list(sorted_res_group.values()), align='center')
         ax.set_yticks(range(len(sorted_res_group)), list(sorted_res_group.keys()))
         ax.set_xlim(right=len(dpe_change))
+        ax.set_xlabel("Nombre d'observations (N={})".format(len(dpe_change)))
+        ax.set_ylabel('Catégories des différentes variables renseignées')
         plt.show()
         
         
@@ -1674,9 +1676,11 @@ def main():
             counter_var = dict(Counter(round(dpe_change_plot.ffo_bat_annee_construction.dropna()/rounder)*rounder))
             
             fig,ax = plot_var_distribution(var='ffo_bat_annee_construction', path=output_path,min_xlim=1600,rounder=rounder,percentage=True,max_xlim=2020,show=False,alpha=alpha,save=False)
-            ax.bar(np.asarray(list(counter_var.keys())), np.asarray(list(counter_var.values()))/sum(counter_var.values())*100, width=rounder, color='tab:blue',alpha=alpha,label='Changement DPE ({})'.format(sum(counter_var.values())))
+            ax.bar(np.asarray(list(counter_var.keys())), np.asarray(list(counter_var.values()))/sum(counter_var.values())*100, width=rounder, color='tab:blue',alpha=alpha,label='Modification DPE ({})'.format(sum(counter_var.values())))
             ax.legend()
             ax.set_xlabel('Année de construction (arrondie à 10 ans)')
+            save_path = os.path.join(output_path,'figs','distribution_periode_constrcution.png')
+            plt.savefig(save_path, bbox_inches='tight')
 
 
     # étude du logiciel de calcul
