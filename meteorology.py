@@ -191,6 +191,9 @@ def get_meteo_units(longitude, latitude, year, hourly_variables=['temperature_2m
     return d
 
 
+#%% ===========================================================================
+# Script principal
+# =============================================================================
 
 def main():
     tic = time.time()
@@ -211,7 +214,7 @@ def main():
         
     # -------------------------------------------------------------------------
     
-    # Affichage des données météo
+    #%% Affichage des données météo
     if False:
         city = 'Paris'
         year = 2022
@@ -225,10 +228,10 @@ def main():
                            xlim=[pd.to_datetime('{}-01-01'.format(year)), pd.to_datetime('{}-12-31'.format(year))])
     
     
-    # étude de la température du sol en fonction de la température de surface 
-    if True:
+    #%% Étude de la température du sol en fonction de la température de surface 
+    if False:
         city = 'Marseille'
-        year = 2022
+        year = 2021
         variables = ['temperature_2m','soil_temperature_0_to_7cm','soil_temperature_7_to_28cm','soil_temperature_28_to_100cm','soil_temperature_100_to_255cm']
         
         coordinates = get_coordinates(city)
@@ -250,9 +253,11 @@ def main():
                 return dtheta_gdt
             
             
-            def get_init_ground_temperature(x,data,xi=1.5,envelope=False):
+            def get_init_ground_temperature(x,data,xi=0.7,envelope=False):
+                data_january = data[data.index.month==1]
+                # TODO : tendance à sous estimer les valeurs : à modifier
                 if envelope:
-                    theta_gs = data.temperature_2m.quantile(0.001)
+                    theta_gs = data_january.temperature_2m.mean()
                 else:
                     theta_gs = data.temperature_2m.values[0]
                 theta_ginf = data.temperature_2m.median()
@@ -294,17 +299,21 @@ def main():
                 
             
             # Affichage des séries temporelles
-            if False:
-                depth_list = [x/100 for x in [64,178]]
+            if True:
+                depth_list = [((1/2)*mh+(1/2)*ml)/100 for ml,mh in [(28,100),(100,255)]]
+                # depth_list = [((2/3)*mh+(1/3)*ml)/100 for ml,mh in [(28,100),(100,255)]]
                 ground_data = model_ground_temperature(depth_list, data)
                 
-                plot_timeserie(ground_data[['soil_temperature_28_to_100cm','modelled_soil_temperature_64cm',
-                                            'soil_temperature_100_to_255cm','modelled_soil_temperature_178cm']], 
+                plot_timeserie(ground_data[['soil_temperature_28_to_100cm',
+                                            'modelled_soil_temperature_64cm',
+                                            'soil_temperature_100_to_255cm',
+                                            'modelled_soil_temperature_178cm',]],
+                                            # 'temperature_2m']], 
                                figsize=(15,5),figs_folder = figs_folder,
                                xlim=[pd.to_datetime('{}-01-01'.format(year)), pd.to_datetime('{}-12-31'.format(year))])
             
             # Affichage de la température en fonction de la profondeur à partir des données Open-Météo
-            if False:
+            if True:
                 fig, ax = plt.subplots(figsize=(5,5),dpi=300)
                 dict_col = {4/100:'soil_temperature_0_to_7cm',
                             18/100:'soil_temperature_7_to_28cm', 
@@ -313,14 +322,16 @@ def main():
                 for depth in dict_col.keys():
                     modelled_col = dict_col.get(depth)
                     ax.plot(data[modelled_col].values, [depth]*len(data),ls='',marker='.',color='tab:blue',alpha=0.01)
+                    ax.plot(data[data.index.month==1][modelled_col].values, [depth]*len(data[data.index.month==1]),ls='',marker='.',color='tab:red',alpha=0.01)
                 ax.set_ylim(ax.get_ylim()[::-1])
                 
                 # calibration de xi pour l'estimation de la température initiale
-                if False:
+                if True:
                     Y = np.linspace(0,3)
-                    X = [get_init_ground_temperature(y, data,xi=1.5,envelope=True) for y in Y]
+                    X = [get_init_ground_temperature(y, data,xi=0.7,envelope=True) for y in Y]
                     ax.plot(X,Y,color='k')
-                    
+                
+                depth_list = [((1/2)*mh+(1/2)*ml)/100 for ml,mh in [(28,100),(100,255)]]
                 ax.plot([data.temperature_2m.median(),data.temperature_2m.median()],[min(depth_list), max(depth_list)],color='k')
                 plt.show()
         
@@ -344,7 +355,7 @@ def main():
             
             # Affichage des températures sous terraines avec des moyennes par saison (ou par mois ?)
             if False:
-                season = True
+                season = False
                 month = True
                 
                 # liste des profondeur modélisées
@@ -401,12 +412,12 @@ def main():
                     ax.plot([ground_data.temperature_2m.median(),ground_data.temperature_2m.median()],[min(depth_list), max(depth_list)],color='k')
                     ax.set_ylabel('Profondeur (m)')
                     ax.set_xlabel('Température du sol (°C)')
-                    plt.savefig(os.path.join(figs_folder,'{}.png'.format('modelling_of_ground_temperature_months')),bbox_inches='tight')
+                    plt.savefig(os.path.join(figs_folder,'{}.png'.format('modelling_of_ground_temperature_months_{}_{}'.format(city,year))),bbox_inches='tight')
                     plt.show()
             
             
         
-        # Affichage des données annuelles
+        #%% Affichage des données annuelles
         if False:
             for i,c in enumerate(variables):
                 if c == variables[0]:
@@ -420,7 +431,7 @@ def main():
                                              xlim=[pd.to_datetime('{}-01-01'.format(year)), pd.to_datetime('{}-12-31'.format(year))])
                 
         
-        # Affichage des versus plot (diagramme de phase)
+        #%% Affichage des versus plot (diagramme de phase)
         if False:
             for i,c in enumerate(variables[1:]):
                 fig,ax = plt.subplots(figsize=(5,5), dpi=300)
