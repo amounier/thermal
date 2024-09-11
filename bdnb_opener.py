@@ -37,7 +37,7 @@ from unidecode import unidecode
 from pyogrio.errors import DataSourceError
 # from pyproj import Transformer
 
-pd.set_option('future.no_silent_downcasting', True)
+
 
 
 
@@ -118,7 +118,43 @@ def speed_test_opening(dep='75',dask_only=False, plot=False):
         return methods_speed_dict
 
 
+def download_bdnb(dep):
+    # TODO: télécharger le fichier manquant
+    url = 'https://open-data.s3.fr-par.scw.cloud/bdnb_millesime_2023-11-a/millesime_2023-11-a_dep{}/open_data_millesime_2023-11-a_dep{}_gpkg.zip'.format(dep,dep)
+    print(url)
+    return 
+    
+
 def get_bdnb(dep='75',chunksize=5e4):
+    """
+    Ouvre de manière non compilée les données de la BDNB d'un département, selon 3 tables:
+        - dpe_logement
+        - rel_batiment_groupe_dpe_logement
+        - batiment_groupe_compile
+
+    Parameters
+    ----------
+    dep : str, optional
+        code du département. The default is '75'.
+    chunksize : float, optional
+        taille des chunk dask. The default is 5e4.
+
+    Raises
+    ------
+    DataSourceError
+        Si le fichier demandé n'est pas disponible.
+
+    Returns
+    -------
+    bdnb_dpe_logement : TYPE
+        DESCRIPTION.
+    bdnb_rel_batiment_groupe_dpe_logement : TYPE
+        DESCRIPTION.
+    bdnb_batiment_groupe_compile : TYPE
+        DESCRIPTION.
+
+    """
+    # TODO : à modifier quand j'aurais les données complètes
     file = os.path.join('data','BDNB','open_data_millesime_2023-11-a_dep{}_gpkg'.format(dep),'gpkg','bdnb.gpkg')
     try:
         bdnb_dpe_logement = dask_geopandas.read_file(file, chunksize=chunksize, layer='dpe_logement')
@@ -126,6 +162,7 @@ def get_bdnb(dep='75',chunksize=5e4):
         bdnb_batiment_groupe_compile = dask_geopandas.read_file(file, chunksize=chunksize, layer='batiment_groupe_compile')
     except DataSourceError:
         # TODO: télécharger le fichier manquant
+        download_bdnb(dep=dep)
         raise DataSourceError('Fichier {} indisponible.'.format(file))
     return bdnb_dpe_logement, bdnb_rel_batiment_groupe_dpe_logement, bdnb_batiment_groupe_compile
     
@@ -873,8 +910,7 @@ def draw_local_map(geometry,style='map',figsize=12, radius=370, grey_background=
     top_left = cgeo.Geodesic().direct(points=(lon,lat),azimuths=-45,distances=dist_cnr)[:,0:2][0]
     bot_right = cgeo.Geodesic().direct(points=(lon,lat),azimuths=135,distances=dist_cnr)[:,0:2][0]
     extent = [float(f) for f in [top_left[0], bot_right[0], bot_right[1], top_left[1]]]
-    # TODO mettre à jour conda et vérifier si ça remarche
-    ax.set_extent(extent, crs=ccrs.PlateCarree()) # ça marche plus, bug dans les maj de l'environnement
+    ax.set_extent(extent, crs=ccrs.PlateCarree()) 
     
     # add OSM with zoom specification
     ax.add_image(img, int(scale)) 
@@ -1330,7 +1366,7 @@ def get_lexique_DPE():
         res_dict[k.replace('lexique--','')] = v
     return res_dict
     
-# =============================================================================
+#%% ===========================================================================
 # main script
 # =============================================================================
 def main():
@@ -1349,37 +1385,39 @@ def main():
     
     output_path = os.path.join(output_folder,folder)
     
+    pd.set_option('future.no_silent_downcasting', True)
+    
     departement = '75' # pas encore prévu pour que ça puisse être différent
     # departement = '24'
     
-    # get layers name
+    #%% get layers name
     if False:
         layers = get_layer_names()
         print(layers)
         
-    # benchmark opening 
+    #%% benchmark opening 
     if False:
         print(speed_test_opening()) 
         print(speed_test_opening(dask_only=True, plot=True)) 
     
 
     
-    # graphe des distribution des DPE présents dans la BDNB (paris pour l'instant)
+    #%% graphe des distribution des DPE présents dans la BDNB (paris pour l'instant)
     if False:
         # uniquement cette fonction a été mise à jour pour le changement le département 
         plot_dpe_distribution(dep=departement, path=output_path,max_xlim=600)
     
-    # plot des diagnostics suspects
+    #%% plot des diagnostics suspects
     if False:
         plot_raw_suspects(folder,output_folder,'raw_suspicious_DPE')
     
-    # neighbourhood map
+    #%% neighbourhood map
     if False:
         bg_id_list = ['bdnb-bg-RGSM-7GV4-4QBK', 'bdnb-bg-FHEF-WAAZ-S5XC', 'bdnb-bg-9CBX-DZ3C-1DYC','bdnb-bg-243J-HGRU-FVA5']
         # bg_id_list = ['bdnb-bg-C1W3-KNUP-R5E2']
         for bg_id in bg_id_list:
             neighbourhood_map(path=output_path, batiment_groupe_id=bg_id)
-            
+    
     if False:
         number_batiment_groupe = 'all' 
         suspicious_batiment_group_dict_dpe_id, _ = analysis_suspicious_DPE(save_path=output_path,number_batiment_groupe=number_batiment_groupe, details=False)
@@ -1387,7 +1425,7 @@ def main():
         draw_city_map(list_bg_id=bg_id_list)
             
             
-    # analyse des champs modifier pour obtenir des gains de DPE pour un bâtiment individuel (tests)
+    #%% analyse des champs modifier pour obtenir des gains de DPE pour un bâtiment individuel (tests)
     if False:
         number_batiment_groupe = 'all' 
                     
@@ -1411,7 +1449,7 @@ def main():
         infos_test = get_batiment_groupe_infos(test,variables=['l_libelle_adr','nb_log','annee_construction'])
         
         suspicious_batiment_group_dict_dpe_id, suspicious_batiment_group_dict_dpe_number = analysis_suspicious_DPE(save_path=output_path, number_batiment_groupe=number_batiment_groupe, plot=[test], details=False)
-        # neighbourhood_map(path=output_path, batiment_groupe_id=test)
+        neighbourhood_map(path=output_path, batiment_groupe_id=test)
         
         test_dpe_ids = suspicious_batiment_group_dict_dpe_id.get(test)[0]
         gains_test_dpe = suspicious_batiment_group_dict_dpe_number.get(test)[0]
@@ -1449,7 +1487,7 @@ def main():
         # print(difference_2.set_index('variables').loc['emetteur_chauffage--type_emission_distribution'].values)
         
         
-    # téléchargement des XLS des DPE
+    #%% téléchargement des XLS des DPE
     if False:
         number_batiment_groupe = 'all' 
         suspicious_batiment_group_dict_dpe_id, suspicious_batiment_group_dict_dpe_number = analysis_suspicious_DPE(save_path=output_path,number_batiment_groupe=number_batiment_groupe, plot=False, details=False)
@@ -1462,7 +1500,7 @@ def main():
             download_dpe_details(dpe_id)
     
     
-    # test d'un nouveau filtre entre les appartements
+    #%% test d'un nouveau filtre entre les appartements
     if False:
         dpe_change = get_dpe_change_details(path=output_path,force=False)
         
@@ -1483,13 +1521,13 @@ def main():
         print(len(dpe_change)-s,'/',len(dpe_change))
         
             
-    # filtre des couples de DPE faux positifs 
+    #%% filtre des couples de DPE faux positifs 
     if False:
         # TODO : à vérifier 
         sbgd_filtered_dpe_id, sbgd_filtered_dpe_number = get_filtered_suspicious_DPE(path=output_path,show_details=True, force=False)
         
-    # statistiques sur les données DPE de différence
-    if True:
+    #%% statistiques sur les données DPE de différence
+    if False:
         import ast
         
         dpe_change = get_dpe_change_details(path=output_path,force=False)
@@ -1647,11 +1685,11 @@ def main():
                 print(k,v)
         
     
-    # affichage de la distribution d'une variable dans la bdnb parisienne
+    #%% affichage de la distribution d'une variable dans la bdnb parisienne
     if False:
         plot_var_distribution(var='ffo_bat_annee_construction', path=output_path,min_xlim=1600,rounder=20,percentage=True,max_xlim=2020)
         
-    # statistiques sur les liens entre période de construction et gains dans la manipulation des DPE
+    #%% statistiques sur les liens entre période de construction et gains dans la manipulation des DPE
     if False:
         dpe_change = get_dpe_change_details(path=output_path,force=False)
         
@@ -1683,7 +1721,7 @@ def main():
             plt.savefig(save_path, bbox_inches='tight')
 
 
-    # étude du logiciel de calcul
+    #%% étude du logiciel de calcul
     if False:
         dpe_change = get_dpe_change_details(path=output_path,force=False)
         # dpe_change_logiciel = dpe_change[[c for c in dpe_change.columns if 'diagnostiqueur' in c]+['dpe_letter_1','dpe_letter_2']]
