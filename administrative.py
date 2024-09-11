@@ -31,7 +31,7 @@ dict_code_dep_code_zcl = {d:c for d,c in zip(zcl.code_departement,zcl.zone_clima
 # list_reg = list(set([dict_code_dep_name_reg.get(cd) for cd in list_dep]))
 
 
-class departement:
+class Departement:
     def __init__(self,dep_code):
         if type(dep_code) == int:
             self.code = "{:02d}".format(dep_code)
@@ -50,11 +50,14 @@ class departement:
         return '{} ({})'.format(self.name, self.code)
     
 
+# =============================================================================
+# Script principal
+# =============================================================================
 
 def main():
     tic = time.time()
     
-    # dep = departement('13')
+    # dep = Departement('13')
     # print(dep)
     
     
