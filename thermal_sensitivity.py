@@ -247,7 +247,7 @@ def main():
         
             fig,ax = plt.subplots(figsize=(5,5),dpi=300)
             ax.plot(x,y,alpha=0.1, ls='',marker='.',label='raw_data')
-            label_fit = 'pw linear (R$^2$ = {:.2f})\n   kh=-{:.1f} Wh/K\n   kc={:.2f} Wh/K\n   C0={:.2f} Wh'.format(r2_value,kh_opt,kc_opt,C0_opt)
+            label_fit = 'pw linear (R$^2$ = {:.2f})\n   $k_h$=-{:.1f} Wh/K\n   $k_c$={:.2f} Wh/K\n   $C_0$={:.2f} Wh'.format(r2_value,kh_opt,kc_opt,C0_opt)
             ax.plot(x,yd ,label=label_fit)
             
             ax.set_ylim(bottom=0.)
@@ -259,6 +259,8 @@ def main():
             ax.text(Tc_opt,10,' {:.1f}°C'.format(Tc_opt),horizontalalignment='left',verticalalignment='bottom')
             
             ax.set_ylim(ylim)
+            ax.set_xlabel('Outdoor temperature (°C)')
+            ax.set_ylabel('Hourly electricity energy cons. (by PDL) (Wh)')
             
             ax.set_title('{} ({})'.format(reg_name, year))
             ax.legend(loc='upper right')
