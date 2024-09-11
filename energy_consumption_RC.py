@@ -295,12 +295,12 @@ def main():
     if 'figs' not in os.listdir(os.path.join(output, folder)):
         os.mkdir(figs_folder)
         
-    #--------------------------------------------------------------------------
+    #%%------------------------------------------------------------------------
     
     # Unité temporelle de base : horaire 
     
     # Définition des paramètres spatio-temporels
-    year = 2023
+    year = 2022
     city = 'Marseille'
     
     # Définition des paramètres géométriques
@@ -364,33 +364,33 @@ def main():
     
     
     # Résolution du modèle R2C2
-    # X_R2C2, P_th = run_R2C2_model_simulation(data=data_high_res, 
-    #                                           R1=R_wall/2, 
-    #                                           R2=R_wall/2, 
-    #                                           C1=C_wall/2, 
-    #                                           C2=C_wall/2, 
-    #                                           Ti_min=Ti_min, 
-    #                                           Ti_max=Ti_max, 
-    #                                           P_heater_max=q_max_heater*0, 
-    #                                           P_cooler_max=q_max_cooler*0,
-    #                                           P_internal=q_internal,
-    #                                           solar_gain=q_solar_gain,
-    #                                           heater_method='linear_tolerance',
-    #                                           cooler_method='all_or_nothing')
-    
     X_R2C2, P_th = run_R2C2_model_simulation(data=data_high_res, 
-                                              R1=R_wall/2+R_wool, # TODO prendre en compte la présence d'isolants
+                                              R1=R_wall/2, 
                                               R2=R_wall/2, 
-                                              C1=C_wall, 
-                                              C2=C_air, 
+                                              C1=C_wall/2, 
+                                              C2=C_wall/2, 
                                               Ti_min=Ti_min, 
                                               Ti_max=Ti_max, 
                                               P_heater_max=q_max_heater, 
                                               P_cooler_max=q_max_cooler,
-                                              P_internal=q_internal*0,
+                                              P_internal=q_internal,
                                               solar_gain=q_solar_gain,
                                               heater_method='linear_tolerance',
-                                              cooler_method='linear_tolerance')
+                                              cooler_method='all_or_nothing')
+    
+    # X_R2C2, P_th = run_R2C2_model_simulation(data=data_high_res, 
+    #                                           R1=R_wall/2+R_wool, # TODO prendre en compte la présence d'isolants
+    #                                           R2=R_wall/2, 
+    #                                           C1=C_wall, 
+    #                                           C2=C_air, 
+    #                                           Ti_min=Ti_min, 
+    #                                           Ti_max=Ti_max, 
+    #                                           P_heater_max=q_max_heater, 
+    #                                           P_cooler_max=q_max_cooler,
+    #                                           P_internal=q_internal*0,
+    #                                           solar_gain=q_solar_gain,
+    #                                           heater_method='linear_tolerance',
+    #                                           cooler_method='linear_tolerance')
     
     # R1_test, R2_test, C1_test, C2_test = 2.13e-2, 2.37e-3, 1.56e7, 1.93e6
     # X_R2C2, P_th = run_R2C2_model_simulation(data=data_high_res, 
@@ -451,7 +451,8 @@ def main():
     if True:
         cols = ['temperature_2m', 'internal_wall_temperature', 'indoor_temperature']
         plot_timeserie(data[cols], labels=['{} (°C)'.format(c) for c in cols], figsize=(15,5), figs_folder = figs_folder,
-                       xlim=[pd.to_datetime('{}-01-01'.format(year)), pd.to_datetime('{}-12-31'.format(year))])
+                       xlim=[pd.to_datetime('{}-01-01'.format(year)), pd.to_datetime('{}-12-31'.format(year))],
+                       save_fig='time_serie_temperature_{}_{}'.format(city,year))
   
                   
     if True:
