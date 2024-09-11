@@ -55,9 +55,33 @@ def plot_timeserie(data,figsize=(5,5),dpi=300,labels=None,figs_folder=None,
         return 
     return fig,ax
 
-
+#%% ===========================================================================
+# script principal
+# =============================================================================
 def main():
     tic = time.time()
+    
+
+
+    #%% test pour vérifier si cartopy marche 
+    if False:
+        import cartopy.crs as ccrs
+        import cartopy.feature as cfeature
+    
+        fig = plt.figure()
+        ax = fig.add_subplot(1, 1, 1, projection=ccrs.PlateCarree())
+        ax.set_extent([-20, 60, -40, 45], crs=ccrs.PlateCarree())
+    
+        ax.add_feature(cfeature.LAND)
+        ax.add_feature(cfeature.OCEAN)
+        ax.add_feature(cfeature.COASTLINE)
+        ax.add_feature(cfeature.BORDERS, linestyle=':')
+        ax.add_feature(cfeature.LAKES, alpha=0.5)
+        ax.add_feature(cfeature.RIVERS)
+    
+        plt.show()
+
+
     
     tac = time.time()
     print('Done in {:.2f}s.'.format(tac-tic))
