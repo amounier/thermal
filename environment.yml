@@ -28,6 +28,7 @@ dependencies:
   - unidecode
   - pysolar
   - geopy
+  - shapely
  # - requests_cache
  # - pip:
   #	- retry-requests
