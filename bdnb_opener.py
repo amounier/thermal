@@ -35,6 +35,7 @@ import json
 from urllib.error import HTTPError
 from unidecode import unidecode
 from pyogrio.errors import DataSourceError
+import subprocess
 # from pyproj import Transformer
 
 
@@ -118,14 +119,60 @@ def speed_test_opening(dep='75',dask_only=False, plot=False):
         return methods_speed_dict
 
 
-def download_bdnb(dep):
-    # TODO: télécharger le fichier manquant
-    url = 'https://open-data.s3.fr-par.scw.cloud/bdnb_millesime_2023-11-a/millesime_2023-11-a_dep{}/open_data_millesime_2023-11-a_dep{}_gpkg.zip'.format(dep,dep)
-    print(url)
-    return 
+def download_bdnb(dep,external_disk=True,force=False):
+    """
+    Téléchargement automatique d'un fichier départemental de la BDNB'
+
+    Parameters
+    ----------
+    dep : str
+        code du département (conforme avec la nomenclature de la BDNB.
+    external_disk : boolean, optional
+        Téléchargement sur disque externe. The default is True.
+    force : boolean, optional
+        Force le retéléchargement même si présent sur disque. The default is False.
+
+    Raises
+    ------
+    FileNotFoundError
+        Erreur si le disque distant n'est pas connecté (uniquement si external_disk).
+
+    Returns
+    -------
+    None.
+
+    """
+    # Définition du chemin de sauvegarde
+    if external_disk:
+        save_path = '/media/amounier/MPBE/heavy_data/BDNB'
+    else:
+        save_path = os.path.join('data','BDNB')
+    
+    # Vérification de connexion du disque 
+    try:
+        files = os.listdir(save_path)
+    except FileNotFoundError:
+        raise FileNotFoundError('Disque dur MPBE absent.')
+    
+    # Définition du nom du dossier final
+    file = 'open_data_millesime_2023-11-a_dep{}_gpkg'.format(dep)
+    
+    # Téléchargement seulement si nécessaire
+    if file not in files or force:
+        # url de téléchargement
+        url = 'https://open-data.s3.fr-par.scw.cloud/bdnb_millesime_2023-11-a/millesime_2023-11-a_dep{}/open_data_millesime_2023-11-a_dep{}_gpkg.zip'.format(dep,dep)
+        
+        subprocess.run('wget -P {} {}'.format(save_path,url),shell=True)
+        subprocess.run('unzip {}.zip -d {}'.format(os.path.join(save_path,file),os.path.join(save_path,file)),shell=True)
+        
+        print('\n zip files deleted')
+        subprocess.run('rm {}'.format(os.path.join(save_path,'*.zip')),shell=True)
+        
+        return 
+    return
     
 
-def get_bdnb(dep='75',chunksize=5e4):
+def get_bdnb(dep='75',chunksize=5e4,external_disk=True):
     """
     Ouvre de manière non compilée les données de la BDNB d'un département, selon 3 tables:
         - dpe_logement
@@ -155,16 +202,21 @@ def get_bdnb(dep='75',chunksize=5e4):
 
     """
     # TODO : à modifier quand j'aurais les données complètes
-    file = os.path.join('data','BDNB','open_data_millesime_2023-11-a_dep{}_gpkg'.format(dep),'gpkg','bdnb.gpkg')
+    if external_disk:
+        file = os.path.join('/media/amounier/MPBE/heavy_data/BDNB','open_data_millesime_2023-11-a_dep{}_gpkg'.format(dep),'gpkg','bdnb.gpkg')
+    else:
+        file = os.path.join('data','BDNB','open_data_millesime_2023-11-a_dep{}_gpkg'.format(dep),'gpkg','bdnb.gpkg')
     try:
         bdnb_dpe_logement = dask_geopandas.read_file(file, chunksize=chunksize, layer='dpe_logement')
         bdnb_rel_batiment_groupe_dpe_logement = dask_geopandas.read_file(file, chunksize=chunksize, layer='rel_batiment_groupe_dpe_logement')
         bdnb_batiment_groupe_compile = dask_geopandas.read_file(file, chunksize=chunksize, layer='batiment_groupe_compile')
+        return bdnb_dpe_logement, bdnb_rel_batiment_groupe_dpe_logement, bdnb_batiment_groupe_compile
+    
     except DataSourceError:
-        # TODO: télécharger le fichier manquant
+        print('\nFichier indisponible, téléchargement des données...')
         download_bdnb(dep=dep)
-        raise DataSourceError('Fichier {} indisponible.'.format(file))
-    return bdnb_dpe_logement, bdnb_rel_batiment_groupe_dpe_logement, bdnb_batiment_groupe_compile
+        return get_bdnb(dep=dep)
+    
     
 
 def cull_empty_partitions(df):
