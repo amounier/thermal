@@ -1017,7 +1017,7 @@ def neighbourhood_map(batiment_groupe_id, path,save=True):
     
     # sauvegarde de la carte
     if save:
-        save_path = os.path.join(path,'figs','{}_map.png'.format(batiment_groupe_id))
+        save_path = os.path.join(path,'{}_map.png'.format(batiment_groupe_id))
     else:
         save_path = None
     fig,ax = draw_local_map(gdf.iloc[0].geometry, save_path=save_path)
@@ -1468,7 +1468,7 @@ def main():
         bg_id_list = ['bdnb-bg-RGSM-7GV4-4QBK', 'bdnb-bg-FHEF-WAAZ-S5XC', 'bdnb-bg-9CBX-DZ3C-1DYC','bdnb-bg-243J-HGRU-FVA5']
         # bg_id_list = ['bdnb-bg-C1W3-KNUP-R5E2']
         for bg_id in bg_id_list:
-            neighbourhood_map(path=output_path, batiment_groupe_id=bg_id)
+            neighbourhood_map(path=os.path.join(output_path,'figs'), batiment_groupe_id=bg_id)
     
     if False:
         number_batiment_groupe = 'all' 
@@ -1501,7 +1501,7 @@ def main():
         infos_test = get_batiment_groupe_infos(test,variables=['l_libelle_adr','nb_log','annee_construction'])
         
         suspicious_batiment_group_dict_dpe_id, suspicious_batiment_group_dict_dpe_number = analysis_suspicious_DPE(save_path=output_path, number_batiment_groupe=number_batiment_groupe, plot=[test], details=False)
-        neighbourhood_map(path=output_path, batiment_groupe_id=test)
+        neighbourhood_map(path=os.path.join(output_path,'figs'), batiment_groupe_id=test)
         
         test_dpe_ids = suspicious_batiment_group_dict_dpe_id.get(test)[0]
         gains_test_dpe = suspicious_batiment_group_dict_dpe_number.get(test)[0]
