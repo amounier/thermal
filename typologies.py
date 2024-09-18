@@ -206,12 +206,20 @@ def main():
         
         for k in number_hh_typo_categories.keys():
             add_departement_map({departement:percent_hh_typo_categories.get(k)},figs_folder=figs_folder,cbar_label='{} ratio by department'.format(k))
-            
+    
+    # Téléchargement des départements
+    if True:
+        if external_disk_connection:
+            print('Téléchargement de la BDNB sur disque local.')
+            # list_dep_code = ['2A']
+            for d in tqdm.tqdm(list_dep_code):
+                get_bdnb(Departement(d).code,external_disk=external_disk_connection)
+    
     # Carte des stats de type de catégories (SFH,TH,MFH,AB) par départements # TODO
     if False:
         stats = dict()
     
-        list_dep_code = ['{:02d}'.format(e) for e in [75,24]]
+        # list_dep_code = ['{:02d}'.format(e) for e in [75,24]]
         
         for d in tqdm.tqdm(list_dep_code):
             get_bdnb(Departement(d).code,external_disk=external_disk_connection)
@@ -250,8 +258,9 @@ def main():
         bgc = bgc[bgc.batiment_groupe_id==bg_id].compute()
         print(bgc.dpe_mix_arrete_l_orientation_mur_exterieur, bgc.ffo_bat_nb_log)
         
+        
     #%% Tests de la classe Typology
-    if True:
+    if False:
         code = 'FR.N.TH.06.Gen'
         typo = Typology(code)
         print(typo)

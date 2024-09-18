@@ -153,6 +153,8 @@ def download_bdnb(dep,external_disk=True,force=False):
         files = os.listdir(save_path)
     except FileNotFoundError:
         raise FileNotFoundError('Disque dur MPBE absent.')
+
+    dep = dep.lower()
     
     # Définition du nom du dossier final
     file = 'open_data_millesime_2023-11-a_dep{}_gpkg'.format(dep)
@@ -201,6 +203,7 @@ def get_bdnb(dep='75',chunksize=5e4,external_disk=True):
         DESCRIPTION.
 
     """
+    dep = dep.lower()
     # TODO : à modifier quand j'aurais les données complètes
     if external_disk:
         file = os.path.join('/media/amounier/MPBE/heavy_data/BDNB','open_data_millesime_2023-11-a_dep{}_gpkg'.format(dep),'gpkg','bdnb.gpkg')
