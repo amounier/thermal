@@ -10,7 +10,11 @@ import time
 import os
 import pandas as pd
 import geopandas as gpd
+import matplotlib.pyplot as plt
+import matplotlib
+import cartopy.crs as ccrs
 
+from utils import blank_national_map
 
 # ouverture des fichiers administratifs (0.2s)
 adm = pd.read_csv(os.path.join('data','INSEE','decoupage_administratif','communes-departement-region.csv'))
@@ -27,9 +31,19 @@ dict_code_dep_name_reg = {d:r for d,r in zip(adm.code_departement,adm.nom_region
 dict_code_dep_geom_dep = {d:g for d,g in zip(geo.code,geo.geometry)}
 dict_code_dep_code_zcl = {d:c for d,c in zip(zcl.code_departement,zcl.zone_climatique)}
 
-# list_dep = list(dict_code_dep_geom_dep.keys())
+list_dep_code = ['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11', 
+                 '12', '13', '14', '15', '16', '17', '18', '19', '21', '22', '23', 
+                 '24', '25', '26', '27', '28', '29', '2A', '2B', '30', '31', '32', 
+                 '33', '34', '35', '36', '37', '38', '39', '40', '41', '42', '43', 
+                 '44', '45', '46', '47', '48', '49', '50', '51', '52', '53', '54', 
+                 '55', '56', '57', '58', '59', '60', '61', '62', '63', '64', '65', 
+                 '66', '67', '68', '69', '70', '71', '72', '73', '74', '75', '76', 
+                 '77', '78', '79', '80', '81', '82', '83', '84', '85', '86', '87', 
+                 '88', '89', '90', '91', '92', '93', '94', '95']
+
 # list_reg = list(set([dict_code_dep_name_reg.get(cd) for cd in list_dep]))
 
+# TODO : rajouter une classe France pour les stats nationale par exemple
 
 class Departement:
     def __init__(self,dep_code):
@@ -46,9 +60,46 @@ class Departement:
         self.geometry = dict_code_dep_geom_dep.get(self.code)
         self.climat = dict_code_dep_code_zcl.get(self.code)
         
+        # statistiques réalisées dans typologies.py
+        self.typologies_batiments_groupe = None
+        self.typologies_households_number = None
+        
     def __str__(self):
         return '{} ({})'.format(self.name, self.code)
+
+
+def add_departement_map(dict_dep,figs_folder,cbar_min=0,cbar_max=1.,automatic_cbar_values=False, cbar_label=None, map_title=None,save=None):
+    fig,ax = blank_national_map()
     
+    cmap = matplotlib.colormaps.get_cmap('viridis')
+    
+    plotter = pd.DataFrame().from_dict({'departements':dict_dep.keys(),'vals':dict_dep.values()})
+    plotter['geometry'] = [d.geometry for d in plotter.departements]
+    plotter = gpd.GeoDataFrame(plotter, geometry=plotter.geometry)
+    
+    if automatic_cbar_values:
+        cbar_max = plotter.values.quantile(0.99)
+        cbar_min = plotter.values.quantile(0.01)
+    
+    plotter['color'] = (plotter.vals-cbar_min)/(cbar_max-cbar_min)
+    plotter['color'] = plotter['color'].apply(cmap)
+    
+    plotter.plot(color=plotter.color, ax=ax, transform=ccrs.PlateCarree(),)
+    plotter.boundary.plot(ax=ax, transform=ccrs.PlateCarree(), color='k',lw=0.5)
+    
+    cbar_ax = fig.add_axes([0, 0, 0.1, 0.1])
+    posn = ax.get_position()
+    cbar_ax.set_position([posn.x0+posn.width+0.02, posn.y0, 0.04, posn.height])
+    norm = matplotlib.colors.Normalize(vmin=cbar_min, vmax=cbar_max)
+    mappable = matplotlib.cm.ScalarMappable(norm=norm, cmap=cmap)
+    
+    cbar_label_var = cbar_label
+    _ = plt.colorbar(mappable, cax=cbar_ax, label=cbar_label_var, extend='neither', extendfrac=0.02)
+    
+    ax.set_title(map_title)
+    if save is not None:
+        plt.savefig(os.path.join(figs_folder,'{}.png'.format(save)),bbox_inches='tight')
+    return fig,ax
 
 # =============================================================================
 # Script principal
@@ -57,9 +108,10 @@ class Departement:
 def main():
     tic = time.time()
     
-    # dep = Departement('13')
+    dep = Departement('13')
     # print(dep)
     
+    add_departement_map({dep:0.5})
     
     tac = time.time()
     print("Done in {:.2f}s.".format(tac-tic))
