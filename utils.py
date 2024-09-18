@@ -10,7 +10,8 @@ import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 import os
 import time
-
+import cartopy.crs as ccrs
+import cartopy.feature as cfeature
 
 def plot_timeserie(data,figsize=(5,5),dpi=300,labels=None,figs_folder=None,
                    save_fig=None,show=True,xlim=None,ylim_bottom=None,
@@ -55,32 +56,27 @@ def plot_timeserie(data,figsize=(5,5),dpi=300,labels=None,figs_folder=None,
         return 
     return fig,ax
 
+
+
+def blank_national_map():
+    fig = plt.figure(figsize=(7,7), dpi=300)
+    ax = fig.add_subplot(1, 1, 1, projection=ccrs.Mercator())
+    ax.set_extent([-5, 9.8, 41.3, 51.3])
+    
+    ax.add_feature(cfeature.OCEAN, color='lightgrey',zorder=2)
+    ax.add_feature(cfeature.COASTLINE,zorder=5)
+    ax.add_feature(cfeature.BORDERS,zorder=3)
+    
+    return fig,ax
+        
+
 #%% ===========================================================================
 # script principal
 # =============================================================================
 def main():
     tic = time.time()
     
-
-
-    #%% test pour vérifier si cartopy marche 
-    if False:
-        import cartopy.crs as ccrs
-        import cartopy.feature as cfeature
-    
-        fig = plt.figure()
-        ax = fig.add_subplot(1, 1, 1, projection=ccrs.PlateCarree())
-        ax.set_extent([-20, 60, -40, 45], crs=ccrs.PlateCarree())
-    
-        ax.add_feature(cfeature.LAND)
-        ax.add_feature(cfeature.OCEAN)
-        ax.add_feature(cfeature.COASTLINE)
-        ax.add_feature(cfeature.BORDERS, linestyle=':')
-        ax.add_feature(cfeature.LAKES, alpha=0.5)
-        ax.add_feature(cfeature.RIVERS)
-    
-        plt.show()
-
+    blank_national_map()
 
     
     tac = time.time()
