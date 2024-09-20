@@ -148,11 +148,14 @@ def download_bdnb(dep,external_disk=True,force=False):
     else:
         save_path = os.path.join('data','BDNB')
     
-    # Vérification de connexion du disque 
+    # Vérification de connexion du disque
+    if  external_disk and 'MPBE' not in os.listdir('/media/amounier/'):
+        raise FileNotFoundError('Local disk unavailable.')
+        
     try:
         files = os.listdir(save_path)
     except FileNotFoundError:
-        raise FileNotFoundError('Disque dur MPBE absent.')
+        raise FileNotFoundError('File unaivalable in {}.'.format(save_path))
 
     dep = dep.lower()
     
@@ -206,6 +209,8 @@ def get_bdnb(dep='75',chunksize=5e4,external_disk=True):
     dep = dep.lower()
     # TODO : à modifier quand j'aurais les données complètes
     if external_disk:
+        if 'MPBE' not in os.listdir('/media/amounier/'):
+            raise FileNotFoundError('Local disk unavailable.')
         file = os.path.join('/media/amounier/MPBE/heavy_data/BDNB','open_data_millesime_2023-11-a_dep{}_gpkg'.format(dep),'gpkg','bdnb.gpkg')
     else:
         file = os.path.join('data','BDNB','open_data_millesime_2023-11-a_dep{}_gpkg'.format(dep),'gpkg','bdnb.gpkg')
@@ -217,8 +222,8 @@ def get_bdnb(dep='75',chunksize=5e4,external_disk=True):
     
     except DataSourceError:
         print('\nFichier indisponible, téléchargement des données...')
-        download_bdnb(dep=dep)
-        return get_bdnb(dep=dep)
+        download_bdnb(dep=dep,external_disk=True)
+        return get_bdnb(dep=dep,external_disk=external_disk)
     
     
 
