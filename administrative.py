@@ -66,6 +66,12 @@ class Departement:
         
     def __str__(self):
         return '{} ({})'.format(self.name, self.code)
+    
+
+class France:
+    def __init__(self):
+        self.departements = [Departement(e) for e in list_dep_code]
+        
 
 
 def add_departement_map(dict_dep,figs_folder,cbar_min=0,cbar_max=1.,automatic_cbar_values=False, cbar_label=None, map_title=None,save=None):
