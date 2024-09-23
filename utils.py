@@ -14,8 +14,8 @@ import cartopy.crs as ccrs
 import cartopy.feature as cfeature
 
 def plot_timeserie(data,figsize=(5,5),dpi=300,labels=None,figs_folder=None,
-                   save_fig=None,show=True,xlim=None,ylim_bottom=None,
-                   figax=None,**kwargs):
+                   save_fig=None,show=True,xlim=None,ylim_bottom=None,ylim_top=None,ylabel=None,
+                   legend_loc=None,figax=None,**kwargs):
     """
     Fonction d'affichage de séries temporelles
 
@@ -33,9 +33,12 @@ def plot_timeserie(data,figsize=(5,5),dpi=300,labels=None,figs_folder=None,
     if labels is None:
         labels = data_plot.columns
         
+    if ylabel is not None:
+        ax.set_ylabel(ylabel)
+        
     for i,c in enumerate(data_plot.columns):
         ax.plot(data_plot[c],label=labels[i],**kwargs)
-    ax.legend()
+    ax.legend(loc=legend_loc)
         
     locator = mdates.AutoDateLocator()
     formatter = mdates.ConciseDateFormatter(locator)
@@ -43,8 +46,8 @@ def plot_timeserie(data,figsize=(5,5),dpi=300,labels=None,figs_folder=None,
     ax.xaxis.set_major_locator(locator)
     ax.xaxis.set_major_formatter(formatter)
     
-    if ylim_bottom is not None:
-        ax.set_ylim(bottom=ylim_bottom)
+    if ylim_bottom is not None or ylim_top is not None:
+        ax.set_ylim(bottom=ylim_bottom,top=ylim_top)
     
     if save_fig is not None:
         if figs_folder is None:
