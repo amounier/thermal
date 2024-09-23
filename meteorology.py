@@ -16,7 +16,9 @@ from geopy.exc import GeocoderUnavailable
 import matplotlib.pyplot as plt
 import numpy as np
 from scipy.integrate import odeint
+from pysolar.solar import get_altitude, get_altitude_fast, get_azimuth, get_azimuth_fast
 import tqdm
+import warnings
 
 from utils import plot_timeserie
 
@@ -189,6 +191,78 @@ def get_meteo_units(longitude, latitude, year, hourly_variables=['temperature_2m
     with open(unit_path) as f:
         d = {k: v for line in f for (k, v) in [line.strip().split(' : ')]}
     return d
+
+
+def get_direct_solar_irradiance_projection_ratio(orientation,sun_azimuth,sun_altitude):
+    """
+    Coefficient de puissance solaire directe pour une paroi donnée.
+
+    Parameters
+    ----------
+    orientation : str or int or float
+        Orientation  de la paroi (str conseillé).
+    sun_azimuth : int or float
+        Angle azimutal du soleil en degré.
+    sun_altitude : int or float
+        Angle d'altitude du soleil en degré.
+
+    Raises
+    ------
+    ValueError
+        Si l'orientation donnée est fausse.
+
+    Returns
+    -------
+    ratio : float
+        Coefficient compris entre 0 et 1.
+
+    """
+    
+    # gestion rapide du cas d'une paroi horizontale
+    if orientation == 'H':
+        ratio = np.sin(np.deg2rad(np.maximum(sun_altitude,0)))
+    
+    # cas des parois verticales
+    else:
+        # passage d'une orientation str en angle en degrés
+        valid_orientations = ['N','NE','E','SE','S','SW','W','NW']
+        dict_angle_orientation = {i*45:o for i,o in enumerate(valid_orientations)}
+        dict_orientation_angle = {v:k for k,v in dict_angle_orientation.items()}
+        if isinstance(orientation,str):
+            # Vérification de l'orientation 
+            if orientation not in valid_orientations:
+                raise ValueError("'{}' is not a valid orientation (must be in ['{}']).".format(orientation,"', '".join(valid_orientations)))
+                
+            orientation_angle = dict_orientation_angle.get(orientation)
+        
+        # l'orientation peut directement être entrée en degrés (déconseillé)
+        elif isinstance(orientation,int) or isinstance(orientation,float):
+            orientation_angle = orientation%360
+          
+        ratio = np.float64(sun_altitude>0) * np.cos(np.deg2rad(sun_altitude)) * np.maximum(np.cos(np.deg2rad(list(sun_azimuth-orientation_angle))),0)
+    return ratio
+
+
+def get_diffuse_solar_irradiance_projection_ratio(orientation):
+    """
+    Coefficient de puissance solaire diffuse pour une paroi donnée.
+
+    Parameters
+    ----------
+    orientation : int or str
+        Orientation de la paroi.
+
+    Returns
+    -------
+    ratio : float
+        Coefficient de puissance.
+
+    """
+    if orientation == 'H':
+        ratio = 1.
+    else:
+        ratio = 0.5
+    return ratio
 
 
 #%% ===========================================================================
@@ -414,10 +488,8 @@ def main():
                     ax.set_xlabel('Température du sol (°C)')
                     plt.savefig(os.path.join(figs_folder,'{}.png'.format('modelling_of_ground_temperature_months_{}_{}'.format(city,year))),bbox_inches='tight')
                     plt.show()
-            
-            
         
-        #%% Affichage des données annuelles
+        # Affichage des données annuelles
         if False:
             for i,c in enumerate(variables):
                 if c == variables[0]:
@@ -431,7 +503,7 @@ def main():
                                              xlim=[pd.to_datetime('{}-01-01'.format(year)), pd.to_datetime('{}-12-31'.format(year))])
                 
         
-        #%% Affichage des versus plot (diagramme de phase)
+        # Affichage des versus plot (diagramme de phase)
         if False:
             for i,c in enumerate(variables[1:]):
                 fig,ax = plt.subplots(figsize=(5,5), dpi=300)
@@ -444,7 +516,111 @@ def main():
                 ax.set_xlabel('{} ({})'.format(c,meteo_units.get('temperature_2m')))
                 ax.set_title('{} ({})'.format(city,year))
                 plt.show()
+                
+                
+                
+    #%% Caractérisation et étude du flux solaire par orientation
+    if True:
+        variables = ['direct_radiation_instant','diffuse_radiation_instant','direct_normal_irradiance_instant']
+        city = 'Paris'
+        year = 2022
         
+        coordinates = get_coordinates(city)
+        data = open_meteo_historical_data(longitude=coordinates[0], latitude=coordinates[1], year=year, hourly_variables=variables)
+        meteo_units = get_meteo_units(longitude=coordinates[0], latitude=coordinates[1], year=year, hourly_variables=variables)
+        
+        # Affichage des données annuelles
+        if False:
+            for i,c in enumerate(variables):
+                plot_timeserie(data[[c]], labels=['{} ({})'.format(c,meteo_units.get(c))], figsize=(15,5),figs_folder = figs_folder, show=True,
+                               xlim=[pd.to_datetime('{}-01-01'.format(year)), pd.to_datetime('{}-12-31'.format(year))],save_fig='{}_{}_{}'.format(c,city,year))
+        
+        # Étude de l'azimuth et de l'élévation
+        if True:
+            warnings.simplefilter("ignore")
+    
+            dates = data.copy().index
+            dates = dates.tz_localize(tz='CET',ambiguous='NaT',nonexistent='NaT')
+            altitude = [get_altitude_fast(coordinates[1],coordinates[0],t) if t is not pd.NaT else np.nan for t in dates]
+            azimuth = [get_azimuth_fast(coordinates[1],coordinates[0],t) if t is not pd.NaT else np.nan for t in dates]
+            
+            # ajout de la hauteur du soleil (en degrés)
+            data['sun_altitude'] = altitude
+            
+            # ajout de l'azimuth du soleil (en degrés)
+            data['sun_azimuth'] = azimuth
+            
+            # vérification du lien entre l'irradiance normale et directe
+            if False:
+                data.sun_altitude = [max(0,e) for e in data.sun_altitude]
+                data['verif_sun_direct_irradiance'] = np.sin(np.deg2rad(data.sun_altitude))*data.direct_normal_irradiance_instant
+                plot_timeserie(data[['verif_sun_direct_irradiance','direct_radiation_instant']], labels=['{} ({})'.format('direct_normal_irradiance_instant',meteo_units.get('direct_normal_irradiance_instant'))]*2, figsize=(15,5),figs_folder = figs_folder, show=True,alpha=0.5,
+                               xlim=[pd.to_datetime('{}-01-01'.format(year)), pd.to_datetime('{}-12-31'.format(year))],save_fig='verif_solar_{}_{}'.format(city,year))
+            
+            # graphe polaire du parcours du soleil dans l'année
+            if False:
+                fig,ax = plt.subplots(dpi=300,figsize=(5,5),subplot_kw={'projection': 'polar'})
+
+                ax.set_theta_zero_location("N")
+                ax.set_theta_direction(-1)
+                ax.set_rlabel_position(0)
+                ax.set_rlim(bottom=90, top=0)
+                ax.set_rticks(list(range(0,91,20)))
+                ax.set_yticklabels(['{}°'.format(e) if e!=0 else '' for e in ax.get_yticks()])
+                ax.set_xticks(np.pi/180. * np.linspace(0,  360, 12, endpoint=False))
+                ax.grid(True)
+                ax.set_xticklabels([{0:'N',90:'E',180:'S',270:'W'}.get(e,'{:.0f}°'.format(e)) for e in np.linspace(0,  360, 12, endpoint=False)])
+                
+                data_solstice_summer = data[(data.index.day==21)&(data.index.month==6)]
+                data_solstice_winter = data[(data.index.day==21)&(data.index.month==12)]
+                
+                ax.plot(2*np.pi/360*data_solstice_summer.sun_azimuth,data_solstice_summer.sun_altitude,color='tab:blue',zorder=3)
+                ax.plot(2*np.pi/360*data_solstice_winter.sun_azimuth,data_solstice_winter.sun_altitude,color='tab:blue',zorder=3)
+                
+                ax.fill_between(list(2*np.pi/360*data_solstice_summer.sun_azimuth.values),0,list(data_solstice_summer.sun_altitude.values), alpha=0.2,color='tab:blue')
+                ax.fill_between(list(2*np.pi/360*data_solstice_winter.sun_azimuth.values),0,list(data_solstice_winter.sun_altitude.values), color='w')
+                
+                # dessin de l'analemme à 12h UTC (13h en hiver en heure locale)
+                data_analemme = data.copy()
+                data_analemme = data_analemme.tz_localize(tz='CET',ambiguous='NaT',nonexistent='NaT').tz_convert('UTC')
+                data_analemme = data_analemme[(data_analemme.index.hour==12)]
+                ax.plot(2*np.pi/360*data_analemme.sun_azimuth,data_analemme.sun_altitude,color='tab:blue',lw=1,alpha=0.5,zorder=2)
+                
+                ax.set_title('{}'.format(city))
+                plt.savefig(os.path.join(figs_folder,'{}.png'.format('sun_path_{}_{}'.format(city,year))),bbox_inches='tight')
+                plt.show()
+        
+            # Récupération des flux solaires par orientation (projections sur paroi verticale)
+            if True:
+                orientations = ['N','E','S','W','H']
+                list_orientation_ratio_cols = []
+                list_orientation_ri = []
+                for ori in orientations:
+                    col = 'coefficient_direct_{}_irradiance'.format(ori)
+                    col_dri = 'direct_radiation_{}'.format(ori)
+                    data[col] = get_direct_solar_irradiance_projection_ratio(ori, data.sun_azimuth, data.sun_altitude)
+                    data[col_dri] = data.direct_normal_irradiance_instant * data[col]
+                    
+                    list_orientation_ratio_cols.append(col)
+                    list_orientation_ri.append(col_dri)
+                    
+                    
+                plot_timeserie(data[list_orientation_ratio_cols], labels=orientations, figsize=(5,5),figs_folder = figs_folder, show=True,ylabel='Direct solar irradiation ratio (no unit)',legend_loc='upper left',ylim_top=1.,
+                               xlim=[pd.to_datetime('{}-12-21'.format(year)), pd.to_datetime('{}-12-22'.format(year))],save_fig='direct_solar_coefficient_orientations_{}_{}_winter'.format(city,year))
+                plot_timeserie(data[list_orientation_ratio_cols], labels=orientations, figsize=(5,5),figs_folder = figs_folder, show=True,ylabel='Direct solar irradiation ratio (no unit)',legend_loc='upper left',ylim_top=1.,
+                               xlim=[pd.to_datetime('{}-06-21'.format(year)), pd.to_datetime('{}-06-22'.format(year))],save_fig='direct_solar_coefficient_orientations_{}_{}_summer'.format(city,year))
+                plot_timeserie(data[list_orientation_ratio_cols], labels=orientations, figsize=(5,5),figs_folder = figs_folder, show=True,ylabel='Direct solar irradiation ratio (no unit)',legend_loc='upper left',ylim_top=1.,
+                               xlim=[pd.to_datetime('{}-03-21'.format(year)), pd.to_datetime('{}-03-22'.format(year))],save_fig='direct_solar_coefficient_orientations_{}_{}_equinoxe'.format(city,year))
+                
+                plot_timeserie(data[list_orientation_ri], labels=orientations, figsize=(15,5),figs_folder = figs_folder, show=True,ylabel='Direct solar irradiation (W/m2)',
+                               xlim=[pd.to_datetime('{}-12-01'.format(year)), pd.to_datetime('{}-12-31'.format(year))],save_fig='direct_solar_orientations_{}_{}_winter'.format(city,year))
+                plot_timeserie(data[list_orientation_ri], labels=orientations, figsize=(15,5),figs_folder = figs_folder, show=True,ylabel='Direct solar irradiation (W/m2)',
+                               xlim=[pd.to_datetime('{}-06-01'.format(year)), pd.to_datetime('{}-06-30'.format(year))],save_fig='direct_solar_orientations_{}_{}_summer'.format(city,year))
+                plot_timeserie(data[list_orientation_ri], labels=orientations, figsize=(15,5),figs_folder = figs_folder, show=True,ylabel='Direct solar irradiation (W/m2)',
+                               xlim=[pd.to_datetime('{}-03-01'.format(year)), pd.to_datetime('{}-03-31'.format(year))],save_fig='direct_solar_orientations_{}_{}_equinoxe'.format(city,year))
+                
+            
+            
     tac = time.time()
     print('Done in {:.2f}s.'.format(tac-tic))
     
