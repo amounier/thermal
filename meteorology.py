@@ -591,33 +591,52 @@ def main():
                 plt.show()
         
             # Récupération des flux solaires par orientation (projections sur paroi verticale)
-            if True:
+            if False:
                 orientations = ['N','E','S','W','H']
-                list_orientation_ratio_cols = []
-                list_orientation_ri = []
+                list_orientation_coef_dri_cols = []
+                list_orientation_coef_dif_cols = []
+                list_orientation_dri = []
+                list_orientation_dif = []
+                list_orientation_glob = []
                 for ori in orientations:
-                    col = 'coefficient_direct_{}_irradiance'.format(ori)
+                    col_coef_dri = 'coefficient_direct_{}_irradiance'.format(ori)
+                    col_coef_dif = 'coefficient_diffuse_{}_irradiance'.format(ori)
                     col_dri = 'direct_radiation_{}'.format(ori)
-                    data[col] = get_direct_solar_irradiance_projection_ratio(ori, data.sun_azimuth, data.sun_altitude)
-                    data[col_dri] = data.direct_normal_irradiance_instant * data[col]
+                    col_dif = 'diffuse_radiation_{}'.format(ori)
+                    global_ri = 'global_radiation_{}'.format(ori)
+                    data[col_coef_dri] = get_direct_solar_irradiance_projection_ratio(ori, data.sun_azimuth, data.sun_altitude)
+                    data[col_coef_dif] = get_diffuse_solar_irradiance_projection_ratio(ori)
+                    data[col_dri] = data.direct_normal_irradiance_instant * data[col_coef_dri]
+                    data[col_dif] = data.diffuse_radiation_instant * data[col_coef_dif]
+                    data[global_ri] = data[col_dri] + data[col_dif]
                     
-                    list_orientation_ratio_cols.append(col)
-                    list_orientation_ri.append(col_dri)
+                    list_orientation_coef_dri_cols.append(col_coef_dri)
+                    list_orientation_coef_dif_cols.append(col_coef_dif)
+                    list_orientation_dri.append(col_dri)
+                    list_orientation_dif.append(col_dif)
+                    list_orientation_glob.append(global_ri)
                     
                     
-                plot_timeserie(data[list_orientation_ratio_cols], labels=orientations, figsize=(5,5),figs_folder = figs_folder, show=True,ylabel='Direct solar irradiation ratio (no unit)',legend_loc='upper left',ylim_top=1.,
+                plot_timeserie(data[list_orientation_coef_dri_cols], labels=orientations, figsize=(5,5),figs_folder = figs_folder, show=True,ylabel='Direct solar irradiation ratio (no unit)',legend_loc='upper left',ylim_top=1.,
                                xlim=[pd.to_datetime('{}-12-21'.format(year)), pd.to_datetime('{}-12-22'.format(year))],save_fig='direct_solar_coefficient_orientations_{}_{}_winter'.format(city,year))
-                plot_timeserie(data[list_orientation_ratio_cols], labels=orientations, figsize=(5,5),figs_folder = figs_folder, show=True,ylabel='Direct solar irradiation ratio (no unit)',legend_loc='upper left',ylim_top=1.,
+                plot_timeserie(data[list_orientation_coef_dri_cols], labels=orientations, figsize=(5,5),figs_folder = figs_folder, show=True,ylabel='Direct solar irradiation ratio (no unit)',legend_loc='upper left',ylim_top=1.,
                                xlim=[pd.to_datetime('{}-06-21'.format(year)), pd.to_datetime('{}-06-22'.format(year))],save_fig='direct_solar_coefficient_orientations_{}_{}_summer'.format(city,year))
-                plot_timeserie(data[list_orientation_ratio_cols], labels=orientations, figsize=(5,5),figs_folder = figs_folder, show=True,ylabel='Direct solar irradiation ratio (no unit)',legend_loc='upper left',ylim_top=1.,
+                plot_timeserie(data[list_orientation_coef_dri_cols], labels=orientations, figsize=(5,5),figs_folder = figs_folder, show=True,ylabel='Direct solar irradiation ratio (no unit)',legend_loc='upper left',ylim_top=1.,
                                xlim=[pd.to_datetime('{}-03-21'.format(year)), pd.to_datetime('{}-03-22'.format(year))],save_fig='direct_solar_coefficient_orientations_{}_{}_equinoxe'.format(city,year))
                 
-                plot_timeserie(data[list_orientation_ri], labels=orientations, figsize=(15,5),figs_folder = figs_folder, show=True,ylabel='Direct solar irradiation (W/m2)',
+                plot_timeserie(data[list_orientation_dri], labels=orientations, figsize=(15,5),figs_folder = figs_folder, show=True,ylabel='Direct solar irradiation (W/m2)',
                                xlim=[pd.to_datetime('{}-12-01'.format(year)), pd.to_datetime('{}-12-31'.format(year))],save_fig='direct_solar_orientations_{}_{}_winter'.format(city,year))
-                plot_timeserie(data[list_orientation_ri], labels=orientations, figsize=(15,5),figs_folder = figs_folder, show=True,ylabel='Direct solar irradiation (W/m2)',
+                plot_timeserie(data[list_orientation_dri], labels=orientations, figsize=(15,5),figs_folder = figs_folder, show=True,ylabel='Direct solar irradiation (W/m2)',
                                xlim=[pd.to_datetime('{}-06-01'.format(year)), pd.to_datetime('{}-06-30'.format(year))],save_fig='direct_solar_orientations_{}_{}_summer'.format(city,year))
-                plot_timeserie(data[list_orientation_ri], labels=orientations, figsize=(15,5),figs_folder = figs_folder, show=True,ylabel='Direct solar irradiation (W/m2)',
+                plot_timeserie(data[list_orientation_dri], labels=orientations, figsize=(15,5),figs_folder = figs_folder, show=True,ylabel='Direct solar irradiation (W/m2)',
                                xlim=[pd.to_datetime('{}-03-01'.format(year)), pd.to_datetime('{}-03-31'.format(year))],save_fig='direct_solar_orientations_{}_{}_equinoxe'.format(city,year))
+                
+                plot_timeserie(data[list_orientation_glob], labels=orientations, figsize=(15,5),figs_folder = figs_folder, show=True,ylabel='Direct solar irradiation (W/m2)',
+                               xlim=[pd.to_datetime('{}-12-01'.format(year)), pd.to_datetime('{}-12-31'.format(year))],save_fig='global_solar_orientations_{}_{}_winter'.format(city,year))
+                plot_timeserie(data[list_orientation_glob], labels=orientations, figsize=(15,5),figs_folder = figs_folder, show=True,ylabel='Direct solar irradiation (W/m2)',
+                               xlim=[pd.to_datetime('{}-06-01'.format(year)), pd.to_datetime('{}-06-30'.format(year))],save_fig='global_solar_orientations_{}_{}_summer'.format(city,year))
+                plot_timeserie(data[list_orientation_glob], labels=orientations, figsize=(15,5),figs_folder = figs_folder, show=True,ylabel='Direct solar irradiation (W/m2)',
+                               xlim=[pd.to_datetime('{}-03-01'.format(year)), pd.to_datetime('{}-03-31'.format(year))],save_fig='global_solar_orientations_{}_{}_equinoxe'.format(city,year))
                 
             
             
