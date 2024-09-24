@@ -589,6 +589,78 @@ def main():
                 ax.set_title('{}'.format(city))
                 plt.savefig(os.path.join(figs_folder,'{}.png'.format('sun_path_{}_{}'.format(city,year))),bbox_inches='tight')
                 plt.show()
+                
+            # graphe polaire du parcours du soleil dans l'année (comparaison entre villes)
+            if True:
+                variables = ['direct_radiation_instant','diffuse_radiation_instant','direct_normal_irradiance_instant']
+                year = 2022
+                
+                city_north = 'Brest'
+                city_south = 'Nice'
+                
+                coordinates_Marseille = get_coordinates(city_south)
+                coordinates_Lille = get_coordinates(city_north)
+                
+                data_Lille = open_meteo_historical_data(longitude=coordinates_Lille[0], latitude=coordinates_Lille[1], year=year, hourly_variables=variables)
+                data_Marseille = open_meteo_historical_data(longitude=coordinates_Marseille[0], latitude=coordinates_Marseille[1], year=year, hourly_variables=variables)
+                
+                dates_Lille = data_Lille.copy().index
+                dates_Lille = dates_Lille.tz_localize(tz='CET',ambiguous='NaT',nonexistent='NaT')
+                altitude_Lille = [get_altitude_fast(coordinates_Lille[1],coordinates_Lille[0],t) if t is not pd.NaT else np.nan for t in dates_Lille]
+                azimuth_Lille = [get_azimuth_fast(coordinates_Lille[1],coordinates_Lille[0],t) if t is not pd.NaT else np.nan for t in dates_Lille]
+                data_Lille['sun_altitude'] = altitude_Lille
+                data_Lille['sun_azimuth'] = azimuth_Lille
+                
+                dates_Marseille = data_Marseille.copy().index
+                dates_Marseille = dates_Marseille.tz_localize(tz='CET',ambiguous='NaT',nonexistent='NaT')
+                altitude_Marseille = [get_altitude_fast(coordinates_Marseille[1],coordinates_Marseille[0],t) if t is not pd.NaT else np.nan for t in dates_Marseille]
+                azimuth_Marseille = [get_azimuth_fast(coordinates_Marseille[1],coordinates_Marseille[0],t) if t is not pd.NaT else np.nan for t in dates_Marseille]
+                data_Marseille['sun_altitude'] = altitude_Marseille
+                data_Marseille['sun_azimuth'] = azimuth_Marseille
+                
+                
+                fig,ax = plt.subplots(dpi=300,figsize=(5,5),subplot_kw={'projection': 'polar'})
+
+                ax.set_theta_zero_location("N")
+                ax.set_theta_direction(-1)
+                ax.set_rlabel_position(0)
+                ax.set_rlim(bottom=90, top=0)
+                ax.set_rticks(list(range(0,91,20)))
+                ax.set_yticklabels(['{}°'.format(e) if e!=0 else '' for e in ax.get_yticks()])
+                ax.set_xticks(np.pi/180. * np.linspace(0,  360, 12, endpoint=False))
+                ax.grid(True)
+                ax.set_xticklabels([{0:'N',90:'E',180:'S',270:'W'}.get(e,'{:.0f}°'.format(e)) for e in np.linspace(0,  360, 12, endpoint=False)])
+                
+                data_solstice_summer_Lille = data_Lille[(data_Lille.index.day==21)&(data_Lille.index.month==6)]
+                data_solstice_winter_Lille = data_Lille[(data_Lille.index.day==21)&(data_Lille.index.month==12)]
+                
+                data_solstice_summer_Marseille = data_Marseille[(data_Marseille.index.day==21)&(data_Marseille.index.month==6)]
+                data_solstice_winter_Marseille = data_Marseille[(data_Marseille.index.day==21)&(data_Marseille.index.month==12)]
+                
+                ax.plot(2*np.pi/360*data_solstice_summer_Lille.sun_azimuth,data_solstice_summer_Lille.sun_altitude,color='tab:blue',zorder=3)
+                ax.plot(2*np.pi/360*data_solstice_winter_Lille.sun_azimuth,data_solstice_winter_Lille.sun_altitude,color='tab:blue',zorder=3)
+                ax.fill_between(list(2*np.pi/360*data_solstice_summer_Lille.sun_azimuth.values),0,list(data_solstice_summer_Lille.sun_altitude.values), alpha=0.2,color='tab:blue',label=city_north)
+                ax.fill_between(list(2*np.pi/360*data_solstice_winter_Lille.sun_azimuth.values),0,list(data_solstice_winter_Lille.sun_altitude.values), color='w')
+                
+                ax.plot(2*np.pi/360*data_solstice_summer_Marseille.sun_azimuth,data_solstice_summer_Marseille.sun_altitude,color='tab:red',zorder=3)
+                ax.plot(2*np.pi/360*data_solstice_winter_Marseille.sun_azimuth,data_solstice_winter_Marseille.sun_altitude,color='tab:red',zorder=3)
+                ax.fill_between(list(2*np.pi/360*data_solstice_summer_Marseille.sun_azimuth.values),0,list(data_solstice_summer_Marseille.sun_altitude.values), alpha=0.2,color='tab:red',label=city_south)
+                ax.fill_between(list(2*np.pi/360*data_solstice_winter_Marseille.sun_azimuth.values),0,list(data_solstice_winter_Marseille.sun_altitude.values), color='w')
+                
+                # dessin de l'analemme à 12h UTC (13h en hiver en heure locale)
+                data_analemme_Lille = data_Lille.copy()
+                data_analemme_Lille = data_analemme_Lille.tz_localize(tz='CET',ambiguous='NaT',nonexistent='NaT').tz_convert('UTC')
+                data_analemme_Lille = data_analemme_Lille[(data_analemme_Lille.index.hour==12)]
+                ax.plot(2*np.pi/360*data_analemme_Lille.sun_azimuth,data_analemme_Lille.sun_altitude,color='tab:blue',lw=1,alpha=0.5,zorder=2)
+                
+                data_analemme_Marseille = data_Marseille.copy()
+                data_analemme_Marseille = data_analemme_Marseille.tz_localize(tz='CET',ambiguous='NaT',nonexistent='NaT').tz_convert('UTC')
+                data_analemme_Marseille = data_analemme_Marseille[(data_analemme_Marseille.index.hour==12)]
+                ax.plot(2*np.pi/360*data_analemme_Marseille.sun_azimuth,data_analemme_Marseille.sun_altitude,color='tab:red',lw=1,alpha=0.5,zorder=2)
+                
+                ax.legend()
+                plt.savefig(os.path.join(figs_folder,'{}.png'.format('sun_path_{}_{}_{}'.format(city_north,city_south,year))),bbox_inches='tight')
+                plt.show()
         
             # Récupération des flux solaires par orientation (projections sur paroi verticale)
             if False:
