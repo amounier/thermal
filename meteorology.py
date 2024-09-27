@@ -522,7 +522,7 @@ def main():
     #%% Caractérisation et étude du flux solaire par orientation
     if True:
         variables = ['direct_radiation_instant','diffuse_radiation_instant','direct_normal_irradiance_instant']
-        city = 'Paris'
+        city = 'Marseille'
         year = 2022
         
         coordinates = get_coordinates(city)
@@ -591,7 +591,7 @@ def main():
                 plt.show()
                 
             # graphe polaire du parcours du soleil dans l'année (comparaison entre villes)
-            if True:
+            if False:
                 variables = ['direct_radiation_instant','diffuse_radiation_instant','direct_normal_irradiance_instant']
                 year = 2022
                 
