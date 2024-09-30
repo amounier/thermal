@@ -139,12 +139,12 @@ def piecewise_linear(T, Th, Tc, C0, kh, kc):
     return res
 
 
-def identify_thermal_sensitivity(temperature, consumption):
+def identify_thermal_sensitivity(temperature, consumption,C0_init=200,k_init=1):
     temperature = np.asarray(temperature)
     consumption = np.asarray(consumption)
 
     # estimation initiale
-    p0 = (10, 20, 200, 1,1)
+    p0 = (10, 20, C0_init, k_init, k_init)
     
     # optimisation sur la fonction piecewise_linear
     popt , e = curve_fit(piecewise_linear, temperature, consumption, p0=p0)
@@ -154,6 +154,39 @@ def identify_thermal_sensitivity(temperature, consumption):
     Th_opt, Tc_opt, C0_opt, kh_opt, kc_opt = popt
     Tc_opt = min(temperature.max(),Tc_opt)
     return Th_opt, Tc_opt, C0_opt, kh_opt, kc_opt, r2_value
+
+
+def plot_thermal_sensitivity(temperature,consumption,figs_folder,reg_code,reg_name,year,
+                             C0_init=200,k_init=1,ylabel=None):
+    Th_opt, Tc_opt, C0_opt, kh_opt, kc_opt, r2_value = identify_thermal_sensitivity(temperature, consumption, C0_init, k_init)
+    yd = piecewise_linear(temperature, *(Th_opt, Tc_opt, C0_opt, kh_opt, kc_opt))
+
+
+    fig,ax = plt.subplots(figsize=(5,5),dpi=300)
+    ax.plot(temperature,consumption,alpha=0.1, ls='',marker='.',label='raw_data')
+    label_fit = 'pw linear (R$^2$ = {:.2f})\n   $k_h$=-{:.1f} Wh/K\n   $k_c$={:.2f} Wh/K\n   $C_0$={:.2f} Wh'.format(r2_value,kh_opt,kc_opt,C0_opt)
+    ax.plot(temperature,yd ,label=label_fit)
+    
+    ax.set_ylim(bottom=0.)
+    ylim = ax.get_ylim()
+    
+    ax.plot([Th_opt,Th_opt],ylim,color='k',alpha=0.4)
+    ax.text(Th_opt,10,'{:.1f}°C '.format(Th_opt),horizontalalignment='right',verticalalignment='bottom')
+    ax.plot([Tc_opt,Tc_opt],ylim,color='k',alpha=0.4)
+    ax.text(Tc_opt,10,' {:.1f}°C'.format(Tc_opt),horizontalalignment='left',verticalalignment='bottom')
+    
+    ax.set_ylim(ylim)
+    ax.set_xlabel('Outdoor temperature (°C)')
+    if ylabel is None:
+        ax.set_ylabel('Hourly electricity energy cons. (by PDL) (Wh)')
+    else:
+        ax.set_ylabel(ylabel)
+    
+    ax.set_title('{} ({})'.format(reg_name, year))
+    ax.legend(loc='upper right')
+    plt.savefig(os.path.join(figs_folder,'{}.png'.format('thermosensibilite_reg{}_{}'.format(reg_code, year))),bbox_inches='tight')
+    plt.show()
+    return 
     
     
 def main():
@@ -240,32 +273,9 @@ def main():
             
             # r2 = r2_score(y,yd)
             
-            Th_opt, Tc_opt, C0_opt, kh_opt, kc_opt, r2_value = identify_thermal_sensitivity(x, y)
-            yd = piecewise_linear(x, *(Th_opt, Tc_opt, C0_opt, kh_opt, kc_opt))
-            # Tc_opt = min(x.max(),Tc_opt)
-            # print(reg_name, popt)
-        
-            fig,ax = plt.subplots(figsize=(5,5),dpi=300)
-            ax.plot(x,y,alpha=0.1, ls='',marker='.',label='raw_data')
-            label_fit = 'pw linear (R$^2$ = {:.2f})\n   $k_h$=-{:.1f} Wh/K\n   $k_c$={:.2f} Wh/K\n   $C_0$={:.2f} Wh'.format(r2_value,kh_opt,kc_opt,C0_opt)
-            ax.plot(x,yd ,label=label_fit)
+            plot_thermal_sensitivity(temperature=x,consumption=y,figs_folder=figs_folder,
+                                     reg_code=reg_code,reg_name=reg_name,year=year)
             
-            ax.set_ylim(bottom=0.)
-            ylim = ax.get_ylim()
-            
-            ax.plot([Th_opt,Th_opt],ylim,color='k',alpha=0.4)
-            ax.text(Th_opt,10,'{:.1f}°C '.format(Th_opt),horizontalalignment='right',verticalalignment='bottom')
-            ax.plot([Tc_opt,Tc_opt],ylim,color='k',alpha=0.4)
-            ax.text(Tc_opt,10,' {:.1f}°C'.format(Tc_opt),horizontalalignment='left',verticalalignment='bottom')
-            
-            ax.set_ylim(ylim)
-            ax.set_xlabel('Outdoor temperature (°C)')
-            ax.set_ylabel('Hourly electricity energy cons. (by PDL) (Wh)')
-            
-            ax.set_title('{} ({})'.format(reg_name, year))
-            ax.legend(loc='upper right')
-            plt.savefig(os.path.join(figs_folder,'{}.png'.format('thermosensibilite_reg{}_{}'.format(reg_code, year))),bbox_inches='tight')
-            plt.show()
         
         
         

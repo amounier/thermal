@@ -21,7 +21,7 @@ from numpy.linalg import inv
 
 from utils import plot_timeserie
 from meteorology import get_coordinates, open_meteo_historical_data
-
+from thermal_sensitivity import plot_thermal_sensitivity
 
 
 def dot3(A,B,C):
@@ -168,6 +168,7 @@ def run_R2C2_model_simulation(data, R1, R2, C1, C2, Ti_min, Ti_max, P_heater_max
     
     Ti0 = Ti_min
     Te0 = (data.temperature_2m.values[0] + Ti0)/2
+    # Te0 = Ti0 # TODO : corriger les paramètres initiaux pour qu'ils soient plus réalistes
     X[0] = [Te0,Ti0]
     
     # Simulation
@@ -455,7 +456,7 @@ def main():
                        save_fig='time_serie_temperature_{}_{}'.format(city,year))
   
                   
-    if True:
+    if False:
         cols = ['q_heater', 'q_cooler', 'q_solar', 'q_internal', 'q_thermal']
         plot_timeserie(data[cols], labels=['{} (W)'.format(c) for c in cols], figsize=(15,5), figs_folder = figs_folder,
                        xlim=[pd.to_datetime('{}-01-01'.format(year)), pd.to_datetime('{}-12-31'.format(year))])
@@ -472,10 +473,19 @@ def main():
                        xlim=[pd.to_datetime('{}-01-01'.format(year)), pd.to_datetime('{}-12-31'.format(year))])
     
     if True:
-        fig,ax = plt.subplots(dpi=300,figsize=(5,5))
-        ax.plot(data[data.q_heater>0]['temperature_2m'].iloc[100:], data[data.q_heater>0]['q_heater'].iloc[100:], ls='',marker='.',color='k',alpha=0.4)
-        ax.plot(data[data.q_cooler<0]['temperature_2m'].iloc[100:], -data[data.q_cooler<0]['q_cooler'].iloc[100:], ls='',marker='.',color='k',alpha=0.4)
-        plt.show()
+        # fig,ax = plt.subplots(dpi=300,figsize=(5,5))
+        # ax.plot(data[data.q_heater>0]['temperature_2m'].iloc[100:], data[data.q_heater>0]['q_heater'].iloc[100:], ls='',marker='.',color='k',alpha=0.4)
+        # ax.plot(data[data.q_cooler<0]['temperature_2m'].iloc[100:], -data[data.q_cooler<0]['q_cooler'].iloc[100:], ls='',marker='.',color='k',alpha=0.4)
+        # plt.show()
+        
+        data_sensitivity = data[['temperature_2m','q_heater','q_cooler']].copy()
+        data_sensitivity = data_sensitivity.sort_values(by='temperature_2m')
+        data_sensitivity['consumption'] = (data_sensitivity.q_heater - data_sensitivity.q_cooler)
+        data_sensitivity = data_sensitivity[data_sensitivity.consumption>0.]
+        
+        
+        plot_thermal_sensitivity(temperature=data_sensitivity.temperature_2m.to_list(), consumption=data_sensitivity.consumption.to_list(), 
+                                 figs_folder=figs_folder, reg_code='00', reg_name='', year=year,C0_init=0,k_init=500,ylabel='Hourly energy consumption (Wh)')
         
     monthly_data = data[['q_heater', 'q_cooler', 'q_solar', 'q_internal', 'q_thermal']].groupby(pd.Grouper(freq='MS')).sum()
     
