@@ -10,6 +10,27 @@ import time
 from datetime import date
 import os
 import pandas as pd
+import numpy as np
+from scipy.linalg import expm
+from numpy.linalg import inv
+
+
+def dot3(A,B,C):
+    return np.dot(A,np.dot(B,C))
+
+
+def SFH_test_model():
+    """
+    Maison individuelle détachée (SFH), sans cave et avec des combles aménagées
+    Une seule zone thermique.
+    
+    """
+    # TODO aller 
+    
+    
+    
+    
+
 
 
 #%% ===========================================================================
