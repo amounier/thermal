@@ -29,6 +29,7 @@ dependencies:
   - pysolar
   - geopy
   - shapely
+  - cdsapi
  # - requests_cache
  # - pip:
   #	- retry-requests
