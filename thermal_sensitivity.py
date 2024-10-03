@@ -188,7 +188,9 @@ def plot_thermal_sensitivity(temperature,consumption,figs_folder,reg_code,reg_na
     plt.show()
     return 
     
-    
+#%% ===========================================================================
+# script principal
+# =============================================================================
 def main():
     tic = time.time()
     
@@ -211,7 +213,7 @@ def main():
     national_consumption_data = open_electricity_consumption('national')
     regional_consumption_data = open_electricity_consumption('regional')
     
-    # Vérification de la somme des énergies consommées par région
+    #%% Vérification de la somme des énergies consommées par région
     if False:
         sum_reg = regional_consumption_data.copy()
         sum_reg = sum_reg[[c for c in sum_reg.columns if c.startswith('total_energie_soutiree')]]
@@ -235,7 +237,7 @@ def main():
     #                figs_folder=figs_folder, save_fig='total_energie_soutiree_wh_reg{}_enedis'.format(reg))
     
     
-    # Premiers tests de thermosensibilité
+    #%% Premiers tests de thermosensibilité
     if True:
         for reg_code in dict_region_code_region_name.keys():
             # la Corse n'est pas intégrée par Enedis
