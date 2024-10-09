@@ -62,15 +62,16 @@ def speed_test_opening(dep='75',dask_only=False, plot=False):
     file = os.path.join('data','BDNB','open_data_millesime_2023-11-a_dep{}_gpkg'.format(dep),'gpkg','bdnb.gpkg')
     
     if dask_only:
-        test_npartitions = False
+        test_npartitions = True
         test_chunksize = False
         
         if test_npartitions:
             npartitions_list = list(range(1,21))
             opening_speed_list = []
-            for npartitions in npartitions_list:
+            for npartitions in tqdm.tqdm(npartitions_list):
                 tic = time.time()
-                _ = dask_geopandas.read_file(file, npartitions=npartitions, layer='dpe_logement')
+                data = dask_geopandas.read_file(file, npartitions=npartitions, layer='dpe_logement')
+                # data = data.compute()
                 tac = time.time()
                 opening_speed_list.append(tac-tic)
                 
@@ -80,11 +81,11 @@ def speed_test_opening(dep='75',dask_only=False, plot=False):
                 plt.show()
                 
         if test_chunksize:
-            chunksize_list = list(np.linspace(1e2,1e8,1000))
+            chunksize_list = list(np.linspace(1e2,1e8,20))
             opening_speed_list = []
             for cs in tqdm.tqdm(chunksize_list):
                 tic = time.time()
-                _ = dask_geopandas.read_file(file, chunksize=cs, layer='dpe_logement')
+                data = dask_geopandas.read_file(file, chunksize=cs, layer='dpe_logement')
                 tac = time.time()
                 opening_speed_list.append(tac-tic)
                 
@@ -1457,7 +1458,7 @@ def main():
         
     #%% benchmark opening 
     if False:
-        print(speed_test_opening()) 
+        # print(speed_test_opening()) 
         print(speed_test_opening(dask_only=True, plot=True)) 
     
 
