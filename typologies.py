@@ -12,29 +12,158 @@ from datetime import date
 import os
 import matplotlib.pyplot as plt
 import tqdm
+import numpy as np
 
 from bdnb_opener import get_bdnb, neighbourhood_map
 from administrative import France, Departement, add_departement_map
 
 
-# dict_angle_orientation = {i*45:o for i,o in enumerate(['N','NE','E','SE','S','SW','W','NW'])}
-# dict_orientation_angle = {v:k for k,v in dict_angle_orientation.items()}
+dict_angle_orientation = {i*45:o for i,o in enumerate(['N','NE','E','SE','S','SW','W','NW'])}
+dict_orientation_angle = {v:k for k,v in dict_angle_orientation.items()}
 
-# TODO : créer une classe typology
+# TODO : completer la classe typology
+# TODO : completer la classe material 
+
+
+def open_materials_characteristics():
+    path = os.path.join('data','Materials','materials.csv')
+    data = pd.read_csv(path)
+    data = data.set_index('material')
+    return data
+
+
+class Material():
+    """
+    Sources principales : 
+        https://rt-re-batiment.developpement-durable.gouv.fr/IMG/pdf/2-fascicule_materiaux.pdf
+        https://perso.univ-lemans.fr/~bcasta/Cours%20L3%20Echanges%20thermiques/Thermique%20de%20l'inge%C3%8C%C2%81nieur,%20Annexes.pdf
+        
+    """
+    def __init__(self,name):
+        self.name = name
+        
+        characteristics = open_materials_characteristics().loc[self.name].to_dict()
+        self.thermal_conductivity = characteristics.get('thermal_conductivity') # en W/(m.K)
+        self.density = characteristics.get('density') # en kg/m3
+        self.thermal_capacity = characteristics.get('thermal_capacity') # en J/(kg.K)
+        
+        
+    def __str__(self):
+        return self.name
+    
+    
+def open_tabula_typologies():
+    path = os.path.join('data','TABULA','TABULA_typologies.csv')
+    data = pd.read_csv(path)
+    data = data.set_index('building_type_id')
+    return data
+
 
 class Typology():
     def __init__(self,code):
         self.code = code
+        
+        params = open_tabula_typologies().loc[self.code].to_dict()
+        self.desc = params.get('building_name')
+        
+        # orientation des murs
+        self.w0_orientation = params.get('building_orientation')
+        self.w1_orientation = dict_angle_orientation.get((dict_orientation_angle.get(self.w0_orientation)+90)%360)
+        self.w2_orientation = dict_angle_orientation.get((dict_orientation_angle.get(self.w1_orientation)+90)%360)
+        self.w3_orientation = dict_angle_orientation.get((dict_orientation_angle.get(self.w2_orientation)+90)%360)
+        
+        # paramètres géométriques
+        self.ground_surface = params.get('building_ground_surface')
+        self.surface = params.get('building_surface')
+        self.roof_surface = self.ground_surface
+        self.levels = params.get('building_levels')
+        self.height = params.get('floor_height')
+        self.volume = self.surface*self.height
+        self.form_factor = params.get('building_form_factor')
+        self.w0_length = np.sqrt(self.ground_surface/self.form_factor)
+        self.w1_length = self.w0_length*self.form_factor
+        self.perimeter = 2*(self.w0_length + self.w1_length)
+        
+        # caractéristiques inférieures et supérieurs 
+        self.basement = bool(params.get('building_basement'))
+        self.converted_attic = bool(params.get('building_converted_attic'))
+        
+        # caractéristiques des ventilations et infiltrations
+        self.air_infiltration = params.get('air_infiltration')
+        self.ventilation_efficiency = params.get('ventilation_efficiency')
+        
+        # caractéristiques du toit
+        self.roof_color = params.get('building_roof_color')
+        self.roof_U = params.get('building_roof_U')
+        self.ceiling_U = params.get('building_ceiling_U')
+        
+        # caractéristiques des vitrages
+        self.h_windows_surface = params.get('building_horizontal_windows_surface')
+        self.w0_windows_surface = params.get('building_wall0_windows_surface')
+        self.w1_windows_surface = params.get('building_wall1_windows_surface')
+        self.w2_windows_surface = params.get('building_wall2_windows_surface')
+        self.w3_windows_surface = params.get('building_wall3_windows_surface')
+        self.windows_U = params.get('building_windows_U')
+        self.windows_Ug = params.get('building_windows_Ug')
+        
+        # caractérisation de la porte
+        self.door_U = params.get('building_door_U')
+        self.door_surface = 2 #m2
+        
+        # caractéristiques des murs
+        # TODO définir self.walls et mettre toutes variables dans ce dictionnaire (ou pas)
+        self.w0_surface = self.w0_length*self.height*self.levels - self.w0_windows_surface
+        self.w1_surface = self.w1_length*self.height*self.levels - self.w1_windows_surface
+        self.w2_surface = self.w0_length*self.height*self.levels - self.w2_windows_surface
+        self.w3_surface = self.w1_length*self.height*self.levels - self.w3_windows_surface
+        
+        self.w0_structure_material = Material(params.get('building_wall0_structure_material'))
+        self.w1_structure_material = Material(params.get('building_wall1_structure_material'))
+        self.w2_structure_material = Material(params.get('building_wall2_structure_material'))
+        self.w3_structure_material = Material(params.get('building_wall3_structure_material'))
+        self.w0_structure_thickness = params.get('building_wall0_structure_thickness')
+        self.w1_structure_thickness = params.get('building_wall1_structure_thickness')
+        self.w2_structure_thickness = params.get('building_wall2_structure_thickness')
+        self.w3_structure_thickness = params.get('building_wall3_structure_thickness')
+        
+        self.w0_insulation_material = Material(params.get('building_wall0_insulation_material'))
+        self.w1_insulation_material = Material(params.get('building_wall1_insulation_material'))
+        self.w2_insulation_material = Material(params.get('building_wall2_insulation_material'))
+        self.w3_insulation_material = Material(params.get('building_wall3_insulation_material'))
+        self.w0_insulation_thickness = params.get('building_wall0_insulation_thickness')
+        self.w1_insulation_thickness = params.get('building_wall1_insulation_thickness')
+        self.w2_insulation_thickness = params.get('building_wall2_insulation_thickness')
+        self.w3_insulation_thickness = params.get('building_wall3_insulation_thickness')
+        self.w0_insulation_position = params.get('building_wall0_insulation_position')
+        self.w1_insulation_position = params.get('building_wall1_insulation_position')
+        self.w2_insulation_position = params.get('building_wall2_insulation_position')
+        self.w3_insulation_position = params.get('building_wall3_insulation_position')
+        
+        # caractéristiques du sol
+        # cf Rantala and Leivo 2006 et Skotnicova and Lausova (2016).
+        # cf Thbat parois opaques p21
+        # TODO à clarifier dans le cas 2D
+        self.floor_ground_depth = params.get('building_depth')
+        self.floor_ground_distance = np.sqrt((self.w1_length/3)**2 + self.floor_ground_depth**2)
+        self.ground_depth = self.floor_ground_depth + 1 # à justifier
+        self.ground_section = self.perimeter * self.ground_depth
+        self.ground_volume = self.ground_surface * self.ground_depth
+        self.floor_structure_material = Material(params.get('building_floor_structure_material'))
+        self.floor_structure_thickness = params.get('building_floor_structure_thickness')
+        self.floor_insulation_material = Material(params.get('building_floor_insulation_material'))
+        self.floor_insulation_thickness = params.get('building_floor_insulation_thickness')
+        
+        # print(params)
+        self.heater_maximum_power= 10000 # W
+        self.cooler_maximum_power= 10000 # W
 
     def __str__(self):
         return self.code
 
-# TODO : créer des attributs typologies statistics (dans Departement) : juste des attributs de département plutot
 
-def open_tabula_typologies():
-    path = os.path.join('data','TABULA','TABULA_typologies.csv')
-    data = pd.read_csv(path)
-    return data
+# Peut-etre à bouger dans un nouveau fichier identification (ou pas, à voir)
+# TODO : stocker les statistiques de typologies dans les départements (dans Departement)
+# TODO : vérifier les données TABULA, caractériser les isolations
 
 
 def identify_typologies(dep, external_disk=True, verbose=True):
@@ -44,7 +173,12 @@ def identify_typologies(dep, external_disk=True, verbose=True):
     _, _, bgc = get_bdnb(dep=dep,external_disk=external_disk)
     # TODO : à refaire de manière optimisée
 
-    bgc = bgc[bgc.ffo_bat_nb_log>=1]
+    bgc = bgc[bgc.ffo_bat_nb_log>=1][['building_type_id',
+                                      'building_type',
+                                      'building_type_construction_year_start',
+                                      'building_type_construction_year_end',
+                                      'building_type_min_hh',
+                                      'building_type_max_hh',]]
     bgc = bgc.compute()
     
     # rel = rel.compute()
@@ -94,12 +228,11 @@ def identify_typologies(dep, external_disk=True, verbose=True):
     del bgc_typo
     return dict_list_bg_id, dict_number_hh
 
-# TODO : vérifier les données TABULA, caractériser les isolations
+
 
 
 def stats_typologies_dep(dep,external_disk=True):
-    # print(dep.code)
-    # TODO à rendre plus clair et plus propre (potentiels problèmes de mémoire dans identify...)
+    # TODO très temporaire, à refaire 
     _, dep.typologies_households_number = identify_typologies(dep=dep.code,external_disk=external_disk,verbose=False)
     
     return dep
