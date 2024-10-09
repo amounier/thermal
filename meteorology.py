@@ -18,9 +18,10 @@ import numpy as np
 from scipy.integrate import odeint
 from pysolar.solar import get_altitude, get_altitude_fast, get_azimuth, get_azimuth_fast
 import tqdm
-import warnings
 
 from utils import plot_timeserie
+
+import warnings
 
 
 def get_coordinates(city):
@@ -292,7 +293,7 @@ def get_historical_weather_data(city, year, principal_orientation, display_units
     data['sun_altitude'] = altitude
     
     # ajout de l'azimuth du soleil (en degrés)
-    azimuth = [get_azimuth_fast(coordinates[1],coordinates[0],t) if t is not pd.NaT else np.nan for t in dates]
+    azimuth = [float(get_azimuth_fast(coordinates[1],coordinates[0],t)) if t is not pd.NaT else np.nan for t in dates]
     data['sun_azimuth'] = azimuth
     
     def get_list_orientations(principal_orientation):
