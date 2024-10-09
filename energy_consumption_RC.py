@@ -155,6 +155,8 @@ def run_R2C2_model_simulation(data, R1, R2, C1, C2, Ti_min, Ti_max, P_heater_max
     # Matrices A et B de la modélsiation R2C2 (cf p186 carnet)
     A_R2C2 = np.asarray([[-1/(R1*C1)-1/(R2*C1),  1/(R2*C1)],
                          [ 1/(R2*C2)          , -1/(R2*C2)]])
+    
+    print(A_R2C2)
     B_R2C2 = np.asarray([[1/(R1*C1) ,  0],
                          [0          , 1/C2]])
     
@@ -372,10 +374,10 @@ def main():
                                               C2=C_wall/2, 
                                               Ti_min=Ti_min, 
                                               Ti_max=Ti_max, 
-                                              P_heater_max=q_max_heater, 
-                                              P_cooler_max=q_max_cooler,
-                                              P_internal=q_internal,
-                                              solar_gain=q_solar_gain,
+                                              P_heater_max=q_max_heater*0, 
+                                              P_cooler_max=q_max_cooler*0,
+                                              P_internal=q_internal*0,
+                                              solar_gain=q_solar_gain*0,
                                               heater_method='linear_tolerance',
                                               cooler_method='all_or_nothing')
     
@@ -452,7 +454,7 @@ def main():
     if True:
         cols = ['temperature_2m', 'internal_wall_temperature', 'indoor_temperature']
         plot_timeserie(data[cols], labels=['{} (°C)'.format(c) for c in cols], figsize=(15,5), figs_folder = figs_folder,
-                       xlim=[pd.to_datetime('{}-01-01'.format(year)), pd.to_datetime('{}-12-31'.format(year))],
+                       xlim=[pd.to_datetime('{}-08-01'.format(year)), pd.to_datetime('{}-08-08'.format(year))],
                        save_fig='time_serie_temperature_{}_{}'.format(city,year))
   
                   
