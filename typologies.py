@@ -159,6 +159,11 @@ class Typology():
 
     def __str__(self):
         return self.code
+    
+    def update_orientation(self):
+        self.w1_orientation = dict_angle_orientation.get((dict_orientation_angle.get(self.w0_orientation)+90)%360)
+        self.w2_orientation = dict_angle_orientation.get((dict_orientation_angle.get(self.w1_orientation)+90)%360)
+        self.w3_orientation = dict_angle_orientation.get((dict_orientation_angle.get(self.w2_orientation)+90)%360)
 
 
 # Peut-etre à bouger dans un nouveau fichier identification (ou pas, à voir)
