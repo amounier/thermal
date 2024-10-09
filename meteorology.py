@@ -118,7 +118,7 @@ def open_meteo_historical_data(longitude, latitude, year, hourly_variables=['tem
         DESCRIPTION.
 
     """
-    # TODO : peut-etre mettre un nom de ville en entrée et en faire des nom de sauvegarde pluis lisible
+    # TODO : peut-etre mettre un nom de ville en entrée et en faire des nom de sauvegarde plus lisible
     if isinstance(hourly_variables, list):
         hourly_variables_str = ','.join(hourly_variables)
     else:
@@ -265,6 +265,80 @@ def get_diffuse_solar_irradiance_projection_ratio(orientation):
     return ratio
 
 
+def get_init_ground_temperature(x,data,xi=0.7,envelope=False):
+    data_january = data[data.index.month==1]
+    # TODO : tendance à sous estimer les valeurs : à modifier
+    if envelope:
+        theta_gs = data_january.temperature_2m.mean()
+    else:
+        theta_gs = data.temperature_2m.values[0]
+    theta_ginf = data.temperature_2m.median()
+    res = theta_gs + (theta_ginf-theta_gs) * (1-np.exp(-x/xi))
+    return res 
+
+
+def get_historical_weather_data(city, year, principal_orientation, display_units=False):
+    # initialisation des données météo
+    variables = ['temperature_2m','diffuse_radiation_instant','direct_normal_irradiance_instant']
+    coordinates = get_coordinates(city)
+    data = open_meteo_historical_data(longitude=coordinates[0], latitude=coordinates[1], year=year, hourly_variables=variables)
+    
+    # formatage des dates sur le bon fuseau horaire
+    dates = data.copy().index
+    dates = dates.tz_localize(tz='CET',ambiguous='NaT',nonexistent='NaT')
+    
+    # ajout de la hauteur du soleil (en degrés)
+    altitude = [get_altitude_fast(coordinates[1],coordinates[0],t) if t is not pd.NaT else np.nan for t in dates]
+    data['sun_altitude'] = altitude
+    
+    # ajout de l'azimuth du soleil (en degrés)
+    azimuth = [get_azimuth_fast(coordinates[1],coordinates[0],t) if t is not pd.NaT else np.nan for t in dates]
+    data['sun_azimuth'] = azimuth
+    
+    def get_list_orientations(principal_orientation):
+        # définition des dictionnaires d'angles
+        valid_orientations = ['N','NE','E','SE','S','SW','W','NW']
+        dict_angle_orientation = {i*45:o for i,o in enumerate(valid_orientations)}
+        dict_orientation_angle = {v:k for k,v in dict_angle_orientation.items()}
+        
+        # liste des orientations
+        orientation_0 = principal_orientation
+        orientation_1 = dict_angle_orientation.get((dict_orientation_angle.get(orientation_0)+90)%360)
+        orientation_2 = dict_angle_orientation.get((dict_orientation_angle.get(orientation_1)+90)%360)
+        orientation_3 = dict_angle_orientation.get((dict_orientation_angle.get(orientation_2)+90)%360)
+        orientations_list = [orientation_0, orientation_1, orientation_2, orientation_3] + ['H']
+        return orientations_list
+    
+    # défintion de la liste des orientations du bâtiment
+    orientations = get_list_orientations(principal_orientation)
+    
+    for ori in orientations:
+        col_coef_dri = 'coefficient_direct_{}_irradiance'.format(ori)
+        col_coef_dif = 'coefficient_diffuse_{}_irradiance'.format(ori)
+        col_dri = 'direct_sun_radiation_{}'.format(ori)
+        col_dif = 'diffuse_sun_radiation_{}'.format(ori)
+        # global_ri = 'sun_radiation_{}'.format(ori)
+        data[col_coef_dri] = get_direct_solar_irradiance_projection_ratio(ori, data.sun_azimuth, data.sun_altitude)
+        data[col_coef_dif] = get_diffuse_solar_irradiance_projection_ratio(ori)
+        data[col_dri] = data.direct_normal_irradiance_instant * data[col_coef_dri]
+        data[col_dif] = data.diffuse_radiation_instant * data[col_coef_dif]
+        # je garde les apports diffus et directs séparés pour pouvoir traiter les masquages différemment
+        # data[global_ri] = data[col_dri] + data[col_dif]
+        
+        # suppression des colonnes intermédiaires de calcul
+        data = data.drop(columns=[col_coef_dri,col_coef_dif])
+
+    if display_units:
+        meteo_units = get_meteo_units(longitude=coordinates[0], latitude=coordinates[1], year=year, hourly_variables=variables)
+        meteo_units['sun_altitude'] = '°'
+        meteo_units['sun_azimuth'] = '°'
+        meteo_units['direct_sun_radiation'] = 'W/m²'
+        meteo_units['diffuse_sun_radiation'] = 'W/m²'
+        print(meteo_units)
+        
+    return data
+    
+
 #%% ===========================================================================
 # Script principal
 # =============================================================================
@@ -325,18 +399,6 @@ def main():
                 RC = x**2/D
                 dtheta_gdt = (1/RC)*(theta_e-theta_g)
                 return dtheta_gdt
-            
-            
-            def get_init_ground_temperature(x,data,xi=0.7,envelope=False):
-                data_january = data[data.index.month==1]
-                # TODO : tendance à sous estimer les valeurs : à modifier
-                if envelope:
-                    theta_gs = data_january.temperature_2m.mean()
-                else:
-                    theta_gs = data.temperature_2m.values[0]
-                theta_ginf = data.temperature_2m.median()
-                res = theta_gs + (theta_ginf-theta_gs) * (1-np.exp(-x/xi))
-                return res
             
             
             def model_ground_temperature(depth_list, data, lambda_th=1.5,cp=1000,rho=2500,h=0.05, res='1h'):
@@ -520,7 +582,7 @@ def main():
                 
                 
     #%% Caractérisation et étude du flux solaire par orientation
-    if True:
+    if False:
         variables = ['direct_radiation_instant','diffuse_radiation_instant','direct_normal_irradiance_instant']
         city = 'Marseille'
         year = 2022
@@ -662,7 +724,7 @@ def main():
                 plt.savefig(os.path.join(figs_folder,'{}.png'.format('sun_path_{}_{}_{}'.format(city_north,city_south,year))),bbox_inches='tight')
                 plt.show()
         
-            # Récupération des flux solaires par orientation (projections sur paroi verticale)
+            # Récupération des flux solaires par orientation (projections sur paroi)
             if False:
                 orientations = ['N','E','S','W','H']
                 list_orientation_coef_dri_cols = []
@@ -709,8 +771,25 @@ def main():
                                xlim=[pd.to_datetime('{}-06-01'.format(year)), pd.to_datetime('{}-06-30'.format(year))],save_fig='global_solar_orientations_{}_{}_summer'.format(city,year))
                 plot_timeserie(data[list_orientation_glob], labels=orientations, figsize=(15,5),figs_folder = figs_folder, show=True,ylabel='Direct solar irradiation (W/m2)',
                                xlim=[pd.to_datetime('{}-03-01'.format(year)), pd.to_datetime('{}-03-31'.format(year))],save_fig='global_solar_orientations_{}_{}_equinoxe'.format(city,year))
-                
-            
+    
+    #%% Test de préparation des données météo pour le calcul thermique
+    if True:
+        city = 'Marseille'
+        year = 2020
+        principal_orientation = 'S'
+        
+        weather_data = get_historical_weather_data(city,year,principal_orientation,display_units=True)
+        plot_timeserie(weather_data[['temperature_2m']], figsize=(15,5),figs_folder = figs_folder, show=True,ylabel='External temperature (°C)',labels=['{} ({})'.format(city,year)],
+                       save_fig='external_temperature_{}_{}'.format(city,year))
+        plot_timeserie(weather_data[['direct_sun_radiation_{}'.format(principal_orientation),'diffuse_sun_radiation_{}'.format(principal_orientation)]], 
+                       figsize=(15,5),figs_folder = figs_folder, show=True,ylabel='Sun radiation - {} façade '.format(principal_orientation) + '(W.m$^{-2}$)',
+                       labels=['Direct radiation - {} ({})'.format(city,year),'Diffuse radiation - {} ({})'.format(city,year)],
+                       colors=['tab:red','tab:blue'], save_fig='solar_radiation_{}_{}'.format(city,year))
+        
+    #%% Étude sur l'influence du vent et son rôle dans la thermique du bâtiment
+    if True:
+        # TODO à faire
+        pass
             
     tac = time.time()
     print('Done in {:.2f}s.'.format(tac-tic))
