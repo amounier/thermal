@@ -16,6 +16,7 @@ from numpy.linalg import inv
 import tqdm
 import matplotlib.pyplot as plt
 from sklearn.metrics import r2_score
+import warnings
 
 from utils import plot_timeserie
 from meteorology import get_init_ground_temperature, get_historical_weather_data
@@ -84,7 +85,8 @@ def get_infiltration_air_flow(typology):
 
 def compute_R_air(typology):
     # total_air_flow = get_infiltration_air_flow(typology) + get_ventilation_minimum_air_flow(typology)
-    R_air = get_infiltration_air_flow(typology) * air_thermal_capacity + get_ventilation_minimum_air_flow(typology) * air_thermal_capacity * (1-typology.ventilation_efficiency)
+    U_air = get_infiltration_air_flow(typology) * air_thermal_capacity + get_ventilation_minimum_air_flow(typology) * air_thermal_capacity * (1-typology.ventilation_efficiency)
+    R_air = 1/U_air
     return R_air
 
 
@@ -119,29 +121,58 @@ def get_external_convection_heat_transfer(wind_speed=5,method='th-bat',plot=Fals
         plt.show()
     return h
 
+def get_external_radiation_heat_transfer(Tm=None, method='cste',plot=False,figs_folder=None):
+    """
+    Supposition d'un vent moyen de 10m/s, à corriger avec des données météo ?
+
+    """
+    if method=='cste':
+        # https://rt-re-batiment.developpement-durable.gouv.fr/IMG/pdf/4-fascicule_parois_opaques_methodes.pdf p15
+        # pour une température moyenne de 10°C
+        h = get_external_radiation_heat_transfer(Tm=20, method='th-bat')
+    
+    elif method=='th-bat':
+        # https://rt-re-batiment.developpement-durable.gouv.fr/IMG/pdf/4-fascicule_parois_opaques_methodes.pdf p15
+        epsilon = 0.9
+        sigma_SB = 5.67e-8 # W/(m2.K4)
+        hro = 4 * sigma_SB  * (Tm+273.15)**3
+        h = epsilon * hro # W/(m2.K)
+    
+    return h
+
 
 def compute_R_ueh(typology):
-    h_ext = get_external_convection_heat_transfer()
+    h_ext_conv = get_external_convection_heat_transfer()
+    h_ext_rad = get_external_radiation_heat_transfer()
+    h_ext = h_ext_conv + h_ext_rad
     R_ueh = 1/(h_ext * typology.roof_surface) # K/W
     return R_ueh
 
 def compute_R_w0eh(typology):
-    h_ext = get_external_convection_heat_transfer()
+    h_ext_conv = get_external_convection_heat_transfer()
+    h_ext_rad = get_external_radiation_heat_transfer()
+    h_ext = h_ext_conv + h_ext_rad
     R_w0eh = 1/(h_ext * typology.w0_surface) # K/W
     return R_w0eh
 
 def compute_R_w1eh(typology):
-    h_ext = get_external_convection_heat_transfer()
+    h_ext_conv = get_external_convection_heat_transfer()
+    h_ext_rad = get_external_radiation_heat_transfer()
+    h_ext = h_ext_conv + h_ext_rad
     R_w1eh = 1/(h_ext * typology.w1_surface) # K/W
     return R_w1eh
 
 def compute_R_w2eh(typology):
-    h_ext = get_external_convection_heat_transfer()
+    h_ext_conv = get_external_convection_heat_transfer()
+    h_ext_rad = get_external_radiation_heat_transfer()
+    h_ext = h_ext_conv + h_ext_rad
     R_w2eh = 1/(h_ext * typology.w2_surface) # K/W
     return R_w2eh
 
 def compute_R_w3eh(typology):
-    h_ext = get_external_convection_heat_transfer()
+    h_ext_conv = get_external_convection_heat_transfer()
+    h_ext_rad = get_external_radiation_heat_transfer()
+    h_ext = h_ext_conv + h_ext_rad
     R_w3eh = 1/(h_ext * typology.w3_surface) # K/W
     return R_w3eh
 
@@ -309,9 +340,9 @@ def compute_C_i(typology):
     mass_air = air_density * typology.volume
     C_air = air_thermal_capacity * mass_air
     
-    # estimations au doigt mouillé : cf Antonopoulos and Koronaki (1999)
-    C_mobilier = C_air 
-    C_internal_partitions = 1.5*C_air
+    # estimations au doigt mouillé : cf Antonopoulos and Koronaki (1999) #TODO à rafiner
+    C_internal_partitions = 10*C_air
+    C_mobilier = 0.2*C_internal_partitions 
     
     C_i = C_air + C_mobilier + C_internal_partitions
     return C_i
@@ -382,7 +413,7 @@ def compute_internal_Phi(typology, weather_data, wall):
                    2:typology.w2_windows_surface,
                    3:typology.w3_windows_surface,}.get(wall)
     
-    sun_radiation = sun_radiation = weather_data['direct_sun_radiation_{}'.format(orientation)].values + weather_data['diffuse_sun_radiation_{}'.format(orientation)].values
+    sun_radiation = weather_data['direct_sun_radiation_{}'.format(orientation)].values + weather_data['diffuse_sun_radiation_{}'.format(orientation)].values
     Phi_si = sun_radiation * surface * g
     return Phi_si
 
@@ -398,8 +429,7 @@ def SFH_test_model(typology, behaviour, weather_data):
         (rayonnement (absent pour l'instant) et convection)
 
     """
-    #  remplacer les None par des valeurs issues de typology
-    
+
     # Variables thermiques de ventilation et infiltrations
     R_air = compute_R_air(typology)
     
@@ -455,8 +485,6 @@ def SFH_test_model(typology, behaviour, weather_data):
     time_ = np.asarray(weather_data.index)
     delta_t = (time_[1]-time_[0]) / np.timedelta64(1, 's')
     
-    # TODO : vérifier les signes 
-    
     # Définition de la matrice A
     A = np.zeros((7,7))
     A[0,0] = 1/C_i * (- 1/R_air 
@@ -466,7 +494,7 @@ def SFH_test_model(typology, behaviour, weather_data):
                       - 1/R_w1w - 1/R_w1i
                       - 1/R_w2w - 1/R_w2i
                       - 1/R_w3w - 1/R_w3i
-                      - 1/R_di)
+                      - 1/R_di) 
     
     A[0,1] = 1/C_i * 1/R_w0i
     A[0,2] = 1/C_i * 1/R_w1i
@@ -479,10 +507,10 @@ def SFH_test_model(typology, behaviour, weather_data):
     A[3,0] = 1/C_w2 * 1/R_w2i
     A[4,0] = 1/C_w3 * 1/R_w3i
     
-    A[1,1] = 1/C_w0 * (-1/R_w0e -1/R_w0i + R_w0eh/(R_w0eh+R_w0e))
-    A[2,2] = 1/C_w1 * (-1/R_w1e -1/R_w1i + R_w1eh/(R_w1eh+R_w1e))
-    A[3,3] = 1/C_w2 * (-1/R_w2e -1/R_w2i + R_w2eh/(R_w2eh+R_w2e))
-    A[4,4] = 1/C_w3 * (-1/R_w3e -1/R_w3i + R_w3eh/(R_w3eh+R_w3e))
+    A[1,1] = 1/C_w0 * (-1/R_w0e -1/R_w0i + R_w0eh/(R_w0e*(R_w0eh+R_w0e)))
+    A[2,2] = 1/C_w1 * (-1/R_w1e -1/R_w1i + R_w1eh/(R_w1e*(R_w1eh+R_w1e)))
+    A[3,3] = 1/C_w2 * (-1/R_w2e -1/R_w2i + R_w2eh/(R_w2e*(R_w2eh+R_w2e)))
+    A[4,4] = 1/C_w3 * (-1/R_w3e -1/R_w3i + R_w3eh/(R_w3e*(R_w3eh+R_w3e)))
     
     A[5,0] = 1/C_f * 1/R_di
     A[5,5] = 1/C_f * (-1/(R_df/2) - 1/R_di)
@@ -490,8 +518,6 @@ def SFH_test_model(typology, behaviour, weather_data):
     
     A[6,5] = 1/C_g * 1/(R_df/2)
     A[6,6] = 1/C_g * (-1/R_g - 1/(R_df/2))
-    
-    print(A)
     
     # Définition de la matrice B
     B = np.zeros((7,13))
@@ -503,7 +529,7 @@ def SFH_test_model(typology, behaviour, weather_data):
                       +1/R_w2w
                       +1/R_w3w)
     
-    B[0,0] = 1/C_i * R_ueh/(R_ui+R_ueh)
+    B[0,1] = 1/C_i * R_ueh/(R_ui+R_ueh)
     B[0,2] = 1/C_i
     B[0,4] = 1/C_i
     B[0,6] = 1/C_i
@@ -533,7 +559,7 @@ def SFH_test_model(typology, behaviour, weather_data):
     U = np.zeros((len(time_), 13))
     
     U[:,0] = weather_data.temperature_2m
-    U[:,1] = [0]*len(weather_data) # compute_external_Phi(typology, weather_data, wall='roof') # Phi_sue
+    U[:,1] = compute_external_Phi(typology, weather_data, wall='roof') # Phi_sue
     U[:,2] = [0]*len(weather_data) # Phi_sui
     U[:,3] = compute_external_Phi(typology, weather_data, wall=0) # Phi_sw0e
     U[:,4] = compute_internal_Phi(typology, weather_data, wall=0) # Phi_sw0i
@@ -543,7 +569,7 @@ def SFH_test_model(typology, behaviour, weather_data):
     U[:,8] = compute_internal_Phi(typology, weather_data, wall=2) # Phi_sw2i
     U[:,9] = compute_external_Phi(typology, weather_data, wall=3) # Phi_sw3e
     U[:,10] = compute_internal_Phi(typology, weather_data, wall=3) # Phi_sw3i
-    U[:,12] = internal_thermal_gains 
+    U[:,12] = np.asarray(internal_thermal_gains)
     
     X[0,0] = Ti_setpoint_winter[0]
     X[0,1] = 1/(R_w0e+R_w0eh+R_w0i) * (R_w0i * U[0,0] + (R_w0e+R_w0eh) * X[0,0])
@@ -554,44 +580,58 @@ def SFH_test_model(typology, behaviour, weather_data):
     X[0,5] = 1/(R_df/2+R_di) * (R_di * X[0,6] + (R_df/2) * X[0,0])
     
     # Simulation
+    heating_needs = [0]*len(time_)
+    cooling_needs = [0]*len(time_)
+    
     for i in tqdm.tqdm(range(1,len(time_)), total=len(time_)-1):
         # Te = U[i,0]
         Ti = X[i-1,0]
         
-        Ts_heater = Ti_setpoint_winter[i]
-        Ts_cooler = Ti_setpoint_summer[i]
+        Ts_heater = Ti_setpoint_winter[i-1]
+        Ts_cooler = Ti_setpoint_summer[i-1]
         
         # Te = X[i-1,0]
-        P_heater = get_P_heater(Ti, Ti_min=Ts_heater, Pmax=P_max_heater, method='all_or_nothing')
-        P_cooler = get_P_cooler(Ti, Ti_max=Ts_cooler, Pmax=P_max_cooler, method='all_or_nothing')
+        P_heater = get_P_heater(Ti, Ti_min=Ts_heater, Pmax=P_max_heater, method='linear_tolerance')
+        P_cooler = get_P_cooler(Ti, Ti_max=Ts_cooler, Pmax=P_max_cooler, method='linear_tolerance')
+        
+        heating_needs[i-1] = P_heater
+        cooling_needs[i-1] = -P_cooler
         
         U[i-1,11] = P_heater + P_cooler
         
         X[i] = np.dot(F,X[i-1]) + np.dot(G, U[i-1].T)
     
+    heating_needs[-1] = get_P_heater(X[i,0], Ti_min=Ti_setpoint_winter[i], Pmax=P_max_heater, method='linear_tolerance')
+    cooling_needs[-1] = get_P_cooler(X[i,0], Ti_max=Ti_setpoint_summer[i], Pmax=P_max_cooler, method='linear_tolerance')
+    
     print(X.shape)
     weather_data['internal_temperature'] = X[:,0]
+    weather_data['w0_temperature'] = X[:,1]
     weather_data['ground_temperature'] = X[:,6]
-    weather_data['heater_cooler_power'] = U[:,11]
+    weather_data['heating_needs'] = heating_needs
+    weather_data['cooling_needs'] = cooling_needs
     
     # print(weather_data[['temperature_2m','internal_temperature']])
-    # plot_timeserie(weather_data[['temperature_2m','internal_temperature','ground_temperature']],
-    #                xlim=[pd.to_datetime('{}-02-01'.format(2020)), pd.to_datetime('{}-02-08'.format(2020))])
-    # plot_timeserie(weather_data[['temperature_2m','internal_temperature','ground_temperature']],
-    #                xlim=[pd.to_datetime('{}-07-01'.format(2020)), pd.to_datetime('{}-07-08'.format(2020))])
+    plot_timeserie(weather_data[['temperature_2m','w0_temperature','internal_temperature']],
+                   xlim=[pd.to_datetime('{}-08-01'.format(2020)), pd.to_datetime('{}-08-08'.format(2020))])
+    plot_timeserie(weather_data[['temperature_2m','w0_temperature','internal_temperature']],
+                   xlim=[pd.to_datetime('{}-02-01'.format(2020)), pd.to_datetime('{}-02-08'.format(2020))])
     
-    for i in range(7):
-        plt.plot(U[:,0])
-        plt.plot(X[:,i])
-        plt.show()
+    # for i in range(7):
+    #     plt.plot(U[:,0])
+    #     plt.plot(X[:,i])
+    #     plt.show()
         
-    for i in range(1,13):
-        plt.plot(U[:,0])
-        plt.plot(U[:,i])
-        plt.show()
+    # for i in range(1,11):
+    #     plt.plot(U[:,0])
+    #     plt.plot(U[:,i])
+    #     plt.show()
     
-    # plot_timeserie(weather_data[['heater_cooler_power']],
-    #                xlim=[pd.to_datetime('{}-07-01'.format(2020)), pd.to_datetime('{}-07-31'.format(2020))])
+    plot_timeserie(weather_data[['heating_needs','cooling_needs']],
+                   xlim=[pd.to_datetime('{}-08-01'.format(2020)), pd.to_datetime('{}-08-08'.format(2020))])
+    plot_timeserie(weather_data[['heating_needs','cooling_needs']],
+                   xlim=[pd.to_datetime('{}-02-01'.format(2020)), pd.to_datetime('{}-02-08'.format(2020))])
+    
     return X,U
     
     
@@ -624,23 +664,37 @@ def main():
         
     #%% Premier test pour le poster de SGR
     if True:
+        warnings.simplefilter("ignore") # à cause du calcul de l'azimuth et de l'altitude du soleil 
+        
         # Définition de la typologie
         typo = Typology('FR.N.SFH.01.Test')
-        # typo.w0_insulation_thickness = 0.6
-        # typo.ventilation_efficiency = 1
-        typo.heater_maximum_power = 0
-        typo.cooler_maximum_power = 0
+        
+        # typo.w0_structure_thickness = 0.3
+        # typo.w2_structure_thickness = 0.3
+        
+        # typo.w0_insulation_thickness = 0
+        # typo.w1_insulation_thickness = 0
+        # typo.w2_insulation_thickness = 0
+        # typo.w3_insulation_thickness = 0
+        
+        # typo.heater_maximum_power = 0
+        # typo.cooler_maximum_power = 0
+        
+        # typo.w0_orientation = 'E'
+        # typo.update_orientation()
         
         # Génération du fichier météo
-        city = 'Marseille'
+        city = 'Paris'
         year = 2020
         principal_orientation = typo.w0_orientation
         
         weather_data = get_historical_weather_data(city,year,principal_orientation)
         weather_data = refine_resolution(weather_data, resolution='30s')
         
-        # Définition des habitudes (simplifiées pour l'instant)
+        # Définition des habitudes
         conventionnel = Behaviour('conventionnel_th-bce_2020')
+        conventionnel.heating_rules = {i:[19]*24 for i in range(1,8)}
+        conventionnel.cooling_rules = {i:[26]*24 for i in range(1,8)}
         
         # Affichage des variables d'entrée
         if False:
