@@ -13,9 +13,10 @@ import os
 import matplotlib.pyplot as plt
 import tqdm
 import numpy as np
+import matplotlib
 
 from bdnb_opener import get_bdnb, neighbourhood_map
-from administrative import France, Departement, add_departement_map
+from administrative import France, Departement, draw_departement_map
 
 
 dict_angle_orientation = {i*45:o for i,o in enumerate(['N','NE','E','SE','S','SW','W','NW'])}
@@ -144,7 +145,7 @@ class Typology():
         # cf Thbat parois opaques p21
         # TODO à clarifier dans le cas 2D
         self.floor_ground_depth = params.get('building_depth')
-        self.floor_ground_distance = np.sqrt((self.w1_length/3)**2 + self.floor_ground_depth**2)
+        self.floor_ground_distance = self.get_floor_ground_distance()
         self.ground_depth = self.floor_ground_depth + 1 # à justifier
         self.ground_section = self.perimeter * self.ground_depth
         self.ground_volume = self.ground_surface * self.ground_depth
@@ -165,6 +166,16 @@ class Typology():
         self.w2_orientation = dict_angle_orientation.get((dict_orientation_angle.get(self.w1_orientation)+90)%360)
         self.w3_orientation = dict_angle_orientation.get((dict_orientation_angle.get(self.w2_orientation)+90)%360)
 
+    def get_floor_ground_distance(self,nb_discretize=50):
+        X,Y = np.linspace(0, self.w0_length, nb_discretize), np.linspace(0, self.w1_length, nb_discretize)
+        distance = np.zeros((len(X),len(Y)))
+        for i,x in enumerate(X):
+            for j,y in enumerate(Y):
+                distance[i,j] = min(min(x,self.w0_length-x),min(y,self.w1_length-y))
+                
+        horizontal_distance = np.mean(distance)
+        floor_ground_distance = np.sqrt(horizontal_distance**2 + self.floor_ground_depth**2)
+        return floor_ground_distance
 
 # Peut-etre à bouger dans un nouveau fichier identification (ou pas, à voir)
 # TODO : stocker les statistiques de typologies dans les départements (dans Departement)
@@ -354,7 +365,7 @@ def main():
         percent_hh_typo_categories = {k:v/total_dep_hh for k,v in number_hh_typo_categories.items()}
         
         for k in number_hh_typo_categories.keys():
-            add_departement_map({departement:percent_hh_typo_categories.get(k)},figs_folder=figs_folder,cbar_label='{} ratio by department'.format(k))
+            draw_departement_map({departement:percent_hh_typo_categories.get(k)},figs_folder=figs_folder,cbar_label='{} ratio by department'.format(k))
     
     # Téléchargement des départements
     if False:
@@ -388,7 +399,7 @@ def main():
             for d,ratio_typo in stats.items():
                 stats_type[d] = sum([ratio_typo.get(t) for t in typos])
             # stats_typo = {e:v.get(k) for e,v in stats.items()}
-            add_departement_map(stats_type,figs_folder=figs_folder,save='{}_ratio_dep'.format(th),cbar_label='{} ratio by department'.format(th))
+            draw_departement_map(stats_type,figs_folder=figs_folder,save='{}_ratio_dep'.format(th),cbar_label='{} ratio by department'.format(th))
     
     # Carte des stats en multithreading # trop long, saturation en mémoire à comprendre
     if False:
@@ -420,7 +431,7 @@ def main():
             for d,ratio_typo in stats.items():
                 stats_type[d] = sum([ratio_typo.get(t) for t in typos])
             # stats_typo = {e:v.get(k) for e,v in stats.items()}
-            add_departement_map(stats_type,figs_folder=figs_folder,save='{}_ratio_dep'.format(th),cbar_label='{} ratio by department'.format(th))
+            draw_departement_map(stats_type,figs_folder=figs_folder,save='{}_ratio_dep'.format(th),cbar_label='{} ratio by department'.format(th))
             
         
             
@@ -448,6 +459,45 @@ def main():
         typo = Typology(code)
         print(typo)
         
+    #%% Étude de la distance au bord de plaque
+    if True:
+    
+        code = 'FR.N.SFH.01.Test'
+        typo = Typology(code)
+        
+        print(typo.floor_ground_distance)
+        
+        L0 = typo.w0_length
+        L1 = typo.w1_length
+        
+        X,Y = np.linspace(0, L0, 50), np.linspace(0, L1, 50)
+        distance = np.zeros((len(X),len(Y)))
+        for i,x in enumerate(X):
+            for j,y in enumerate(Y):
+                distance[i,j] = min(min(x,L0-x),min(y,L1-y))
+        
+        X, Y = np.meshgrid(X, Y)
+        
+        fig, ax = plt.subplots(dpi=300,figsize=(5,5*typo.form_factor))
+        cs = ax.contourf(X, Y, distance.T)
+        # cbar = fig.colorbar(cs)
+        ax.set_xlabel('W$_0$ length (m)')
+        ax.set_ylabel('W$_1$ length (m)')
+        ax.axis('equal')
+        
+        cbar_ax = fig.add_axes([0, 0, 0.1, 0.1])
+        posn = ax.get_position()
+        cbar_ax.set_position([posn.x0+posn.width+0.02, posn.y0, 0.04, posn.height])
+        norm = matplotlib.colors.Normalize(vmin=np.min(distance), vmax=np.max(distance))
+        mappable = matplotlib.cm.ScalarMappable(norm=norm, cmap=matplotlib.colormaps.get_cmap('viridis'))
+        
+        cbar_label_var = 'Distance from edge (m) - Mean value = {:.1f}m'.format(np.mean(distance))
+        # _ = plt.colorbar(cs, cax=cbar_ax, label=cbar_label_var, extend='neither', extendfrac=0.02)
+        _ = plt.colorbar(mappable, cax=cbar_ax, label=cbar_label_var, extend='neither', extendfrac=0.02)
+        
+        plt.savefig(os.path.join(figs_folder,'{}.png'.format('distance_from_edge')),bbox_inches='tight')
+        
+        plt.show()
     
     tac = time.time()
     print('Done in {:.2f}s.'.format(tac-tic))
