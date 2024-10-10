@@ -149,11 +149,11 @@ def open_meteo_historical_data(longitude, latitude, year, hourly_variables=['tem
     return data
 
 
-def get_meteo_data(city, period=[2020,2024]):
+def get_meteo_data(city, period=[2020,2024],variables=['temperature_2m','direct_radiation_instant']):
     longitude, latitude = get_coordinates(city)
     data = None
     for y in range(period[0],period[1]+1):
-        yearly_data = open_meteo_historical_data(longitude, latitude, y)
+        yearly_data = open_meteo_historical_data(longitude, latitude, y, hourly_variables=variables)
         if data is None:
             data = yearly_data
         else:
@@ -278,11 +278,11 @@ def get_init_ground_temperature(x,data,xi=0.7,envelope=False):
     return res 
 
 
-def get_historical_weather_data(city, year, principal_orientation, display_units=False):
+def get_historical_weather_data(city, period, principal_orientation, display_units=False):
     # initialisation des données météo
     variables = ['temperature_2m','diffuse_radiation_instant','direct_normal_irradiance_instant']
     coordinates = get_coordinates(city)
-    data = open_meteo_historical_data(longitude=coordinates[0], latitude=coordinates[1], year=year, hourly_variables=variables)
+    data = get_meteo_data(city,period,variables=variables)
     
     # formatage des dates sur le bon fuseau horaire
     dates = data.copy().index
@@ -330,7 +330,7 @@ def get_historical_weather_data(city, year, principal_orientation, display_units
         data = data.drop(columns=[col_coef_dri,col_coef_dif])
 
     if display_units:
-        meteo_units = get_meteo_units(longitude=coordinates[0], latitude=coordinates[1], year=year, hourly_variables=variables)
+        meteo_units = get_meteo_units(longitude=coordinates[0], latitude=coordinates[1], year=period[0], hourly_variables=variables)
         meteo_units['sun_altitude'] = '°'
         meteo_units['sun_azimuth'] = '°'
         meteo_units['direct_sun_radiation'] = 'W/m²'
@@ -776,16 +776,16 @@ def main():
     #%% Test de préparation des données météo pour le calcul thermique
     if True:
         city = 'Marseille'
-        year = 2020
+        period = [2010,2020]
         principal_orientation = 'S'
         
-        weather_data = get_historical_weather_data(city,year,principal_orientation,display_units=True)
-        plot_timeserie(weather_data[['temperature_2m']], figsize=(15,5),figs_folder = figs_folder, show=True,ylabel='External temperature (°C)',labels=['{} ({})'.format(city,year)],
-                       save_fig='external_temperature_{}_{}'.format(city,year))
+        weather_data = get_historical_weather_data(city,period,principal_orientation,display_units=True)
+        plot_timeserie(weather_data[['temperature_2m']], figsize=(15,5),figs_folder = figs_folder, show=True,ylabel='External temperature (°C)',labels=['{}'.format(city)],
+                       save_fig='external_temperature_{}_{}-{}'.format(city,period[0],period[1]))
         plot_timeserie(weather_data[['direct_sun_radiation_{}'.format(principal_orientation),'diffuse_sun_radiation_{}'.format(principal_orientation)]], 
                        figsize=(15,5),figs_folder = figs_folder, show=True,ylabel='Sun radiation - {} façade '.format(principal_orientation) + '(W.m$^{-2}$)',
-                       labels=['Direct radiation - {} ({})'.format(city,year),'Diffuse radiation - {} ({})'.format(city,year)],
-                       colors=['tab:red','tab:blue'], save_fig='solar_radiation_{}_{}'.format(city,year))
+                       labels=['Direct radiation - {}'.format(city),'Diffuse radiation - {}'.format(city)],
+                       colors=['tab:red','tab:blue'], save_fig='solar_radiation_{}_{}-{}'.format(city,period[0],period[1]))
         
     #%% Étude sur l'influence du vent et son rôle dans la thermique du bâtiment
     if True:
