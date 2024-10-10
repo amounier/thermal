@@ -20,9 +20,11 @@ import warnings
 
 from utils import plot_timeserie
 from meteorology import get_init_ground_temperature, get_historical_weather_data
-from energy_consumption_RC import get_P_cooler, get_P_heater
 from typologies import Typology
 from behaviour import Behaviour
+from thermal_sensitivity import plot_thermal_sensitivity
+from future_meteorology import get_projected_weather_data
+from administrative import Departement, Climat
 
 air_thermal_capacity = 1000 # J/(kg.K)
 air_density = 1.2 # kg/m3
@@ -30,6 +32,86 @@ air_density = 1.2 # kg/m3
 ground_thermal_capacity = 1000 #J /(kg.K)
 ground_density = 2500 # kg/m3
 ground_thermal_conductivity = 1.5 # W/(m.K)
+
+
+def get_P_heater(Ti, Ti_min, Pmax, method='all_or_nothing'):
+    """
+    Renvoie la puissance des équipemetns de chauffage
+
+    Parameters
+    ----------
+    Ti : float
+        DESCRIPTION.
+    Ti_min : float
+        DESCRIPTION.
+    Pmax : float
+        DESCRIPTION.
+    method : str, optional
+        DESCRIPTION. The default is 'all_or_nothing'.
+
+    Returns
+    -------
+    P_heater : float
+        DESCRIPTION.
+
+    """
+    if method == 'all_or_nothing':
+        if Ti < Ti_min:
+            P_heater = Pmax
+        else:
+            P_heater = 0
+            
+    elif method == 'linear_tolerance':
+        tolerance = 1 #°C
+        if Ti < Ti_min - tolerance:
+            P_heater = Pmax
+        elif Ti >= Ti_min + tolerance:
+            P_heater = 0
+        else:
+            P_heater = (-(Ti-(Ti_min-tolerance))/(2*tolerance)+1)*Pmax
+    return P_heater
+
+
+def get_P_cooler(Ti, Ti_max, Pmax, method='all_or_nothing'):
+    """
+    Renvoie la puissance des équipements de refroidissement
+
+    Parameters
+    ----------
+    Ti : float
+        DESCRIPTION.
+    Ti_max : float
+        DESCRIPTION.
+    Pmax : float
+        DESCRIPTION.
+    method : str, optional
+        DESCRIPTION. The default is 'all_or_nothing'.
+
+    Returns
+    -------
+    P_cooler : float
+        DESCRIPTION.
+
+    """
+    if method == 'all_or_nothing':
+        if Ti > Ti_max:
+            P_cooler = Pmax
+        else:
+            P_cooler = 0
+            
+    elif method == 'linear_tolerance':
+         tolerance = 1 #°C
+         if Ti > Ti_max + tolerance:
+             P_cooler = Pmax
+         elif Ti <= Ti_max - tolerance:
+             P_cooler = 0
+         else:
+             P_cooler = ((Ti-(Ti_max-tolerance))/(2*tolerance))*Pmax
+    
+    # flux de refroidissement négatif
+    P_cooler = - P_cooler
+    return P_cooler
+
 
 def dot3(A,B,C):
     return np.dot(A,np.dot(B,C))
@@ -392,7 +474,7 @@ def compute_external_Phi(typology, weather_data, wall):
 def get_solar_transmission_factor(typology,weather_data):
     # Dans les règles Th-bat : voir norme NF P50 777, puis norme NF EN 410 
     # TODO à raffiner selon le nombre de couches principalement (et peut-être l'angle d'incidence ?)
-    solar_factor = 0.6 # g (ratio)
+    solar_factor = 0.5 # g (ratio)
     return solar_factor
 
 def compute_internal_Phi(typology, weather_data, wall):
@@ -419,7 +501,7 @@ def compute_internal_Phi(typology, weather_data, wall):
 
 
 
-def SFH_test_model(typology, behaviour, weather_data):
+def SFH_test_model(typology, behaviour, weather_data, progressbar=True):
     """
     Maison individuelle détachée (SFH), sans cave et avec des combles aménagées
     Une seule zone thermique.
@@ -583,7 +665,11 @@ def SFH_test_model(typology, behaviour, weather_data):
     heating_needs = [0]*len(time_)
     cooling_needs = [0]*len(time_)
     
-    for i in tqdm.tqdm(range(1,len(time_)), total=len(time_)-1):
+    if progressbar:
+        iterator = tqdm.tqdm(range(1,len(time_)), total=len(time_)-1)
+    else:
+        iterator = range(1,len(time_))
+    for i in iterator:
         # Te = U[i,0]
         Ti = X[i-1,0]
         
@@ -597,42 +683,24 @@ def SFH_test_model(typology, behaviour, weather_data):
         heating_needs[i-1] = P_heater
         cooling_needs[i-1] = -P_cooler
         
-        U[i-1,11] = P_heater + P_cooler
+        U[i,11] = P_heater + P_cooler # i-1 ou i #TODO : à vérifier Rouchier, Madsen : peu de différence en tout cas
         
-        X[i] = np.dot(F,X[i-1]) + np.dot(G, U[i-1].T)
+        X[i] = np.dot(F,X[i-1]) + np.dot(G, U[i].T)
     
     heating_needs[-1] = get_P_heater(X[i,0], Ti_min=Ti_setpoint_winter[i], Pmax=P_max_heater, method='linear_tolerance')
     cooling_needs[-1] = get_P_cooler(X[i,0], Ti_max=Ti_setpoint_summer[i], Pmax=P_max_cooler, method='linear_tolerance')
     
-    print(X.shape)
     weather_data['internal_temperature'] = X[:,0]
-    weather_data['w0_temperature'] = X[:,1]
+    weather_data['w0_internal_temperature'] = X[:,1]
+    weather_data['w1_internal_temperature'] = X[:,2]
+    weather_data['w2_internal_temperature'] = X[:,3]
+    weather_data['w3_internal_temperature'] = X[:,4]
     weather_data['ground_temperature'] = X[:,6]
+    
     weather_data['heating_needs'] = heating_needs
     weather_data['cooling_needs'] = cooling_needs
     
-    # print(weather_data[['temperature_2m','internal_temperature']])
-    plot_timeserie(weather_data[['temperature_2m','w0_temperature','internal_temperature']],
-                   xlim=[pd.to_datetime('{}-08-01'.format(2020)), pd.to_datetime('{}-08-08'.format(2020))])
-    plot_timeserie(weather_data[['temperature_2m','w0_temperature','internal_temperature']],
-                   xlim=[pd.to_datetime('{}-02-01'.format(2020)), pd.to_datetime('{}-02-08'.format(2020))])
-    
-    # for i in range(7):
-    #     plt.plot(U[:,0])
-    #     plt.plot(X[:,i])
-    #     plt.show()
-        
-    # for i in range(1,11):
-    #     plt.plot(U[:,0])
-    #     plt.plot(U[:,i])
-    #     plt.show()
-    
-    plot_timeserie(weather_data[['heating_needs','cooling_needs']],
-                   xlim=[pd.to_datetime('{}-08-01'.format(2020)), pd.to_datetime('{}-08-08'.format(2020))])
-    plot_timeserie(weather_data[['heating_needs','cooling_needs']],
-                   xlim=[pd.to_datetime('{}-02-01'.format(2020)), pd.to_datetime('{}-02-08'.format(2020))])
-    
-    return X,U
+    return weather_data
     
     
 def refine_resolution(data, resolution):
@@ -640,6 +708,11 @@ def refine_resolution(data, resolution):
     data_high_res = data_high_res.join(data,how='left')
     data_high_res = data_high_res.interpolate()
     return data_high_res
+
+
+def aggregate_resolution(data, resolution='h', agg_method='mean'):
+    agg_data = data.groupby(pd.Grouper(freq=resolution)).agg(func=agg_method)
+    return agg_data
 
 
 #%% ===========================================================================
@@ -661,21 +734,32 @@ def main():
         os.mkdir(os.path.join(output,folder))
     if 'figs' not in os.listdir(os.path.join(output, folder)):
         os.mkdir(figs_folder)
-        
+    
+    warnings.simplefilter("ignore") # à cause du calcul de l'azimuth et de l'altitude du soleil 
+    
     #%% Premier test pour le poster de SGR
-    if True:
+    if False:
         warnings.simplefilter("ignore") # à cause du calcul de l'azimuth et de l'altitude du soleil 
         
         # Définition de la typologie
-        typo = Typology('FR.N.SFH.01.Test')
+        typo_name = 'FR.N.SFH.01.Test'
+        typo = Typology(typo_name)
         
         # typo.w0_structure_thickness = 0.3
         # typo.w2_structure_thickness = 0.3
+        typo.roof_U = 0.36
         
-        # typo.w0_insulation_thickness = 0
-        # typo.w1_insulation_thickness = 0
-        # typo.w2_insulation_thickness = 0
-        # typo.w3_insulation_thickness = 0
+        no_insulation = False
+        
+        if no_insulation:
+            typo.w0_insulation_thickness = 0
+            typo.w1_insulation_thickness = 0
+            typo.w2_insulation_thickness = 0
+            typo.w3_insulation_thickness = 0
+            
+            typo.roof_U = 1.35
+            
+            typo.floor_insulation_thickness = 0
         
         # typo.heater_maximum_power = 0
         # typo.cooler_maximum_power = 0
@@ -684,11 +768,11 @@ def main():
         # typo.update_orientation()
         
         # Génération du fichier météo
-        city = 'Paris'
-        year = 2020
+        city = 'Marseille'
+        period = [2020]*2
         principal_orientation = typo.w0_orientation
         
-        weather_data = get_historical_weather_data(city,year,principal_orientation)
+        weather_data = get_historical_weather_data(city,period,principal_orientation)
         weather_data = refine_resolution(weather_data, resolution='30s')
         
         # Définition des habitudes
@@ -701,11 +785,486 @@ def main():
             pass 
         
         # Simulation
+        if False:
+            year = period[0]
+            
+            simulation_data = SFH_test_model(typo, conventionnel, weather_data)
+            simulation_data = aggregate_resolution(simulation_data, resolution='h')
+            
+            plot_timeserie(simulation_data[['temperature_2m','internal_temperature']],figsize=(15,5),
+                           xlim=[pd.to_datetime('{}-01-01'.format(year)), pd.to_datetime('{}-12-31'.format(year))],ylabel='Temperature (°C)',
+                           figs_folder=figs_folder, save_fig='thermal_model_temperature_{}_{}_{}'.format(city,year,typo_name))
+            
+            plot_timeserie(simulation_data[['heating_needs','cooling_needs']],figsize=(15,5),
+                           xlim=[pd.to_datetime('{}-01-01'.format(year)), pd.to_datetime('{}-12-31'.format(year))],ylabel='Energy needs (Wh)',
+                           figs_folder=figs_folder, save_fig='thermal_model_energy_needs_{}_{}_{}'.format(city,year,typo_name))
+            
+            
+            annual_heating_consumption = simulation_data.heating_needs.sum()/1000
+            surface_annual_heating_consumption = annual_heating_consumption/typo.surface
+            
+            annual_cooling_consumption = simulation_data.cooling_needs.sum()/1000
+            surface_annual_cooling_consumption = annual_cooling_consumption/typo.surface
+            
+            print('Besoins annuels de chauffage à {} en {}: {:.0f} kWh/an'.format(city,year, annual_heating_consumption))
+            print('Besoins annuels de chauffage à {} en {}: {:.0f} kWh/(m2.an)'.format(city, year, surface_annual_heating_consumption))
+            print('Besoins annuels de refroidissement à {} en {}: {:.0f} kWh/an'.format(city, year, annual_cooling_consumption))
+            print('Besoins annuels de refroidissement à {} en {}: {:.0f} kWh/(m2.an)'.format(city, year, surface_annual_cooling_consumption))
+            
+            monthly_data = aggregate_resolution(simulation_data, resolution='M',agg_method='sum')
+            
+            plot_timeserie(monthly_data[['heating_needs','cooling_needs']],figsize=(5,5),
+                           xlim=[pd.to_datetime('{}-01-01'.format(year)), pd.to_datetime('{}-12-31'.format(year))],
+                           figs_folder=figs_folder, save_fig='monthly_thermal_model_energy_needs_{}_{}_{}'.format(city,year,typo_name))
+            
+            # thermosensibilité
+            if False:
+                data_sensitivity = simulation_data[['temperature_2m','heating_needs','cooling_needs']].copy()
+                data_sensitivity = data_sensitivity.sort_values(by='temperature_2m')
+                data_sensitivity['energy_needs'] = (data_sensitivity.heating_needs + data_sensitivity.cooling_needs)
+                data_sensitivity = data_sensitivity[data_sensitivity.energy_needs>0.]
+                
+                
+                plot_thermal_sensitivity(temperature=data_sensitivity.temperature_2m.to_list(), consumption=data_sensitivity.energy_needs.to_list(), 
+                                         figs_folder=figs_folder, reg_code='00', reg_name='', year=year,C0_init=0,k_init=500,ylabel='Hourly energy needs (Wh)')
+                
+                
+    #%% Graphes Poster SGR 
+    if True:
+        
+        # Étude de l'effet de l'épaisseur d'isolant sur la consommation annuelle
+        if False:
+            def get_annual_energy_needs(typology,weather_data,behaviour, by_surface=True):
+                simulation_data = SFH_test_model(typology, conventionnel, weather_data)
+                simulation_data = aggregate_resolution(simulation_data, resolution='h')
+                
+                yearly_data = aggregate_resolution(simulation_data, resolution='Y',agg_method='sum')
+                yearly_data = yearly_data/1000
+                surface_yearly_data = yearly_data/typology.surface
+                
+                if by_surface:
+                    return surface_yearly_data[['heating_needs','cooling_needs']]
+                else:
+                    return yearly_data[['heating_needs','cooling_needs']]
+                
+            thickness_list = np.linspace(0,0.3,10)
+            energy_needs_mean_list_1 = []
+            energy_needs_std_list_1 = []
+            energy_needs_mean_list_2 = []
+            energy_needs_std_list_2 = []
+            
+            typo_name = 'FR.N.SFH.01.Test'
+            typo = Typology(typo_name)
+            typo.roof_U = 0.36
+            typo.floor_insulation_thickness = 0
+            
+            # Génération du fichier météo
+            city_1 = 'Paris'
+            period = [2015,2020]
+            principal_orientation = typo.w0_orientation
+            weather_data_1 = get_historical_weather_data(city_1,period,principal_orientation)
+            weather_data_1 = refine_resolution(weather_data_1, resolution='30s')
+            
+            city_2 = 'Marseille'
+            period = [2015,2020]
+            principal_orientation = typo.w0_orientation
+            weather_data_2 = get_historical_weather_data(city_2,period,principal_orientation)
+            weather_data_2 = refine_resolution(weather_data_2, resolution='30s')
+            
+            # Définition des habitudes
+            conventionnel = Behaviour('conventionnel_th-bce_2020')
+            conventionnel.heating_rules = {i:[19]*24 for i in range(1,8)}
+            conventionnel.cooling_rules = {i:[26]*24 for i in range(1,8)}
+            
+            for thickness in thickness_list:
+                
+                typo.w0_insulation_thickness = thickness
+                typo.w1_insulation_thickness = thickness
+                typo.w2_insulation_thickness = thickness
+                typo.w3_insulation_thickness = thickness
+                # typo.roof_U = 1.35
+                
+                energy_needs_1 = get_annual_energy_needs(typo, weather_data_1, conventionnel)
+                energy_needs_mean_list_1.append(energy_needs_1.mean(axis=0))
+                energy_needs_std_list_1.append(energy_needs_1.std(axis=0))
+                
+                energy_needs_2 = get_annual_energy_needs(typo, weather_data_2, conventionnel)
+                energy_needs_mean_list_2.append(energy_needs_2.mean(axis=0))
+                energy_needs_std_list_2.append(energy_needs_2.std(axis=0))
+            
+            
+            fig,ax = plt.subplots(figsize=(5,5),dpi=300)
+            ax.errorbar(thickness_list, 
+                        [e.loc['heating_needs'] for e in energy_needs_mean_list_1], 
+                        [e.loc['cooling_needs'] for e in energy_needs_std_list_1],
+                        color='tab:red',label='Heating needs ({})'.format(city_1),capsize=3)
+            ax.errorbar(thickness_list, 
+                        [e.loc['cooling_needs'] for e in energy_needs_mean_list_1], 
+                        [e.loc['cooling_needs'] for e in energy_needs_std_list_1],
+                        color='tab:blue',label='Cooling needs ({})'.format(city_1),capsize=3)
+            ax.errorbar(thickness_list, 
+                        [e.loc['heating_needs'] for e in energy_needs_mean_list_2], 
+                        [e.loc['cooling_needs'] for e in energy_needs_std_list_2],
+                        color='tab:red',label='Heating needs ({})'.format(city_2),ls='--',capsize=3)
+            ax.errorbar(thickness_list, 
+                        [e.loc['cooling_needs'] for e in energy_needs_mean_list_2], 
+                        [e.loc['cooling_needs'] for e in energy_needs_std_list_2],
+                        color='tab:blue',label='Cooling needs ({})'.format(city_2),ls='--',capsize=3)
+            ax.set_ylabel('Annual energy needs over {}-{} '.format(period[0],period[1])+'(kWh.m$^{-2}$.yr$^{-1}$)')
+            ax.legend()
+            ax.set_xlabel('Walls insulation thickness (m)')
+            ax.set_ylim(bottom=0.,top=200)
+            
+            plt.savefig(os.path.join(figs_folder,'{}.png'.format('effect_wall_insulation_thickness_{}_{}_{}-{}'.format(city_1,city_2,period[0],period[1]))),bbox_inches='tight')
+            
+            plt.show()
+            
+        # Étude de l'effet de l'épaisseur d'isolant de plancher sur la consommation annuelle
         if True:
-            X,U = SFH_test_model(typo, conventionnel, weather_data)
-        
-        
-        
+            def get_annual_energy_needs(typology,weather_data,behaviour, by_surface=True):
+                simulation_data = SFH_test_model(typology, conventionnel, weather_data,progressbar=False)
+                simulation_data = aggregate_resolution(simulation_data, resolution='h')
+                
+                yearly_data = aggregate_resolution(simulation_data, resolution='Y',agg_method='sum')
+                yearly_data = yearly_data/1000
+                surface_yearly_data = yearly_data/typology.surface
+                
+                if by_surface:
+                    return surface_yearly_data[['heating_needs','cooling_needs']]
+                else:
+                    return yearly_data[['heating_needs','cooling_needs']]
+                
+            thickness_list = np.linspace(0,0.2,10)
+            energy_needs_mean_list_1 = []
+            energy_needs_std_list_1 = []
+            energy_needs_mean_list_2 = []
+            energy_needs_std_list_2 = []
+            
+            typo_name = 'FR.N.SFH.01.Test'
+            typo = Typology(typo_name)
+            typo.roof_U = 0.36
+            typo.w0_insulation_thickness = 0.1
+            typo.w1_insulation_thickness = 0.1
+            typo.w2_insulation_thickness = 0.1
+            typo.w3_insulation_thickness = 0.1
+            
+            
+            # Génération du fichier météo
+            city_1 = 'Paris'
+            period = [2015,2020]
+            principal_orientation = typo.w0_orientation
+            weather_data_1 = get_historical_weather_data(city_1,period,principal_orientation)
+            weather_data_1 = refine_resolution(weather_data_1, resolution='30s')
+            
+            city_2 = 'Marseille'
+            period = [2015,2020]
+            principal_orientation = typo.w0_orientation
+            weather_data_2 = get_historical_weather_data(city_2,period,principal_orientation)
+            weather_data_2 = refine_resolution(weather_data_2, resolution='30s')
+            
+            # Définition des habitudes
+            conventionnel = Behaviour('conventionnel_th-bce_2020')
+            conventionnel.heating_rules = {i:[19]*24 for i in range(1,8)}
+            conventionnel.cooling_rules = {i:[26]*24 for i in range(1,8)}
+            
+            for thickness in tqdm.tqdm(thickness_list):
+                
+                typo.floor_insulation_thickness = thickness
+                
+                energy_needs_1 = get_annual_energy_needs(typo, weather_data_1, conventionnel)
+                energy_needs_mean_list_1.append(energy_needs_1.mean(axis=0))
+                energy_needs_std_list_1.append(energy_needs_1.std(axis=0))
+                
+                energy_needs_2 = get_annual_energy_needs(typo, weather_data_2, conventionnel)
+                energy_needs_mean_list_2.append(energy_needs_2.mean(axis=0))
+                energy_needs_std_list_2.append(energy_needs_2.std(axis=0))
+            
+            
+            fig,ax = plt.subplots(figsize=(5,5),dpi=300)
+            ax.errorbar(thickness_list, 
+                        [e.loc['heating_needs'] for e in energy_needs_mean_list_1], 
+                        [e.loc['cooling_needs'] for e in energy_needs_std_list_1],
+                        color='tab:red',label='Heating needs ({})'.format(city_1),capsize=3)
+            ax.errorbar(thickness_list, 
+                        [e.loc['cooling_needs'] for e in energy_needs_mean_list_1], 
+                        [e.loc['cooling_needs'] for e in energy_needs_std_list_1],
+                        color='tab:blue',label='Cooling needs ({})'.format(city_1),capsize=3)
+            ax.errorbar(thickness_list, 
+                        [e.loc['heating_needs'] for e in energy_needs_mean_list_2], 
+                        [e.loc['cooling_needs'] for e in energy_needs_std_list_2],
+                        color='tab:red',label='Heating needs ({})'.format(city_2),ls='--',capsize=3)
+            ax.errorbar(thickness_list, 
+                        [e.loc['cooling_needs'] for e in energy_needs_mean_list_2], 
+                        [e.loc['cooling_needs'] for e in energy_needs_std_list_2],
+                        color='tab:blue',label='Cooling needs ({})'.format(city_2),ls='--',capsize=3)
+            ax.set_ylabel('Annual energy needs over {}-{} '.format(period[0],period[1])+'(kWh.m$^{-2}$.yr$^{-1}$)')
+            # ax.legend()
+            ax.set_xlabel('Floor insulation thickness (m)')
+            ax.set_ylim(bottom=0.,top=100)
+            # ax.set_ylim()
+            
+            plt.savefig(os.path.join(figs_folder,'{}.png'.format('effect_floor_insulation_thickness_{}_{}_{}-{}'.format(city_1,city_2,period[0],period[1]))),bbox_inches='tight')
+            
+            plt.show()
+            
+        # Étude de l'effet des scénarios de chgmt climatique
+        if True:
+            
+            # Premier test :
+            if True:
+                # Définition de la typologie
+                typo_name = 'FR.N.SFH.01.Test'
+                typo = Typology(typo_name)
+                typo.roof_U = 0.36
+                typo.w0_insulation_thickness = 0.1
+                typo.w1_insulation_thickness = 0.1
+                typo.w2_insulation_thickness = 0.1
+                typo.w3_insulation_thickness = 0.1
+                typo.floor_insulation_thickness = 0
+                
+                # Génération du fichier météo
+                city = 'Marseille'
+                climat = Climat(Departement(13).climat)
+                
+                period = [2080]*2
+                rcp = 85
+                nmod = 0
+                
+                principal_orientation = typo.w0_orientation
+                
+                weather_data = get_projected_weather_data(city=city,
+                                                          zcl_codint=climat.codint,
+                                                          nmod=nmod,
+                                                          rcp=rcp,
+                                                          future_period=period,
+                                                          principal_orientation=principal_orientation)
+                weather_data = refine_resolution(weather_data, resolution='30s')
+                
+                # Définition des habitudes
+                conventionnel = Behaviour('conventionnel_th-bce_2020')
+                conventionnel.heating_rules = {i:[19]*24 for i in range(1,8)}
+                conventionnel.cooling_rules = {i:[26]*24 for i in range(1,8)}
+                
+                year = 2020
+                
+                simulation_data = SFH_test_model(typo, conventionnel, weather_data,progressbar=False)
+                simulation_data = aggregate_resolution(simulation_data, resolution='h')
+                
+                plot_timeserie(simulation_data[['temperature_2m','internal_temperature']],figsize=(15,5),
+                               xlim=[pd.to_datetime('{}-01-01'.format(year)), pd.to_datetime('{}-12-31'.format(year))],ylabel='Temperature (°C)',
+                               figs_folder=figs_folder, save_fig='thermal_model_temperature_{}_{}_{}'.format(city,period[0],typo_name))
+                
+                plot_timeserie(simulation_data[['heating_needs','cooling_needs']],figsize=(15,5),
+                               xlim=[pd.to_datetime('{}-01-01'.format(year)), pd.to_datetime('{}-12-31'.format(year))],ylabel='Energy needs (Wh)',
+                               figs_folder=figs_folder, save_fig='thermal_model_energy_needs_{}_{}_{}'.format(city,period[0],typo_name))
+                
+                annual_heating_consumption = simulation_data.heating_needs.sum()/1000
+                surface_annual_heating_consumption = annual_heating_consumption/typo.surface
+                
+                annual_cooling_consumption = simulation_data.cooling_needs.sum()/1000
+                surface_annual_cooling_consumption = annual_cooling_consumption/typo.surface
+                
+                print('Besoins annuels de chauffage à {} en {}: {:.0f} kWh/an'.format(city,year, annual_heating_consumption))
+                print('Besoins annuels de chauffage à {} en {}: {:.0f} kWh/(m2.an)'.format(city, year, surface_annual_heating_consumption))
+                print('Besoins annuels de refroidissement à {} en {}: {:.0f} kWh/an'.format(city, year, annual_cooling_consumption))
+                print('Besoins annuels de refroidissement à {} en {}: {:.0f} kWh/(m2.an)'.format(city, year, surface_annual_cooling_consumption))
+            
+            # Graphe 3 sur les effets du changement climatique
+            # TODO : attention, pour l'instant la météo future est en carton (un peu)
+            if True:
+                period_list = [2020,2040,2060,2080,2100]
+                # period_list = [2099]
+                mod_list = list(range(9))
+                rcp_list = [45,85]
+                    
+                energy_needs_dict_1 = dict()
+                energy_needs_dict_2 = dict()
+                
+                # Définition de la typologie
+                typo_name = 'FR.N.SFH.01.Test'
+                typo = Typology(typo_name)
+                typo.roof_U = 0.36
+                typo.w0_insulation_thickness = 0.1
+                typo.w1_insulation_thickness = 0.1
+                typo.w2_insulation_thickness = 0.1
+                typo.w3_insulation_thickness = 0.1
+                typo.floor_insulation_thickness = 0
+                
+                # Définition des habitudes
+                conventionnel = Behaviour('conventionnel_th-bce_2020')
+                conventionnel.heating_rules = {i:[19]*24 for i in range(1,8)}
+                conventionnel.cooling_rules = {i:[26]*24 for i in range(1,8)}
+                
+                for y in tqdm.tqdm(period_list):
+                    for nmod in mod_list:
+                        for rcp in rcp_list:
+                            period = [y,y]
+                            principal_orientation = typo.w0_orientation
+                            
+                            # Génération du fichier météo
+                            city_1 = 'Paris'
+                            climat_1 = Climat(Departement(75).climat)
+                            
+                            weather_data_1 = get_projected_weather_data(city=city_1,
+                                                                        zcl_codint=climat_1.codint,
+                                                                        nmod=nmod,
+                                                                        rcp=rcp,
+                                                                        future_period=period,
+                                                                        principal_orientation=principal_orientation)
+                            weather_data_1 = refine_resolution(weather_data_1, resolution='30s')
+                            
+                            city_2 = 'Marseille'
+                            climat_2 = Climat(Departement(13).climat)
+                            weather_data_2 = get_projected_weather_data(city=city_2,
+                                                                        zcl_codint=climat_2.codint,
+                                                                        nmod=nmod,
+                                                                        rcp=rcp,
+                                                                        future_period=period,
+                                                                        principal_orientation=principal_orientation)
+                            weather_data_2 = refine_resolution(weather_data_2, resolution='30s')
+                            
+                            simulation_data_1 = SFH_test_model(typo, conventionnel, weather_data_1,progressbar=False)
+                            simulation_data_1 = aggregate_resolution(simulation_data_1, resolution='h')
+                            annual_heating_consumption_1 = simulation_data_1.heating_needs.sum()/1000
+                            surface_annual_heating_consumption_1 = annual_heating_consumption_1/typo.surface
+                            annual_cooling_consumption_1 = simulation_data_1.cooling_needs.sum()/1000
+                            surface_annual_cooling_consumption_1 = annual_cooling_consumption_1/typo.surface
+                            
+                            simulation_data_2 = SFH_test_model(typo, conventionnel, weather_data_2,progressbar=False)
+                            simulation_data_2 = aggregate_resolution(simulation_data_2, resolution='h')
+                            annual_heating_consumption_2 = simulation_data_2.heating_needs.sum()/1000
+                            surface_annual_heating_consumption_2 = annual_heating_consumption_2/typo.surface
+                            annual_cooling_consumption_2 = simulation_data_2.cooling_needs.sum()/1000
+                            surface_annual_cooling_consumption_2 = annual_cooling_consumption_2/typo.surface
+                            
+                            energy_needs_dict_1[(y,rcp,nmod)] = surface_annual_heating_consumption_1,surface_annual_cooling_consumption_1
+                            energy_needs_dict_2[(y,rcp,nmod)] = surface_annual_heating_consumption_2,surface_annual_cooling_consumption_2
+                        
+                
+                
+                from saver_energy_needs_climate_change import energy_needs_dict_1, energy_needs_dict_2
+                period_list = [2020,2040,2060,2080,2099]
+                
+                fig,ax = plt.subplots(figsize=(5,5),dpi=300)
+                
+                color_dict = {'cooling_rcp45':'cornflowerblue',
+                              'cooling_rcp85':'darkblue',
+                              'heating_rcp45':'lightcoral',
+                              'heating_rcp85':'tab:red',}
+                
+                ls_dict = {'city1':'-',
+                           'city2':'--',}
+                
+                cooling_rcp45_city1_mean = []
+                cooling_rcp45_city1_std = []
+                heating_rcp45_city1_mean = []
+                heating_rcp45_city1_std = []
+                
+                cooling_rcp85_city1_mean = []
+                cooling_rcp85_city1_std = []
+                heating_rcp85_city1_mean = []
+                heating_rcp85_city1_std = []
+                
+                cooling_rcp45_city2_mean = []
+                cooling_rcp45_city2_std = []
+                heating_rcp45_city2_mean = []
+                heating_rcp45_city2_std = []
+                
+                cooling_rcp85_city2_mean = []
+                cooling_rcp85_city2_std = []
+                heating_rcp85_city2_mean = []
+                heating_rcp85_city2_std = []
+                
+                for y in period_list:
+                    cooling_rcp45_city1 = np.asarray([energy_needs_dict_1.get((y,45,nm))[1] for nm in mod_list])
+                    cooling_rcp45_city1_mean.append(np.mean(cooling_rcp45_city1))
+                    cooling_rcp45_city1_std.append(np.std(cooling_rcp45_city1))
+                    heating_rcp45_city1 = np.asarray([energy_needs_dict_1.get((y,45,nm))[0] for nm in mod_list])
+                    heating_rcp45_city1_mean.append(np.mean(heating_rcp45_city1))
+                    heating_rcp45_city1_std.append(np.std(heating_rcp45_city1))
+                    
+                    cooling_rcp85_city1 = np.asarray([energy_needs_dict_1.get((y,85,nm))[1] for nm in mod_list])
+                    cooling_rcp85_city1_mean.append(np.mean(cooling_rcp85_city1))
+                    cooling_rcp85_city1_std.append(np.std(cooling_rcp85_city1))
+                    heating_rcp85_city1 = np.asarray([energy_needs_dict_1.get((y,85,nm))[0] for nm in mod_list])
+                    heating_rcp85_city1_mean.append(np.mean(heating_rcp85_city1))
+                    heating_rcp85_city1_std.append(np.std(heating_rcp85_city1))
+                    
+                    cooling_rcp45_city2 = np.asarray([energy_needs_dict_2.get((y,45,nm))[1] for nm in mod_list])
+                    cooling_rcp45_city2_mean.append(np.mean(cooling_rcp45_city2))
+                    cooling_rcp45_city2_std.append(np.std(cooling_rcp45_city2))
+                    heating_rcp45_city2 = np.asarray([energy_needs_dict_2.get((y,45,nm))[0] for nm in mod_list])
+                    heating_rcp45_city2_mean.append(np.mean(heating_rcp45_city2))
+                    heating_rcp45_city2_std.append(np.std(heating_rcp45_city2))
+                    
+                    cooling_rcp85_city2 = np.asarray([energy_needs_dict_2.get((y,85,nm))[1] for nm in mod_list])
+                    cooling_rcp85_city2_mean.append(np.mean(cooling_rcp85_city2))
+                    cooling_rcp85_city2_std.append(np.std(cooling_rcp85_city2))
+                    heating_rcp85_city2 = np.asarray([energy_needs_dict_2.get((y,85,nm))[0] for nm in mod_list])
+                    heating_rcp85_city2_mean.append(np.mean(heating_rcp85_city2))
+                    heating_rcp85_city2_std.append(np.std(heating_rcp85_city2))
+                    
+                ax.errorbar(period_list, 
+                            cooling_rcp45_city1_mean, 
+                            cooling_rcp45_city1_std,
+                            color=color_dict.get('cooling_rcp45'),
+                            ls=ls_dict.get('city1'),capsize=3)
+                
+                ax.errorbar(period_list, 
+                            heating_rcp45_city1_mean, 
+                            heating_rcp45_city1_std,
+                            color=color_dict.get('heating_rcp45'),
+                            ls=ls_dict.get('city1'),capsize=3)
+                
+                ax.errorbar(period_list, 
+                            cooling_rcp85_city1_mean, 
+                            cooling_rcp85_city1_std,
+                            color=color_dict.get('cooling_rcp85'),
+                            ls=ls_dict.get('city1'),capsize=3)
+                
+                ax.errorbar(period_list, 
+                            heating_rcp85_city1_mean, 
+                            heating_rcp85_city1_std,
+                            color=color_dict.get('heating_rcp85'),
+                            ls=ls_dict.get('city1'),capsize=3)
+                
+                ax.errorbar(period_list, 
+                            cooling_rcp45_city2_mean, 
+                            cooling_rcp45_city2_std,
+                            color=color_dict.get('cooling_rcp45'),
+                            ls=ls_dict.get('city2'),capsize=3)
+                
+                ax.errorbar(period_list, 
+                            heating_rcp45_city2_mean, 
+                            heating_rcp45_city2_std,
+                            color=color_dict.get('heating_rcp45'),
+                            ls=ls_dict.get('city2'),capsize=3)
+                
+                ax.errorbar(period_list, 
+                            cooling_rcp85_city2_mean, 
+                            cooling_rcp85_city2_std,
+                            color=color_dict.get('cooling_rcp85'),
+                            ls=ls_dict.get('city2'),capsize=3)
+                
+                ax.errorbar(period_list, 
+                            heating_rcp85_city2_mean, 
+                            heating_rcp85_city2_std,
+                            color=color_dict.get('heating_rcp85'),
+                            ls=ls_dict.get('city2'),capsize=3)
+                
+                ax.plot([2020],[0],label='RCP4.5',color='silver')
+                ax.plot([2020],[0],label='RCP8.5',color='grey')
+                
+                ax.set_ylabel('Annual energy needs (kWh.m$^{-2}$.yr$^{-1}$)')
+                ax.legend()
+                # ax.set_xlabel('Floor insulation thickness (m)')
+                ax.set_ylim(bottom=0.,top=100)
+                # ax.set_ylim()
+                
+                plt.savefig(os.path.join(figs_folder,'{}.png'.format('effect_climate_change_{}_{}_{}-{}'.format(city_1,city_2,period[0],period[1]))),bbox_inches='tight')
+                
+                plt.show()
+                
     tac = time.time()
     print('Done in {:.2f}s.'.format(tac-tic))
     
