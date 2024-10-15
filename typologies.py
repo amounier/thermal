@@ -178,80 +178,80 @@ class Typology():
         return floor_ground_distance
 
 # Peut-etre à bouger dans un nouveau fichier identification (ou pas, à voir)
-# TODO : stocker les statistiques de typologies dans les départements (dans Departement)
-# TODO : vérifier les données TABULA, caractériser les isolations
+# : stocker les statistiques de typologies dans les départements (dans Departement)
+# : vérifier les données TABULA, caractériser les isolations
 
 
-def identify_typologies(dep, external_disk=True, verbose=True):
-    if verbose:
-        print('Opening BDNB ({})...'.format(dep))
+# def identify_typologies(dep, external_disk=True, verbose=True):
+#     if verbose:
+#         print('Opening BDNB ({})...'.format(dep))
     
-    _, _, bgc = get_bdnb(dep=dep,external_disk=external_disk)
-    # TODO : à refaire de manière optimisée
+#     _, _, bgc = get_bdnb(dep=dep,external_disk=external_disk)
+#     # : à refaire de manière optimisée
 
-    bgc = bgc[bgc.ffo_bat_nb_log>=1][['building_type_id',
-                                      'building_type',
-                                      'building_type_construction_year_start',
-                                      'building_type_construction_year_end',
-                                      'building_type_min_hh',
-                                      'building_type_max_hh',]]
-    bgc = bgc.compute()
+#     bgc = bgc[bgc.ffo_bat_nb_log>=1][['building_type_id',
+#                                       'building_type',
+#                                       'building_type_construction_year_start',
+#                                       'building_type_construction_year_end',
+#                                       'building_type_min_hh',
+#                                       'building_type_max_hh',]]
+#     bgc = bgc.compute()
     
-    # rel = rel.compute()
-    # rel = rel.set_index('batiment_groupe_id')
+#     # rel = rel.compute()
+#     # rel = rel.set_index('batiment_groupe_id')
     
-    dict_list_bg_id = {}
-    typologies = open_tabula_typologies()
-    for i in range(len(typologies)):
-        # caractéristiques de typologies
-        typo_id, typo_cat, typo_cys, typo_cye, typo_min_hh, typo_max_hh = typologies.iloc[i][['building_type_id',
-                                                                                              'building_type',
-                                                                                              'building_type_construction_year_start',
-                                                                                              'building_type_construction_year_end',
-                                                                                              'building_type_min_hh',
-                                                                                              'building_type_max_hh',]]
+#     dict_list_bg_id = {}
+#     typologies = open_tabula_typologies()
+#     for i in range(len(typologies)):
+#         # caractéristiques de typologies
+#         typo_id, typo_cat, typo_cys, typo_cye, typo_min_hh, typo_max_hh = typologies.iloc[i][['building_type_id',
+#                                                                                               'building_type',
+#                                                                                               'building_type_construction_year_start',
+#                                                                                               'building_type_construction_year_end',
+#                                                                                               'building_type_min_hh',
+#                                                                                               'building_type_max_hh',]]
         
-        # filtre de la BDNB
-        bgc_typo = bgc[(bgc.ffo_bat_nb_log>typo_min_hh)&
-                       (bgc.ffo_bat_nb_log<=typo_max_hh)&
-                       (bgc.ffo_bat_annee_construction>=typo_cys)&
-                       (bgc.ffo_bat_annee_construction<=typo_cye)]
+#         # filtre de la BDNB
+#         bgc_typo = bgc[(bgc.ffo_bat_nb_log>typo_min_hh)&
+#                        (bgc.ffo_bat_nb_log<=typo_max_hh)&
+#                        (bgc.ffo_bat_annee_construction>=typo_cys)&
+#                        (bgc.ffo_bat_annee_construction<=typo_cye)]
         
-        # répartition des maisons individuelles par la liste des orientations des murs ext
-        # TODO à faire avec les simulations DPE quand disponibles
-        if typo_cat == 'TH':
-            list_orientation = ['(4:est,nord,ouest,sud)', '(5:est,horizontal,nord,ouest,sud)']
-            bgc_typo = bgc_typo[(~bgc_typo.dpe_mix_arrete_l_orientation_mur_exterieur.isin(list_orientation))|(bgc_typo.dpe_mix_arrete_l_orientation_mur_exterieur.isna())]
+#         # répartition des maisons individuelles par la liste des orientations des murs ext
+#         # à faire avec les simulations DPE quand disponibles
+#         if typo_cat == 'TH':
+#             list_orientation = ['(4:est,nord,ouest,sud)', '(5:est,horizontal,nord,ouest,sud)']
+#             bgc_typo = bgc_typo[(~bgc_typo.dpe_mix_arrete_l_orientation_mur_exterieur.isin(list_orientation))|(bgc_typo.dpe_mix_arrete_l_orientation_mur_exterieur.isna())]
             
-        elif typo_cat == 'SFH':
-            list_orientation = ['(4:est,nord,ouest,sud)', '(5:est,horizontal,nord,ouest,sud)']
-            bgc_typo = bgc_typo[(bgc_typo.dpe_mix_arrete_l_orientation_mur_exterieur.isin(list_orientation))&(~bgc_typo.dpe_mix_arrete_l_orientation_mur_exterieur.isna())]
+#         elif typo_cat == 'SFH':
+#             list_orientation = ['(4:est,nord,ouest,sud)', '(5:est,horizontal,nord,ouest,sud)']
+#             bgc_typo = bgc_typo[(bgc_typo.dpe_mix_arrete_l_orientation_mur_exterieur.isin(list_orientation))&(~bgc_typo.dpe_mix_arrete_l_orientation_mur_exterieur.isna())]
         
-        # number_typo = bgc_typo.shape[0].compute()
-        dict_list_bg_id[typo_id] = bgc_typo.batiment_groupe_id.to_list()
+#         # number_typo = bgc_typo.shape[0].compute()
+#         dict_list_bg_id[typo_id] = bgc_typo.batiment_groupe_id.to_list()
         
-    # compilation du nombre de logements
-    bgc = bgc.set_index('batiment_groupe_id')
-    dict_number_hh = {}
-    for k,v in dict_list_bg_id.items():
-        nb_hh = 0
-        for bg_id in v:
-            nb_hh += bgc.loc[bg_id].ffo_bat_nb_log
-        dict_number_hh[k] = nb_hh
+#     # compilation du nombre de logements
+#     bgc = bgc.set_index('batiment_groupe_id')
+#     dict_number_hh = {}
+#     for k,v in dict_list_bg_id.items():
+#         nb_hh = 0
+#         for bg_id in v:
+#             nb_hh += bgc.loc[bg_id].ffo_bat_nb_log
+#         dict_number_hh[k] = nb_hh
     
     
-    del bgc # TODO vérifier que ça marche bien
-    del bgc_typo
-    return dict_list_bg_id, dict_number_hh
+#     del bgc # vérifier que ça marche bien
+#     del bgc_typo
+#     return dict_list_bg_id, dict_number_hh
 
 
 
 
-def stats_typologies_dep(dep,external_disk=True):
-    # TODO très temporaire, à refaire 
-    _, dep.typologies_households_number = identify_typologies(dep=dep.code,external_disk=external_disk,verbose=False)
+# def stats_typologies_dep(dep,external_disk=True):
+#     # très temporaire, à refaire 
+#     _, dep.typologies_households_number = identify_typologies(dep=dep.code,external_disk=external_disk,verbose=False)
     
-    return dep
+#     return dep
 
 #%%============================================================================
 # Script principal
@@ -351,21 +351,22 @@ def main():
     
     #%% Identification des typologies dans la BDNB
     if False:
+        # TODO à recoder dans statistics_building
         # typologies = open_tabula_typologies()
         
-        departement = Departement(69)
-        departement.typologies_batiments_groupe, departement.typologies_households_number = identify_typologies(dep=departement.code,external_disk=external_disk_connection)
+        departement = Departement(75)
+        # departement.typologies_batiments_groupe, departement.typologies_households_number = identify_typologies(dep=departement.code,external_disk=external_disk_connection)
         
-        total_dep_hh = sum(departement.typologies_households_number.values())
-        number_hh_typo_categories = {'SFH':0,'TH':0,'MFH':0,'AB':0}
-        for k in number_hh_typo_categories.keys():
-            for ty,nb in departement.typologies_households_number.items():
-                if k in ty:
-                    number_hh_typo_categories[k] += nb
-        percent_hh_typo_categories = {k:v/total_dep_hh for k,v in number_hh_typo_categories.items()}
+        # total_dep_hh = sum(departement.typologies_households_number.values())
+        # number_hh_typo_categories = {'SFH':0,'TH':0,'MFH':0,'AB':0}
+        # for k in number_hh_typo_categories.keys():
+        #     for ty,nb in departement.typologies_households_number.items():
+        #         if k in ty:
+        #             number_hh_typo_categories[k] += nb
+        # percent_hh_typo_categories = {k:v/total_dep_hh for k,v in number_hh_typo_categories.items()}
         
-        for k in number_hh_typo_categories.keys():
-            draw_departement_map({departement:percent_hh_typo_categories.get(k)},figs_folder=figs_folder,cbar_label='{} ratio by department'.format(k))
+        # for k in number_hh_typo_categories.keys():
+        #     draw_departement_map({departement:percent_hh_typo_categories.get(k)},figs_folder=figs_folder,cbar_label='{} ratio by department'.format(k))
     
     # Téléchargement des départements
     if False:
@@ -375,63 +376,66 @@ def main():
             for d in tqdm.tqdm(France().departements):
                 get_bdnb(d.code,external_disk=external_disk_connection)
     
-    # Carte des stats de type de catégories (SFH,TH,MFH,AB) par départements # TODO en multithreads
+    # Carte des stats de type de catégories (SFH,TH,MFH,AB) par départements 
+    # TODO à recoder dans statistics_building
     if False:
         stats = {}
         
-        # list_dep_code = ['75','2A']
-        for dep in tqdm.tqdm(France().departements):
+        # # list_dep_code = ['75','2A']
+        # for dep in tqdm.tqdm(France().departements):
             
-            _, dep.typologies_households_number = identify_typologies(dep=dep.code,external_disk=external_disk_connection,verbose=False)
+        #     _, dep.typologies_households_number = identify_typologies(dep=dep.code,external_disk=external_disk_connection,verbose=False)
             
-            total_dep_hh = sum(dep.typologies_households_number.values())
-            number_hh_typo_categories = {'SFH':0,'TH':0,'MFH':0,'AB':0}
-            for k in number_hh_typo_categories.keys():
-                for ty,nb in dep.typologies_households_number.items():
-                    if k in ty:
-                        number_hh_typo_categories[k] += nb
-            percent_hh_typo_categories = {k:v/total_dep_hh for k,v in number_hh_typo_categories.items()}
-            stats[dep] = percent_hh_typo_categories
+        #     total_dep_hh = sum(dep.typologies_households_number.values())
+        #     number_hh_typo_categories = {'SFH':0,'TH':0,'MFH':0,'AB':0}
+        #     for k in number_hh_typo_categories.keys():
+        #         for ty,nb in dep.typologies_households_number.items():
+        #             if k in ty:
+        #                 number_hh_typo_categories[k] += nb
+        #     percent_hh_typo_categories = {k:v/total_dep_hh for k,v in number_hh_typo_categories.items()}
+        #     stats[dep] = percent_hh_typo_categories
             
-        dict_type_house = {'Multi-family':['MFH','AB'], 'Single-family':['SFH','TH']}
-        for th,typos in dict_type_house.items():
-            stats_type = {}
-            for d,ratio_typo in stats.items():
-                stats_type[d] = sum([ratio_typo.get(t) for t in typos])
-            # stats_typo = {e:v.get(k) for e,v in stats.items()}
-            draw_departement_map(stats_type,figs_folder=figs_folder,save='{}_ratio_dep'.format(th),cbar_label='{} ratio by department'.format(th))
+        # dict_type_house = {'Multi-family':['MFH','AB'], 'Single-family':['SFH','TH']}
+        # for th,typos in dict_type_house.items():
+        #     stats_type = {}
+        #     for d,ratio_typo in stats.items():
+        #         stats_type[d] = sum([ratio_typo.get(t) for t in typos])
+        #     # stats_typo = {e:v.get(k) for e,v in stats.items()}
+        #     draw_departement_map(stats_type,figs_folder=figs_folder,save='{}_ratio_dep'.format(th),cbar_label='{} ratio by department'.format(th))
     
     # Carte des stats en multithreading # trop long, saturation en mémoire à comprendre
+    # TODO à faire dans statistics_building
     if False:
-        from multiprocessing import Pool, cpu_count
+        pass
+        # from multiprocessing import Pool, cpu_count
         
-        departements = France().departements
+        # departements = France().departements
         
-        pool = Pool(processes=cpu_count()//2, maxtasksperchild=1)  # set the processes to half of total, maxetc à tester
-        # departements = list(tqdm.tqdm(pool.imap(stats_typologies_dep, departements), total=len(departements)))
-        departements = pool.map_async(stats_typologies_dep, departements)
-        pool.close()
-        pool.join()
+        # pool = Pool(processes=cpu_count()//2, maxtasksperchild=1)  # set the processes to half of total, maxetc à tester
+        # # departements = list(tqdm.tqdm(pool.imap(stats_typologies_dep, departements), total=len(departements)))
+        # departements = pool.map_async(stats_typologies_dep, departements)
+        # pool.close()
+        # pool.join()
     
-        stats = {}
-        for dep in tqdm.tqdm(departements):
+        # stats = {}
+        # for dep in tqdm.tqdm(departements):
             
-            total_dep_hh = sum(dep.typologies_households_number.values())
-            number_hh_typo_categories = {'SFH':0,'TH':0,'MFH':0,'AB':0}
-            for k in number_hh_typo_categories.keys():
-                for ty,nb in dep.typologies_households_number.items():
-                    if k in ty:
-                        number_hh_typo_categories[k] += nb
-            percent_hh_typo_categories = {k:v/total_dep_hh for k,v in number_hh_typo_categories.items()}
-            stats[dep] = percent_hh_typo_categories
+        #     total_dep_hh = sum(dep.typologies_households_number.values())
+        #     number_hh_typo_categories = {'SFH':0,'TH':0,'MFH':0,'AB':0}
+        #     for k in number_hh_typo_categories.keys():
+        #         for ty,nb in dep.typologies_households_number.items():
+        #             if k in ty:
+        #                 number_hh_typo_categories[k] += nb
+        #     percent_hh_typo_categories = {k:v/total_dep_hh for k,v in number_hh_typo_categories.items()}
+        #     stats[dep] = percent_hh_typo_categories
         
-        dict_type_house = {'Multi-family':['MFH','AB'], 'Single-family':['SFH','TH']}
-        for th,typos in dict_type_house.items():
-            stats_type = {}
-            for d,ratio_typo in stats.items():
-                stats_type[d] = sum([ratio_typo.get(t) for t in typos])
-            # stats_typo = {e:v.get(k) for e,v in stats.items()}
-            draw_departement_map(stats_type,figs_folder=figs_folder,save='{}_ratio_dep'.format(th),cbar_label='{} ratio by department'.format(th))
+        # dict_type_house = {'Multi-family':['MFH','AB'], 'Single-family':['SFH','TH']}
+        # for th,typos in dict_type_house.items():
+        #     stats_type = {}
+        #     for d,ratio_typo in stats.items():
+        #         stats_type[d] = sum([ratio_typo.get(t) for t in typos])
+        #     # stats_typo = {e:v.get(k) for e,v in stats.items()}
+        #     draw_departement_map(stats_type,figs_folder=figs_folder,save='{}_ratio_dep'.format(th),cbar_label='{} ratio by department'.format(th))
             
         
             
