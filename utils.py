@@ -12,6 +12,8 @@ import os
 import time
 import cartopy.crs as ccrs
 import cartopy.feature as cfeature
+import numpy as np
+import random as rd
 
 
 def plot_timeserie(data,figsize=(5,5),dpi=300,labels=None,figs_folder=None,
@@ -75,7 +77,40 @@ def blank_national_map():
     ax.add_feature(cfeature.BORDERS,zorder=3)
     
     return fig,ax
-        
+
+
+def plot_pie_chart(random_seed=1):
+    rd.seed(random_seed)
+    
+    # TODO en faire une fonction appelable
+    fig, ax = plt.subplots(figsize=(5,5),dpi=300)
+
+    size = 0.4
+    vals = [[60.], [37., 40.], [29., 10.,5.]]
+    labels_cat = list()
+    vals_flat = [x for xs in vals for x in xs]
+    percentage_vals_flat = [x/sum(xs)*100 for xs in vals for x in xs]
+    unique_value = [float(len(xs)!=1) for xs in vals for x in xs]            
+    labels_flat = ['oui']*len(vals_flat)
+    labels_flat = ['{} ({:.0f}%)'.format(l,p) if bool(f) else '' for l,f,p in zip(labels_flat, unique_value,percentage_vals_flat)]
+    
+    cmap = plt.colormaps["tab20c"]
+    inner_colors = cmap(np.arange(len(vals))*4)
+    outer_colors = [x for xs in [[cmap(i*4)]*len(l) for i,l in enumerate(vals)] for x in xs]
+    
+    intensities = [rd.random()*2/3 + 0.33 for e in outer_colors]
+    outer_colors = [(r,v,b,i*f) for (r,v,b,_),i,f in zip(outer_colors,intensities,unique_value)]
+    
+    ax.pie([sum(l) for l in vals], radius=1, colors=inner_colors,
+           labels=labels_cat,labeldistance=None,
+           wedgeprops=dict(width=size, edgecolor='w',))
+    
+    ax.pie(vals_flat, radius=1+size, colors=outer_colors,
+           wedgeprops=dict(width=size, edgecolor='w'),labels=labels_flat)
+    
+    ax.set(aspect="equal")
+    ax.legend(labels=labels_cat, bbox_to_anchor=(1.1, 1.))
+    plt.show()
 
 #%% ===========================================================================
 # script principal
