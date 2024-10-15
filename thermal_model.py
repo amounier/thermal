@@ -501,7 +501,7 @@ def compute_internal_Phi(typology, weather_data, wall):
 
 
 
-def SFH_test_model(typology, behaviour, weather_data, progressbar=True):
+def SFH_test_model(typology, behaviour, weather_data, progressbar=False):
     """
     Maison individuelle détachée (SFH), sans cave et avec des combles aménagées
     Une seule zone thermique.
@@ -704,10 +704,12 @@ def SFH_test_model(typology, behaviour, weather_data, progressbar=True):
     
     
 def refine_resolution(data, resolution):
-    data_high_res = pd.DataFrame(index=pd.date_range(data.index[0],data.index[-1],freq=resolution))
-    data_high_res = data_high_res.join(data,how='left')
-    data_high_res = data_high_res.interpolate()
-    return data_high_res
+    # interpolated = pd.DataFrame(index=pd.date_range(data.index[0],data.index[-1],freq=resolution))
+    # interpolated = interpolated.join(data,how='left')
+    # interpolated = interpolated.interpolate()
+    upsampled = data.resample(resolution)
+    interpolated = upsampled.interpolate(method='linear')
+    return interpolated
 
 
 def aggregate_resolution(data, resolution='h', agg_method='mean'):
@@ -737,6 +739,152 @@ def main():
     
     warnings.simplefilter("ignore") # à cause du calcul de l'azimuth et de l'altitude du soleil 
     
+    #%% Test de vitesse de calcul en fonction de la résolution
+    if False:
+        warnings.simplefilter("ignore") # à cause du calcul de l'azimuth et de l'altitude du soleil 
+        details = False
+    
+        def divisors(n):
+            divs = [1]
+            for i in range(2,int(np.sqrt(n))+1):
+                if n%i == 0:
+                    divs.extend([i,n/i])
+            divs.extend([n])
+            res = list(map(int, sorted(list(set(divs)))))
+            return res
+
+        # définition des listes à affficher
+        resolution_list = divisors(3600)[:-3]
+        power_max_heating, power_max_cooling = [],[]
+        heating_needs_list, cooling_needs_list = [],[]
+        time_compute = []
+        
+        
+        # Définition de la typologie
+        typo_name = 'FR.N.SFH.01.Test'
+        typo = Typology(typo_name)
+        
+        typo.roof_U = 0.36
+        
+        no_insulation = True
+        
+        if no_insulation:
+            typo.w0_insulation_thickness = 0
+            typo.w1_insulation_thickness = 0
+            typo.w2_insulation_thickness = 0
+            typo.w3_insulation_thickness = 0
+            
+            # typo.roof_U = 1.35
+            # typo.floor_insulation_thickness = 0
+        
+        # typo.heater_maximum_power = 0
+        # typo.cooler_maximum_power = 0
+        
+        # typo.w0_orientation = 'E'
+        # typo.update_orientation()
+        
+        # Génération du fichier météo
+        city = 'Marseille'
+        period = [2020]*2
+        principal_orientation = typo.w0_orientation
+        
+        # Définition des habitudes
+        conventionnel = Behaviour('conventionnel_th-bce_2020')
+        conventionnel.heating_rules = {i:[19]*24 for i in range(1,8)}
+        conventionnel.cooling_rules = {i:[26]*24 for i in range(1,8)}
+        
+        weather_data = get_historical_weather_data(city,period,principal_orientation)
+        
+        for res in tqdm.tqdm(resolution_list):
+            weather_data_fine_res = refine_resolution(weather_data.copy(), resolution='{:.0f}s'.format(res))
+            
+            year = period[0]
+            
+            start_compute = time.time()
+            
+            simulation_data = SFH_test_model(typo, conventionnel, weather_data_fine_res,progressbar=False)
+            simulation_data = aggregate_resolution(simulation_data, resolution='h')
+            
+            end_compute = time.time()
+            
+            # fig,ax = plot_timeserie(simulation_data[['temperature_2m','internal_temperature']],figsize=(15,5),
+            #                xlim=[pd.to_datetime('{}-01-01'.format(year)), pd.to_datetime('{}-12-31'.format(year))],ylabel='Temperature (°C)',
+            #                figs_folder=figs_folder, save_fig='thermal_model_temperature_{}_{}_{}'.format(city,year,typo_name),show=False)
+            # ax.set_title('{:.0f}s'.format(res))
+            # plt.show()
+            
+            # plot_timeserie(simulation_data[['heating_needs','cooling_needs']],figsize=(15,5),
+            #                xlim=[pd.to_datetime('{}-01-01'.format(year)), pd.to_datetime('{}-12-31'.format(year))],ylabel='Energy needs (Wh)',
+            #                figs_folder=figs_folder, save_fig='thermal_model_energy_needs_{}_{}_{}'.format(city,year,typo_name),show=False)
+            # ax.set_title('{:.0f}s'.format(res))
+            # plt.show()
+            
+            annual_heating_consumption = simulation_data.heating_needs.sum()/1000
+            surface_annual_heating_consumption = annual_heating_consumption/typo.surface
+            
+            annual_cooling_consumption = simulation_data.cooling_needs.sum()/1000
+            surface_annual_cooling_consumption = annual_cooling_consumption/typo.surface
+            
+            power_max_heating.append(simulation_data.heating_needs.max())
+            power_max_cooling.append(simulation_data.cooling_needs.max())
+            heating_needs_list.append(surface_annual_heating_consumption)
+            cooling_needs_list.append(surface_annual_cooling_consumption)
+            time_compute.append(end_compute-start_compute)
+            
+            if details:
+                print('Besoins annuels de chauffage à {} en {}: {:.0f} kWh/an'.format(city,year, annual_heating_consumption))
+                print('Besoins annuels de chauffage à {} en {}: {:.0f} kWh/(m2.an)'.format(city, year, surface_annual_heating_consumption))
+                print('Besoins annuels de refroidissement à {} en {}: {:.0f} kWh/an'.format(city, year, annual_cooling_consumption))
+                print('Besoins annuels de refroidissement à {} en {}: {:.0f} kWh/(m2.an)'.format(city, year, surface_annual_cooling_consumption))
+        
+        fig,ax = plt.subplots(dpi=300,figsize=(5,5))
+        ax.semilogy(resolution_list, time_compute,color='k',marker='o')
+        ax.set_ylabel('Computation time for one year simulation (s)')
+        # ax.set_ylim(bottom=0.)
+        ax.set_xlabel('Temporal resolution time step (s)')
+        plt.savefig(os.path.join(figs_folder,'{}.png'.format('resolution_effect_time_computation_{}_{}'.format(city,period[0]))),bbox_inches='tight')
+        plt.show()
+        
+        fig,ax = plt.subplots(dpi=300,figsize=(5,5))
+        ax.plot(resolution_list, heating_needs_list,color='tab:red',label='Heating',marker='o')
+        # ax.plot(resolution_list, cooling_needs_list,color='tab:blue',label='Cooling')
+        ax.set_ylabel('Annual energy needs (kWh.m$^{-2}$.yr$^{-1}$)')
+        # ax.set_ylim(bottom=0.)
+        ax.legend()
+        ax.set_xlabel('Temporal resolution time step (s)')
+        plt.savefig(os.path.join(figs_folder,'{}.png'.format('resolution_effect_energy_needs_heating_{}_{}'.format(city,period[0]))),bbox_inches='tight')
+        plt.show()
+        
+        fig,ax = plt.subplots(dpi=300,figsize=(5,5))
+        ax.plot(resolution_list, power_max_heating,color='tab:red',label='Heating',marker='o')
+        # ax.plot(resolution_list, power_max_cooling,color='tab:blue',label='Cooling')
+        ax.set_ylabel('Maximal power needs (Wh)')
+        # ax.set_ylim(bottom=0.)
+        ax.legend()
+        ax.set_xlabel('Temporal resolution time step (s)')
+        plt.savefig(os.path.join(figs_folder,'{}.png'.format('resolution_effect_max_power_heating_{}_{}'.format(city,period[0]))),bbox_inches='tight')
+        plt.show()
+        
+        fig,ax = plt.subplots(dpi=300,figsize=(5,5))
+        # ax.plot(resolution_list, heating_needs_list,color='tab:red',label='Heating')
+        ax.plot(resolution_list, cooling_needs_list,color='tab:blue',label='Cooling',marker='o')
+        ax.set_ylabel('Annual energy needs (kWh.m$^{-2}$.yr$^{-1}$)')
+        # ax.set_ylim(bottom=0.)
+        ax.legend()
+        ax.set_xlabel('Temporal resolution time step (s)')
+        plt.savefig(os.path.join(figs_folder,'{}.png'.format('resolution_effect_energy_needs_cooling_{}_{}'.format(city,period[0]))),bbox_inches='tight')
+        plt.show()
+        
+        fig,ax = plt.subplots(dpi=300,figsize=(5,5))
+        # ax.plot(resolution_list, power_max_heating,color='tab:red',label='Heating')
+        ax.plot(resolution_list, power_max_cooling,color='tab:blue',label='Cooling',marker='o')
+        ax.set_ylabel('Maximal power needs (Wh)')
+        # ax.set_ylim(bottom=0.)
+        ax.legend()
+        ax.set_xlabel('Temporal resolution time step (s)')
+        plt.savefig(os.path.join(figs_folder,'{}.png'.format('resolution_effect_max_power_cooling_{}_{}'.format(city,period[0]))),bbox_inches='tight')
+        plt.show()
+        
     #%% Premier test pour le poster de SGR
     if False:
         warnings.simplefilter("ignore") # à cause du calcul de l'azimuth et de l'altitude du soleil 
@@ -773,19 +921,20 @@ def main():
         principal_orientation = typo.w0_orientation
         
         weather_data = get_historical_weather_data(city,period,principal_orientation)
-        weather_data = refine_resolution(weather_data, resolution='30s')
+        weather_data = refine_resolution(weather_data, resolution='600s')
         
         # Définition des habitudes
         conventionnel = Behaviour('conventionnel_th-bce_2020')
-        conventionnel.heating_rules = {i:[19]*24 for i in range(1,8)}
-        conventionnel.cooling_rules = {i:[26]*24 for i in range(1,8)}
+        # conventionnel.heating_rules = {i:[19]*24 for i in range(1,8)}
+        # conventionnel.cooling_rules = {i:[26]*24 for i in range(1,8)}
+        
         
         # Affichage des variables d'entrée
         if False:
             pass 
         
         # Simulation
-        if False:
+        if True:
             year = period[0]
             
             simulation_data = SFH_test_model(typo, conventionnel, weather_data)
@@ -818,7 +967,7 @@ def main():
                            figs_folder=figs_folder, save_fig='monthly_thermal_model_energy_needs_{}_{}_{}'.format(city,year,typo_name))
             
             # thermosensibilité
-            if False:
+            if True:
                 data_sensitivity = simulation_data[['temperature_2m','heating_needs','cooling_needs']].copy()
                 data_sensitivity = data_sensitivity.sort_values(by='temperature_2m')
                 data_sensitivity['energy_needs'] = (data_sensitivity.heating_needs + data_sensitivity.cooling_needs)
@@ -826,11 +975,11 @@ def main():
                 
                 
                 plot_thermal_sensitivity(temperature=data_sensitivity.temperature_2m.to_list(), consumption=data_sensitivity.energy_needs.to_list(), 
-                                         figs_folder=figs_folder, reg_code='00', reg_name='', year=year,C0_init=0,k_init=500,ylabel='Hourly energy needs (Wh)')
+                                         figs_folder=figs_folder, reg_code=city, reg_name='SFH test typology - {}'.format(city), year=year,C0_init=0,k_init=500,ylabel='Hourly energy needs (Wh)')
                 
                 
     #%% Graphes Poster SGR 
-    if True:
+    if False:
         
         # Étude de l'effet de l'épaisseur d'isolant sur la consommation annuelle
         if False:
@@ -863,13 +1012,13 @@ def main():
             period = [2015,2020]
             principal_orientation = typo.w0_orientation
             weather_data_1 = get_historical_weather_data(city_1,period,principal_orientation)
-            weather_data_1 = refine_resolution(weather_data_1, resolution='30s')
+            weather_data_1 = refine_resolution(weather_data_1, resolution='600s')
             
             city_2 = 'Marseille'
             period = [2015,2020]
             principal_orientation = typo.w0_orientation
             weather_data_2 = get_historical_weather_data(city_2,period,principal_orientation)
-            weather_data_2 = refine_resolution(weather_data_2, resolution='30s')
+            weather_data_2 = refine_resolution(weather_data_2, resolution='600s')
             
             # Définition des habitudes
             conventionnel = Behaviour('conventionnel_th-bce_2020')
@@ -920,7 +1069,7 @@ def main():
             plt.show()
             
         # Étude de l'effet de l'épaisseur d'isolant de plancher sur la consommation annuelle
-        if True:
+        if False:
             def get_annual_energy_needs(typology,weather_data,behaviour, by_surface=True):
                 simulation_data = SFH_test_model(typology, conventionnel, weather_data,progressbar=False)
                 simulation_data = aggregate_resolution(simulation_data, resolution='h')
@@ -954,13 +1103,13 @@ def main():
             period = [2015,2020]
             principal_orientation = typo.w0_orientation
             weather_data_1 = get_historical_weather_data(city_1,period,principal_orientation)
-            weather_data_1 = refine_resolution(weather_data_1, resolution='30s')
+            weather_data_1 = refine_resolution(weather_data_1, resolution='600s')
             
             city_2 = 'Marseille'
             period = [2015,2020]
             principal_orientation = typo.w0_orientation
             weather_data_2 = get_historical_weather_data(city_2,period,principal_orientation)
-            weather_data_2 = refine_resolution(weather_data_2, resolution='30s')
+            weather_data_2 = refine_resolution(weather_data_2, resolution='600s')
             
             # Définition des habitudes
             conventionnel = Behaviour('conventionnel_th-bce_2020')
@@ -1011,7 +1160,7 @@ def main():
         if True:
             
             # Premier test :
-            if True:
+            if False:
                 # Définition de la typologie
                 typo_name = 'FR.N.SFH.01.Test'
                 typo = Typology(typo_name)
@@ -1038,7 +1187,7 @@ def main():
                                                           rcp=rcp,
                                                           future_period=period,
                                                           principal_orientation=principal_orientation)
-                weather_data = refine_resolution(weather_data, resolution='30s')
+                weather_data = refine_resolution(weather_data, resolution='600s')
                 
                 # Définition des habitudes
                 conventionnel = Behaviour('conventionnel_th-bce_2020')
@@ -1111,7 +1260,7 @@ def main():
                                                                         rcp=rcp,
                                                                         future_period=period,
                                                                         principal_orientation=principal_orientation)
-                            weather_data_1 = refine_resolution(weather_data_1, resolution='30s')
+                            weather_data_1 = refine_resolution(weather_data_1, resolution='600s')
                             
                             city_2 = 'Marseille'
                             climat_2 = Climat(Departement(13).climat)
