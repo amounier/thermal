@@ -119,6 +119,9 @@ def draw_departement_map(dict_dep,figs_folder,cbar_min=0,cbar_max=1.,
     if automatic_cbar_values:
         cbar_max = plotter.vals.quantile(0.99)
         cbar_min = plotter.vals.quantile(0.01)
+        cbar_extend = 'both'
+    else:
+        cbar_extend = 'neither'
     
     plotter['color'] = (plotter.vals-cbar_min)/(cbar_max-cbar_min)
     plotter['color'] = plotter['color'].apply(cmap)
@@ -133,7 +136,7 @@ def draw_departement_map(dict_dep,figs_folder,cbar_min=0,cbar_max=1.,
     mappable = matplotlib.cm.ScalarMappable(norm=norm, cmap=cmap)
     
     cbar_label_var = cbar_label
-    _ = plt.colorbar(mappable, cax=cbar_ax, label=cbar_label_var, extend='neither', extendfrac=0.02)
+    _ = plt.colorbar(mappable, cax=cbar_ax, label=cbar_label_var, extend=cbar_extend, extendfrac=0.02)
     
     ax.set_title(map_title)
     if save is not None:
