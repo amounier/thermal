@@ -51,7 +51,8 @@ list_dep_code = ['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11
 
 # TODO : rajouter une classe France pour les stats nationale par exemple
 # TODO : rajouter une classe city pour faire le lien avec les données météo
-
+    
+    
 class Departement:
     def __init__(self,dep_code):
         if type(dep_code) == int:
@@ -116,8 +117,8 @@ def draw_departement_map(dict_dep,figs_folder,cbar_min=0,cbar_max=1.,
     plotter = gpd.GeoDataFrame(plotter, geometry=plotter.geometry)
     
     if automatic_cbar_values:
-        cbar_max = plotter.values.quantile(0.99)
-        cbar_min = plotter.values.quantile(0.01)
+        cbar_max = plotter.vals.quantile(0.99)
+        cbar_min = plotter.vals.quantile(0.01)
     
     plotter['color'] = (plotter.vals-cbar_min)/(cbar_max-cbar_min)
     plotter['color'] = plotter['color'].apply(cmap)
