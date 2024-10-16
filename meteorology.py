@@ -19,6 +19,10 @@ from scipy.integrate import odeint
 from pysolar.solar import get_altitude, get_altitude_fast, get_azimuth, get_azimuth_fast
 import tqdm
 
+# Pour ne pas utiliser numpy dans la gestion des dates de Pysolar (moins efficace est plus à jour)
+import pysolar
+pysolar.use_math()
+
 from utils import plot_timeserie
 
 import warnings
@@ -278,6 +282,22 @@ def get_init_ground_temperature(x,data,xi=0.7,envelope=False):
     return res 
 
 
+def get_list_orientations(principal_orientation):
+    # définition des dictionnaires d'angles
+    valid_orientations = ['N','NE','E','SE','S','SW','W','NW']
+    dict_angle_orientation = {i*45:o for i,o in enumerate(valid_orientations)}
+    dict_orientation_angle = {v:k for k,v in dict_angle_orientation.items()}
+    
+    # liste des orientations
+    orientation_0 = principal_orientation
+    orientation_1 = dict_angle_orientation.get((dict_orientation_angle.get(orientation_0)+90)%360)
+    orientation_2 = dict_angle_orientation.get((dict_orientation_angle.get(orientation_1)+90)%360)
+    orientation_3 = dict_angle_orientation.get((dict_orientation_angle.get(orientation_2)+90)%360)
+    orientations_list = [orientation_0, orientation_1, orientation_2, orientation_3] + ['H']
+    return orientations_list
+
+
+
 def get_historical_weather_data(city, period, principal_orientation, display_units=False):
     # initialisation des données météo
     variables = ['temperature_2m','diffuse_radiation_instant','direct_normal_irradiance_instant']
@@ -287,6 +307,7 @@ def get_historical_weather_data(city, period, principal_orientation, display_uni
     # formatage des dates sur le bon fuseau horaire
     dates = data.copy().index
     dates = dates.tz_localize(tz='CET',ambiguous='NaT',nonexistent='NaT')
+    dates = dates.to_pydatetime()
     
     # ajout de la hauteur du soleil (en degrés)
     altitude = [get_altitude_fast(coordinates[1],coordinates[0],t) if t is not pd.NaT else np.nan for t in dates]
@@ -295,20 +316,6 @@ def get_historical_weather_data(city, period, principal_orientation, display_uni
     # ajout de l'azimuth du soleil (en degrés)
     azimuth = [float(get_azimuth_fast(coordinates[1],coordinates[0],t)) if t is not pd.NaT else np.nan for t in dates]
     data['sun_azimuth'] = azimuth
-    
-    def get_list_orientations(principal_orientation):
-        # définition des dictionnaires d'angles
-        valid_orientations = ['N','NE','E','SE','S','SW','W','NW']
-        dict_angle_orientation = {i*45:o for i,o in enumerate(valid_orientations)}
-        dict_orientation_angle = {v:k for k,v in dict_angle_orientation.items()}
-        
-        # liste des orientations
-        orientation_0 = principal_orientation
-        orientation_1 = dict_angle_orientation.get((dict_orientation_angle.get(orientation_0)+90)%360)
-        orientation_2 = dict_angle_orientation.get((dict_orientation_angle.get(orientation_1)+90)%360)
-        orientation_3 = dict_angle_orientation.get((dict_orientation_angle.get(orientation_2)+90)%360)
-        orientations_list = [orientation_0, orientation_1, orientation_2, orientation_3] + ['H']
-        return orientations_list
     
     # défintion de la liste des orientations du bâtiment
     orientations = get_list_orientations(principal_orientation)
@@ -599,7 +606,7 @@ def main():
                                xlim=[pd.to_datetime('{}-01-01'.format(year)), pd.to_datetime('{}-12-31'.format(year))],save_fig='{}_{}_{}'.format(c,city,year))
         
         # Étude de l'azimuth et de l'élévation
-        if True:
+        if False:
             warnings.simplefilter("ignore")
     
             dates = data.copy().index
@@ -774,21 +781,23 @@ def main():
                                xlim=[pd.to_datetime('{}-03-01'.format(year)), pd.to_datetime('{}-03-31'.format(year))],save_fig='global_solar_orientations_{}_{}_equinoxe'.format(city,year))
     
     #%% Test de préparation des données météo pour le calcul thermique
-    if True:
+    if False:
         city = 'Marseille'
         period = [2010,2020]
         principal_orientation = 'S'
         
-        weather_data = get_historical_weather_data(city,period,principal_orientation,display_units=True)
+        weather_data = get_historical_weather_data(city,period,principal_orientation,display_units=False)
+        
         plot_timeserie(weather_data[['temperature_2m']], figsize=(15,5),figs_folder = figs_folder, show=True,ylabel='External temperature (°C)',labels=['{}'.format(city)],
                        save_fig='external_temperature_{}_{}-{}'.format(city,period[0],period[1]))
+        
         plot_timeserie(weather_data[['direct_sun_radiation_{}'.format(principal_orientation),'diffuse_sun_radiation_{}'.format(principal_orientation)]], 
                        figsize=(15,5),figs_folder = figs_folder, show=True,ylabel='Sun radiation - {} façade '.format(principal_orientation) + '(W.m$^{-2}$)',
                        labels=['Direct radiation - {}'.format(city),'Diffuse radiation - {}'.format(city)],
                        colors=['tab:red','tab:blue'], save_fig='solar_radiation_{}_{}-{}'.format(city,period[0],period[1]))
         
     #%% Étude sur l'influence du vent et son rôle dans la thermique du bâtiment
-    if True:
+    if False:
         # TODO à faire
         pass
             

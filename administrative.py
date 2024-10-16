@@ -170,7 +170,7 @@ def main():
         # print(dep)
         draw_departement_map({dep:0.5}, figs_folder=figs_folder, save='test_{}'.format(dep.code))
     
-    if True:
+    if False:
         zcl = Climat('H1a')
         print(zcl.code)
         print(zcl.codint)
