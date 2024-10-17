@@ -50,6 +50,13 @@ class Behaviour():
                                    5:[1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1],
                                    6:[1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1],
                                    7:[1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1],}
+            
+        elif self.name == 'conventionnel_th-bce_2020_cst':
+            self.heating_rules = {i:[19]*24 for i in range(1,8)}
+            self.cooling_rules = {i:[26]*24 for i in range(1,8)}
+            self.presence_rules = {i:[1]*24 for i in range(1,8)}
+            self.sleeping_rules = {i:[1]*24 for i in range(1,8)}
+            
         else:
             self.heating_rules = None
             self.cooling_rules = None
@@ -77,7 +84,7 @@ class Behaviour():
                 nb_max = 0.025 * surface
             return nb_max
         
-        if self.name in ['conventionnel_th-bce_2020' ,'conventionnel_3cl-dpe_2021']:
+        if self.name in ['conventionnel_th-bce_2020' ,'conventionnel_3cl-dpe_2021', 'conventionnel_th-bce_2020_cst']:
             nb_max = get_nb_max(surface)
             if nb_max < 1.75:
                 nb_ea = nb_max
@@ -105,7 +112,7 @@ class Behaviour():
         
     
     def get_internal_gains(self, surface, weather_data):
-        if self.name in ['conventionnel_th-bce_2020' ,'conventionnel_3cl-dpe_2021']:
+        if self.name in ['conventionnel_th-bce_2020' ,'conventionnel_3cl-dpe_2021', 'conventionnel_th-bce_2020_cst']:
             internal_gains = []
             
             for d in weather_data.index:
