@@ -18,7 +18,7 @@ import random as rd
 
 def plot_timeserie(data,figsize=(5,5),dpi=300,labels=None,figs_folder=None,
                    save_fig=None,show=True,xlim=None,ylim_bottom=None,ylim_top=None,ylabel=None,
-                   legend_loc=None,figax=None,colors=None,**kwargs):
+                   legend_loc=None,figax=None,colors=None,linestyles=None,**kwargs):
     """
     Fonction d'affichage de séries temporelles
 
@@ -42,6 +42,8 @@ def plot_timeserie(data,figsize=(5,5),dpi=300,labels=None,figs_folder=None,
     for i,c in enumerate(data_plot.columns):
         if colors is not None:
             kwargs['color'] = colors[i]
+        if linestyles is not None:
+            kwargs['ls'] = linestyles[i]
             
         ax.plot(data_plot[c],label=labels[i],**kwargs)
     ax.legend(loc=legend_loc)

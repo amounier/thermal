@@ -270,15 +270,22 @@ def get_diffuse_solar_irradiance_projection_ratio(orientation):
     return ratio
 
 
-def get_init_ground_temperature(x,data,xi=0.7,envelope=False):
-    data_january = data[data.index.month==1]
-    # TODO : tendance à sous estimer les valeurs : à modifier
-    if envelope:
-        theta_gs = data_january.temperature_2m.mean()
-    else:
-        theta_gs = data.temperature_2m.values[0]
+def get_init_ground_temperature(x, data, xi_1 = 0.8, xi_2=0.4, w0=1.37, second_order=True):
+    theta_ginit = data[(data.index.month==1)&(data.index.day==1)].temperature_2m.min()
     theta_ginf = data.temperature_2m.median()
-    res = theta_gs + (theta_ginf-theta_gs) * (1-np.exp(-x/xi))
+    
+    if second_order:
+        res = theta_ginit + (theta_ginf-theta_ginit)*(1 - np.exp(-xi_2*w0*x) * np.cos(w0*np.sqrt(1-xi_2**2)*x))
+                                        
+    else:
+        # data_january = data[data.index.month==1]
+        # TODO : tendance à sous estimer les valeurs : à modifier
+        # if envelope:
+        #     theta_gs = data_january.temperature_2m.mean()
+        # else:
+        # theta_gs = data.temperature_2m.values[0]
+        # theta_ginf = data.temperature_2m.median()
+        res = theta_ginit + (theta_ginf-theta_ginit) * (1-np.exp(-x/xi_1))
     return res 
 
 
@@ -388,6 +395,7 @@ def main():
     if False:
         city = 'Marseille'
         year = 2021
+        # 2021
         variables = ['temperature_2m','soil_temperature_0_to_7cm','soil_temperature_7_to_28cm','soil_temperature_28_to_100cm','soil_temperature_100_to_255cm']
         
         coordinates = get_coordinates(city)
@@ -397,15 +405,16 @@ def main():
         # Modélisation des températures souterraines en fonction des températures de surface 
         if True:
             
-            def ground_temperature(theta_g, t, x, D,h, data):
+            def ground_temperature(theta_g, t, x, D,h, data,x_stationary=10):
                 time_ = np.asarray(data.index)
                 delta_t = (time_[1]-time_[0]) / np.timedelta64(1, 's')
                 D = D*delta_t
                 t = min(t,len(data)-1)
                 theta_e = data.temperature_2m.iloc[int(t)]
+                te_mean = data.temperature_2m.mean()
                 # RC = x/h + x**2/D
                 RC = x**2/D
-                dtheta_gdt = (1/RC)*(theta_e-theta_g)
+                dtheta_gdt = (1/RC)*(theta_e-theta_g) #+ 1/(x*x_stationary/D-x**2/D) * (te_mean-theta_g)
                 return dtheta_gdt
             
             
@@ -429,7 +438,7 @@ def main():
                 depth_col_list = []
                 for depth in tqdm.tqdm(depth_list):
                     # initialisation en fonction de la profondeur
-                    theta_g0 = get_init_ground_temperature(depth, data_res)
+                    theta_g0 = get_init_ground_temperature(depth, data_res, second_order=True)
                     
                     modelled_col = 'modelled_soil_temperature_{:.0f}cm'.format(depth*100)
                     depth_col_list.append(modelled_col)
@@ -444,20 +453,37 @@ def main():
             
             # Affichage des séries temporelles
             if True:
-                depth_list = [((1/2)*mh+(1/2)*ml)/100 for ml,mh in [(28,100),(100,255)]]
-                # depth_list = [((2/3)*mh+(1/3)*ml)/100 for ml,mh in [(28,100),(100,255)]]
+                depth_list = [((3/5)*mh+(2/5)*ml)/100 for ml,mh in [(28,100),(100,255)]]
+                # depth_list = [((1/2)*mh+(1/2)*ml)/100 for ml,mh in [(28,100),(100,255)]]
                 ground_data = model_ground_temperature(depth_list, data)
                 
-                plot_timeserie(ground_data[['soil_temperature_28_to_100cm',
-                                            'modelled_soil_temperature_64cm',
-                                            'soil_temperature_100_to_255cm',
-                                            'modelled_soil_temperature_178cm',]],
-                                            # 'temperature_2m']], 
-                               figsize=(15,5),figs_folder = figs_folder,
-                               xlim=[pd.to_datetime('{}-01-01'.format(year)), pd.to_datetime('{}-12-31'.format(year))])
-            
+                fig,ax = plot_timeserie(ground_data[['soil_temperature_28_to_100cm',
+                                                     'modelled_soil_temperature_{:.0f}cm'.format(depth_list[0]*100),
+                                                     'soil_temperature_100_to_255cm',
+                                                     'modelled_soil_temperature_{:.0f}cm'.format(depth_list[1]*100),]],
+                                        colors = ['tab:blue','tab:blue','tab:red','tab:red'],
+                                        labels=['']*4,
+                                        linestyles=['-',':','-',':'],show=False,
+                                        figsize=(15,5),figs_folder = figs_folder,
+                                        xlim=[pd.to_datetime('{}-01-01'.format(year)), pd.to_datetime('{}-12-31'.format(year))])
+                ax.set_ylabel('Soil temperature (°C)')
+                ax.plot(ground_data.iloc[0]['soil_temperature_28_to_100cm'],ls='-',color='tab:blue',label='$d \\in [28,100]~cm$')
+                ax.plot(ground_data.iloc[0]['soil_temperature_100_to_255cm'],ls='-',color='tab:red',label='$d \\in [100,255]~cm$')
+                
+                # ax2 = ax.twinx()
+                # ax2.tick_params(right=False)
+                # ax2.set(yticklabels=[])
+                
+                ax.plot(ground_data.iloc[0]['soil_temperature_28_to_100cm'],ls='-',color='k',label='$Data$')
+                ax.plot(ground_data.iloc[0]['soil_temperature_100_to_255cm'],ls=':',color='k',label='$Model$')
+                # ax2.legend(loc='upper right')
+                ax.legend(loc='upper left')
+                
+                plt.savefig(os.path.join(figs_folder,'{}.png'.format('timeserie_ground_temperature_{}_{}'.format(city,year))),bbox_inches='tight')
+                plt.show()
+                
             # Affichage de la température en fonction de la profondeur à partir des données Open-Météo
-            if True:
+            if False:
                 fig, ax = plt.subplots(figsize=(5,5),dpi=300)
                 dict_col = {4/100:'soil_temperature_0_to_7cm',
                             18/100:'soil_temperature_7_to_28cm', 
@@ -465,16 +491,17 @@ def main():
                             178/100:'soil_temperature_100_to_255cm'}
                 for depth in dict_col.keys():
                     modelled_col = dict_col.get(depth)
-                    ax.plot(data[modelled_col].values, [depth]*len(data),ls='',marker='.',color='tab:blue',alpha=0.01)
-                    ax.plot(data[data.index.month==1][modelled_col].values, [depth]*len(data[data.index.month==1]),ls='',marker='.',color='tab:red',alpha=0.01)
-                ax.set_ylim(ax.get_ylim()[::-1])
+                    # ax.plot(data[modelled_col].values, [depth]*len(data),ls='',marker='.',color='tab:blue',alpha=0.01)
+                    ax.plot(data[(data.index.month==1)&(data.index.day==1)&(data.index.hour==0)][modelled_col].values, [depth]*len(data[(data.index.month==1)&(data.index.day==1)&(data.index.hour==0)]),ls='',marker='.',color='tab:red',alpha=0.5)
+                
                 
                 # calibration de xi pour l'estimation de la température initiale
                 if True:
                     Y = np.linspace(0,3)
-                    X = [get_init_ground_temperature(y, data,xi=0.7,envelope=True) for y in Y]
+                    X = [get_init_ground_temperature(y, data) for y in Y]
                     ax.plot(X,Y,color='k')
                 
+                ax.set_ylim(ax.get_ylim()[::-1])
                 depth_list = [((1/2)*mh+(1/2)*ml)/100 for ml,mh in [(28,100),(100,255)]]
                 ax.plot([data.temperature_2m.median(),data.temperature_2m.median()],[min(depth_list), max(depth_list)],color='k')
                 plt.show()
