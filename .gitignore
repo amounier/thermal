@@ -9,4 +9,4 @@ output/
 .ipynb_checkpoints/
 .virtual_documents/
 __*
-saver_*
+*.pickle
