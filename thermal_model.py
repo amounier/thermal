@@ -7,7 +7,7 @@ Created on Thu Oct  3 11:28:45 2024
 """
 
 import time
-from datetime import date
+from datetime import date, datetime
 import os
 import pandas as pd
 import numpy as np
@@ -16,7 +16,8 @@ from numpy.linalg import inv
 import tqdm
 import matplotlib.pyplot as plt
 from sklearn.metrics import r2_score
-import warnings
+# import warnings
+import pickle
 
 from utils import plot_timeserie
 from meteorology import get_init_ground_temperature, get_historical_weather_data
@@ -737,7 +738,7 @@ def main():
     if 'figs' not in os.listdir(os.path.join(output, folder)):
         os.mkdir(figs_folder)
     
-    warnings.simplefilter("ignore") # à cause du calcul de l'azimuth et de l'altitude du soleil 
+    # warnings.simplefilter("ignore") # à cause du calcul de l'azimuth et de l'altitude du soleil 
     
     #%% Test de vitesse de calcul en fonction de la résolution
     if False:
@@ -784,7 +785,7 @@ def main():
         # typo.update_orientation()
         
         # Génération du fichier météo
-        city = 'Marseille'
+        city = 'Paris'
         period = [2020]*2
         principal_orientation = typo.w0_orientation
         
@@ -916,7 +917,7 @@ def main():
         # typo.update_orientation()
         
         # Génération du fichier météo
-        city = 'Marseille'
+        city = 'Paris'
         period = [2020]*2
         principal_orientation = typo.w0_orientation
         
@@ -925,8 +926,8 @@ def main():
         
         # Définition des habitudes
         conventionnel = Behaviour('conventionnel_th-bce_2020')
-        # conventionnel.heating_rules = {i:[19]*24 for i in range(1,8)}
-        # conventionnel.cooling_rules = {i:[26]*24 for i in range(1,8)}
+        conventionnel.heating_rules = {i:[19]*24 for i in range(1,8)}
+        conventionnel.cooling_rules = {i:[26]*24 for i in range(1,8)}
         
         
         # Affichage des variables d'entrée
@@ -961,25 +962,27 @@ def main():
             print('Besoins annuels de refroidissement à {} en {}: {:.0f} kWh/(m2.an)'.format(city, year, surface_annual_cooling_consumption))
             
             monthly_data = aggregate_resolution(simulation_data, resolution='M',agg_method='sum')
+            monthly_data = monthly_data/1000
             
             plot_timeserie(monthly_data[['heating_needs','cooling_needs']],figsize=(5,5),
+                           labels = ['{} ({:.1f} kWh/(m2.an))'.format(e,{'heating_needs':surface_annual_heating_consumption,'cooling_needs':surface_annual_cooling_consumption}.get(e)) for e in ['heating_needs','cooling_needs']],
+                           ylabel='Energy needs (kWh/month) - {:.0f} m$^2$'.format(typo.surface),
                            xlim=[pd.to_datetime('{}-01-01'.format(year)), pd.to_datetime('{}-12-31'.format(year))],
                            figs_folder=figs_folder, save_fig='monthly_thermal_model_energy_needs_{}_{}_{}'.format(city,year,typo_name))
             
             # thermosensibilité
-            if True:
+            if False:
                 data_sensitivity = simulation_data[['temperature_2m','heating_needs','cooling_needs']].copy()
                 data_sensitivity = data_sensitivity.sort_values(by='temperature_2m')
                 data_sensitivity['energy_needs'] = (data_sensitivity.heating_needs + data_sensitivity.cooling_needs)
-                data_sensitivity = data_sensitivity[data_sensitivity.energy_needs>0.]
+                # data_sensitivity = data_sensitivity[data_sensitivity.energy_needs>0.]
                 
                 
                 plot_thermal_sensitivity(temperature=data_sensitivity.temperature_2m.to_list(), consumption=data_sensitivity.energy_needs.to_list(), 
                                          figs_folder=figs_folder, reg_code=city, reg_name='SFH test typology - {}'.format(city), year=year,C0_init=0,k_init=500,ylabel='Hourly energy needs (Wh)')
                 
-                
     #%% Graphes Poster SGR 
-    if False:
+    if True:
         
         # Étude de l'effet de l'épaisseur d'isolant sur la consommation annuelle
         if False:
@@ -1156,11 +1159,110 @@ def main():
             
             plt.show()
             
+        
+        # Étude de l'effet de la surface de vitrage 
+        if False:
+            def get_annual_energy_needs(typology,weather_data,behaviour, by_surface=True):
+                simulation_data = SFH_test_model(typology, conventionnel, weather_data,progressbar=False)
+                simulation_data = aggregate_resolution(simulation_data, resolution='h')
+                
+                yearly_data = aggregate_resolution(simulation_data, resolution='Y',agg_method='sum')
+                yearly_data = yearly_data/1000
+                surface_yearly_data = yearly_data/typology.surface
+                
+                if by_surface:
+                    return surface_yearly_data[['heating_needs','cooling_needs']]
+                else:
+                    return yearly_data[['heating_needs','cooling_needs']]
+                
+            thickness_list = np.linspace(0.5,2,15)
+            energy_needs_mean_list_1 = []
+            energy_needs_std_list_1 = []
+            energy_needs_mean_list_2 = []
+            energy_needs_std_list_2 = []
+            
+            typo_name = 'FR.N.SFH.01.Test'
+            typo = Typology(typo_name)
+            typo.roof_U = 0.36
+            typo.w0_insulation_thickness = 0.1
+            typo.w1_insulation_thickness = 0.1
+            typo.w2_insulation_thickness = 0.1
+            typo.w3_insulation_thickness = 0.1
+            typo.floor_insulation_thickness = 0
+            
+            w0_gs = typo.w0_windows_surface
+            w1_gs = typo.w1_windows_surface
+            w2_gs = typo.w2_windows_surface
+            w3_gs = typo.w3_windows_surface
+            
+            # Génération du fichier météo
+            city_1 = 'Paris'
+            period = [2015,2020]
+            principal_orientation = typo.w0_orientation
+            weather_data_1 = get_historical_weather_data(city_1,period,principal_orientation)
+            weather_data_1 = refine_resolution(weather_data_1, resolution='600s')
+            
+            city_2 = 'Marseille'
+            period = [2015,2020]
+            principal_orientation = typo.w0_orientation
+            weather_data_2 = get_historical_weather_data(city_2,period,principal_orientation)
+            weather_data_2 = refine_resolution(weather_data_2, resolution='600s')
+            
+            # Définition des habitudes
+            conventionnel = Behaviour('conventionnel_th-bce_2020')
+            conventionnel.heating_rules = {i:[19]*24 for i in range(1,8)}
+            conventionnel.cooling_rules = {i:[26]*24 for i in range(1,8)}
+            
+            for surface_multi in tqdm.tqdm(thickness_list):
+                
+                typo.w0_windows_surface = w0_gs*surface_multi
+                typo.w1_windows_surface = w1_gs*surface_multi
+                typo.w2_windows_surface = w2_gs*surface_multi
+                typo.w3_windows_surface = w3_gs*surface_multi
+                
+                energy_needs_1 = get_annual_energy_needs(typo, weather_data_1, conventionnel)
+                energy_needs_mean_list_1.append(energy_needs_1.mean(axis=0))
+                energy_needs_std_list_1.append(energy_needs_1.std(axis=0))
+                
+                energy_needs_2 = get_annual_energy_needs(typo, weather_data_2, conventionnel)
+                energy_needs_mean_list_2.append(energy_needs_2.mean(axis=0))
+                energy_needs_std_list_2.append(energy_needs_2.std(axis=0))
+            
+            
+            glazing_surface_total = w0_gs + w1_gs + w2_gs + w3_gs
+            fig,ax = plt.subplots(figsize=(5,5),dpi=300)
+            ax.errorbar(thickness_list*glazing_surface_total, 
+                        [e.loc['heating_needs'] for e in energy_needs_mean_list_1], 
+                        [e.loc['cooling_needs'] for e in energy_needs_std_list_1],
+                        color='tab:red',label='Heating needs ({})'.format(city_1),capsize=3)
+            ax.errorbar(thickness_list*glazing_surface_total, 
+                        [e.loc['cooling_needs'] for e in energy_needs_mean_list_1], 
+                        [e.loc['cooling_needs'] for e in energy_needs_std_list_1],
+                        color='tab:blue',label='Cooling needs ({})'.format(city_1),capsize=3)
+            ax.errorbar(thickness_list*glazing_surface_total, 
+                        [e.loc['heating_needs'] for e in energy_needs_mean_list_2], 
+                        [e.loc['cooling_needs'] for e in energy_needs_std_list_2],
+                        color='tab:red',label='Heating needs ({})'.format(city_2),ls='--',capsize=3)
+            ax.errorbar(thickness_list*glazing_surface_total, 
+                        [e.loc['cooling_needs'] for e in energy_needs_mean_list_2], 
+                        [e.loc['cooling_needs'] for e in energy_needs_std_list_2],
+                        color='tab:blue',label='Cooling needs ({})'.format(city_2),ls='--',capsize=3)
+            ax.set_ylabel('Annual energy needs over {}-{} '.format(period[0],period[1])+'(kWh.m$^{-2}$.yr$^{-1}$)')
+            # ax.legend()
+            ax.set_xlabel('Total glazing surface (m2)')
+            ax.set_ylim(bottom=0.,top=150)
+            # ax.set_ylim()
+            
+            plt.savefig(os.path.join(figs_folder,'{}.png'.format('effect_glazing_surface_{}_{}_{}-{}'.format(city_1,city_2,period[0],period[1]))),bbox_inches='tight')
+            
+            plt.show()
+            
+            
         # Étude de l'effet des scénarios de chgmt climatique
         if True:
             
             # Premier test :
-            if False:
+            if True:
                 # Définition de la typologie
                 typo_name = 'FR.N.SFH.01.Test'
                 typo = Typology(typo_name)
@@ -1175,7 +1277,8 @@ def main():
                 city = 'Marseille'
                 climat = Climat(Departement(13).climat)
                 
-                period = [2080]*2
+                period = [2085,2090]
+                
                 rcp = 85
                 nmod = 0
                 
@@ -1207,11 +1310,17 @@ def main():
                                xlim=[pd.to_datetime('{}-01-01'.format(year)), pd.to_datetime('{}-12-31'.format(year))],ylabel='Energy needs (Wh)',
                                figs_folder=figs_folder, save_fig='thermal_model_energy_needs_{}_{}_{}'.format(city,period[0],typo_name))
                 
-                annual_heating_consumption = simulation_data.heating_needs.sum()/1000
+                
+                simulation_data = aggregate_resolution(simulation_data, resolution='Y',agg_method='sum')
+                annual_heating_consumption = simulation_data.heating_needs.mean()/1000
                 surface_annual_heating_consumption = annual_heating_consumption/typo.surface
                 
-                annual_cooling_consumption = simulation_data.cooling_needs.sum()/1000
+                annual_cooling_consumption = simulation_data.cooling_needs.mean()/1000
                 surface_annual_cooling_consumption = annual_cooling_consumption/typo.surface
+                
+                now_ts = datetime.now().strftime("%Y-%m-%dT%H")
+                pickle_file_name = "annual_needs_" + now_ts + ".pickle"
+                pickle.dump((annual_heating_consumption, annual_cooling_consumption), open(pickle_file_name, "wb"))
                 
                 print('Besoins annuels de chauffage à {} en {}: {:.0f} kWh/an'.format(city,year, annual_heating_consumption))
                 print('Besoins annuels de chauffage à {} en {}: {:.0f} kWh/(m2.an)'.format(city, year, surface_annual_heating_consumption))
@@ -1247,7 +1356,7 @@ def main():
                 for y in tqdm.tqdm(period_list):
                     for nmod in mod_list:
                         for rcp in rcp_list:
-                            period = [y,y]
+                            period = [y-10,y]
                             principal_orientation = typo.w0_orientation
                             
                             # Génération du fichier météo
@@ -1270,29 +1379,41 @@ def main():
                                                                         rcp=rcp,
                                                                         future_period=period,
                                                                         principal_orientation=principal_orientation)
-                            weather_data_2 = refine_resolution(weather_data_2, resolution='30s')
+                            weather_data_2 = refine_resolution(weather_data_2, resolution='600s')
                             
                             simulation_data_1 = SFH_test_model(typo, conventionnel, weather_data_1,progressbar=False)
                             simulation_data_1 = aggregate_resolution(simulation_data_1, resolution='h')
-                            annual_heating_consumption_1 = simulation_data_1.heating_needs.sum()/1000
+                            simulation_data_1 = aggregate_resolution(simulation_data_1, resolution='Y',agg_method='sum')
+                            
+                            annual_heating_consumption_1 = simulation_data_1.heating_needs.mean()/1000
                             surface_annual_heating_consumption_1 = annual_heating_consumption_1/typo.surface
-                            annual_cooling_consumption_1 = simulation_data_1.cooling_needs.sum()/1000
+                            annual_cooling_consumption_1 = simulation_data_1.cooling_needs.mean()/1000
                             surface_annual_cooling_consumption_1 = annual_cooling_consumption_1/typo.surface
                             
                             simulation_data_2 = SFH_test_model(typo, conventionnel, weather_data_2,progressbar=False)
                             simulation_data_2 = aggregate_resolution(simulation_data_2, resolution='h')
-                            annual_heating_consumption_2 = simulation_data_2.heating_needs.sum()/1000
+                            simulation_data_2 = aggregate_resolution(simulation_data_2, resolution='Y',agg_method='sum')
+                            
+                            annual_heating_consumption_2 = simulation_data_2.heating_needs.mean()/1000
                             surface_annual_heating_consumption_2 = annual_heating_consumption_2/typo.surface
-                            annual_cooling_consumption_2 = simulation_data_2.cooling_needs.sum()/1000
+                            annual_cooling_consumption_2 = simulation_data_2.cooling_needs.mean()/1000
                             surface_annual_cooling_consumption_2 = annual_cooling_consumption_2/typo.surface
                             
                             energy_needs_dict_1[(y,rcp,nmod)] = surface_annual_heating_consumption_1,surface_annual_cooling_consumption_1
                             energy_needs_dict_2[(y,rcp,nmod)] = surface_annual_heating_consumption_2,surface_annual_cooling_consumption_2
                         
                 
+                # save data as pickles
+                now_ts = datetime.now().strftime("%Y-%m-%dT%H")
+                pickle_file_name = "energy_needs_" + now_ts + ".pickle"
+                pickle.dump((energy_needs_dict_1, energy_needs_dict_2), open(pickle_file_name, "wb"))
                 
-                from saver_energy_needs_climate_change import energy_needs_dict_1, energy_needs_dict_2
-                period_list = [2020,2040,2060,2080,2099]
+                energy_needs_dict_1, energy_needs_dict_2 = pickle.load(open('energy_needs_2024-10-17T04.pickle', 'rb'))
+                mod_list = list(range(9))
+                rcp_list = [45,85]
+                
+                # from saver_energy_needs_climate_change import energy_needs_dict_1, energy_needs_dict_2
+                period_list = [2020,2040,2060,2080,2100]
                 
                 fig,ax = plt.subplots(figsize=(5,5),dpi=300)
                 
@@ -1314,15 +1435,15 @@ def main():
                 heating_rcp85_city1_mean = []
                 heating_rcp85_city1_std = []
                 
-                cooling_rcp45_city2_mean = []
-                cooling_rcp45_city2_std = []
-                heating_rcp45_city2_mean = []
-                heating_rcp45_city2_std = []
+                # cooling_rcp45_city2_mean = []
+                # cooling_rcp45_city2_std = []
+                # heating_rcp45_city2_mean = []
+                # heating_rcp45_city2_std = []
                 
-                cooling_rcp85_city2_mean = []
-                cooling_rcp85_city2_std = []
-                heating_rcp85_city2_mean = []
-                heating_rcp85_city2_std = []
+                # cooling_rcp85_city2_mean = []
+                # cooling_rcp85_city2_std = []
+                # heating_rcp85_city2_mean = []
+                # heating_rcp85_city2_std = []
                 
                 for y in period_list:
                     cooling_rcp45_city1 = np.asarray([energy_needs_dict_1.get((y,45,nm))[1] for nm in mod_list])
@@ -1339,19 +1460,19 @@ def main():
                     heating_rcp85_city1_mean.append(np.mean(heating_rcp85_city1))
                     heating_rcp85_city1_std.append(np.std(heating_rcp85_city1))
                     
-                    cooling_rcp45_city2 = np.asarray([energy_needs_dict_2.get((y,45,nm))[1] for nm in mod_list])
-                    cooling_rcp45_city2_mean.append(np.mean(cooling_rcp45_city2))
-                    cooling_rcp45_city2_std.append(np.std(cooling_rcp45_city2))
-                    heating_rcp45_city2 = np.asarray([energy_needs_dict_2.get((y,45,nm))[0] for nm in mod_list])
-                    heating_rcp45_city2_mean.append(np.mean(heating_rcp45_city2))
-                    heating_rcp45_city2_std.append(np.std(heating_rcp45_city2))
+                    # cooling_rcp45_city2 = np.asarray([energy_needs_dict_2.get((y,45,nm))[1] for nm in mod_list])
+                    # cooling_rcp45_city2_mean.append(np.mean(cooling_rcp45_city2))
+                    # cooling_rcp45_city2_std.append(np.std(cooling_rcp45_city2))
+                    # heating_rcp45_city2 = np.asarray([energy_needs_dict_2.get((y,45,nm))[0] for nm in mod_list])
+                    # heating_rcp45_city2_mean.append(np.mean(heating_rcp45_city2))
+                    # heating_rcp45_city2_std.append(np.std(heating_rcp45_city2))
                     
-                    cooling_rcp85_city2 = np.asarray([energy_needs_dict_2.get((y,85,nm))[1] for nm in mod_list])
-                    cooling_rcp85_city2_mean.append(np.mean(cooling_rcp85_city2))
-                    cooling_rcp85_city2_std.append(np.std(cooling_rcp85_city2))
-                    heating_rcp85_city2 = np.asarray([energy_needs_dict_2.get((y,85,nm))[0] for nm in mod_list])
-                    heating_rcp85_city2_mean.append(np.mean(heating_rcp85_city2))
-                    heating_rcp85_city2_std.append(np.std(heating_rcp85_city2))
+                    # cooling_rcp85_city2 = np.asarray([energy_needs_dict_2.get((y,85,nm))[1] for nm in mod_list])
+                    # cooling_rcp85_city2_mean.append(np.mean(cooling_rcp85_city2))
+                    # cooling_rcp85_city2_std.append(np.std(cooling_rcp85_city2))
+                    # heating_rcp85_city2 = np.asarray([energy_needs_dict_2.get((y,85,nm))[0] for nm in mod_list])
+                    # heating_rcp85_city2_mean.append(np.mean(heating_rcp85_city2))
+                    # heating_rcp85_city2_std.append(np.std(heating_rcp85_city2))
                     
                 ax.errorbar(period_list, 
                             cooling_rcp45_city1_mean, 
@@ -1376,6 +1497,129 @@ def main():
                             heating_rcp85_city1_std,
                             color=color_dict.get('heating_rcp85'),
                             ls=ls_dict.get('city1'),capsize=3)
+                
+                # ax.errorbar(period_list, 
+                #             cooling_rcp45_city2_mean, 
+                #             cooling_rcp45_city2_std,
+                #             color=color_dict.get('cooling_rcp45'),
+                #             ls=ls_dict.get('city2'),capsize=3)
+                
+                # ax.errorbar(period_list, 
+                #             heating_rcp45_city2_mean, 
+                #             heating_rcp45_city2_std,
+                #             color=color_dict.get('heating_rcp45'),
+                #             ls=ls_dict.get('city2'),capsize=3)
+                
+                # ax.errorbar(period_list, 
+                #             cooling_rcp85_city2_mean, 
+                #             cooling_rcp85_city2_std,
+                #             color=color_dict.get('cooling_rcp85'),
+                #             ls=ls_dict.get('city2'),capsize=3)
+                
+                # ax.errorbar(period_list, 
+                #             heating_rcp85_city2_mean, 
+                #             heating_rcp85_city2_std,
+                #             color=color_dict.get('heating_rcp85'),
+                #             ls=ls_dict.get('city2'),capsize=3)
+                
+                ax.plot([2020],[0],label='RCP4.5',color='silver')
+                ax.plot([2020],[0],label='RCP8.5',color='grey')
+                
+                ax.set_ylabel('Annual energy needs (kWh.m$^{-2}$.yr$^{-1}$)')
+                ax.legend()
+                # ax.set_xlabel('Floor insulation thickness (m)')
+                ax.set_ylim(bottom=0.,top=150)
+                # ax.set_ylim()
+                
+                plt.savefig(os.path.join(figs_folder,'{}.png'.format('effect_climate_change_{}'.format(city_1))),bbox_inches='tight')
+                
+                plt.show()
+                
+                
+                period_list = [2020,2040,2060,2080,2100]
+                
+                fig,ax = plt.subplots(figsize=(5,5),dpi=300)
+                
+                color_dict = {'cooling_rcp45':'cornflowerblue',
+                              'cooling_rcp85':'darkblue',
+                              'heating_rcp45':'lightcoral',
+                              'heating_rcp85':'tab:red',}
+                
+                ls_dict = {'city1':'-',
+                           'city2':'--',}
+                
+                # cooling_rcp45_city1_mean = []
+                # cooling_rcp45_city1_std = []
+                # heating_rcp45_city1_mean = []
+                # heating_rcp45_city1_std = []
+                
+                # cooling_rcp85_city1_mean = []
+                # cooling_rcp85_city1_std = []
+                # heating_rcp85_city1_mean = []
+                # heating_rcp85_city1_std = []
+                
+                cooling_rcp45_city2_mean = []
+                cooling_rcp45_city2_std = []
+                heating_rcp45_city2_mean = []
+                heating_rcp45_city2_std = []
+                
+                cooling_rcp85_city2_mean = []
+                cooling_rcp85_city2_std = []
+                heating_rcp85_city2_mean = []
+                heating_rcp85_city2_std = []
+                
+                for y in period_list:
+                    # cooling_rcp45_city1 = np.asarray([energy_needs_dict_1.get((y,45,nm))[1] for nm in mod_list])
+                    # cooling_rcp45_city1_mean.append(np.mean(cooling_rcp45_city1))
+                    # cooling_rcp45_city1_std.append(np.std(cooling_rcp45_city1))
+                    # heating_rcp45_city1 = np.asarray([energy_needs_dict_1.get((y,45,nm))[0] for nm in mod_list])
+                    # heating_rcp45_city1_mean.append(np.mean(heating_rcp45_city1))
+                    # heating_rcp45_city1_std.append(np.std(heating_rcp45_city1))
+                    
+                    # cooling_rcp85_city1 = np.asarray([energy_needs_dict_1.get((y,85,nm))[1] for nm in mod_list])
+                    # cooling_rcp85_city1_mean.append(np.mean(cooling_rcp85_city1))
+                    # cooling_rcp85_city1_std.append(np.std(cooling_rcp85_city1))
+                    # heating_rcp85_city1 = np.asarray([energy_needs_dict_1.get((y,85,nm))[0] for nm in mod_list])
+                    # heating_rcp85_city1_mean.append(np.mean(heating_rcp85_city1))
+                    # heating_rcp85_city1_std.append(np.std(heating_rcp85_city1))
+                    
+                    cooling_rcp45_city2 = np.asarray([energy_needs_dict_2.get((y,45,nm))[1] for nm in mod_list])
+                    cooling_rcp45_city2_mean.append(np.mean(cooling_rcp45_city2))
+                    cooling_rcp45_city2_std.append(np.std(cooling_rcp45_city2))
+                    heating_rcp45_city2 = np.asarray([energy_needs_dict_2.get((y,45,nm))[0] for nm in mod_list])
+                    heating_rcp45_city2_mean.append(np.mean(heating_rcp45_city2))
+                    heating_rcp45_city2_std.append(np.std(heating_rcp45_city2))
+                    
+                    cooling_rcp85_city2 = np.asarray([energy_needs_dict_2.get((y,85,nm))[1] for nm in mod_list])
+                    cooling_rcp85_city2_mean.append(np.mean(cooling_rcp85_city2))
+                    cooling_rcp85_city2_std.append(np.std(cooling_rcp85_city2))
+                    heating_rcp85_city2 = np.asarray([energy_needs_dict_2.get((y,85,nm))[0] for nm in mod_list])
+                    heating_rcp85_city2_mean.append(np.mean(heating_rcp85_city2))
+                    heating_rcp85_city2_std.append(np.std(heating_rcp85_city2))
+                    
+                # ax.errorbar(period_list, 
+                #             cooling_rcp45_city1_mean, 
+                #             cooling_rcp45_city1_std,
+                #             color=color_dict.get('cooling_rcp45'),
+                #             ls=ls_dict.get('city1'),capsize=3)
+                
+                # ax.errorbar(period_list, 
+                #             heating_rcp45_city1_mean, 
+                #             heating_rcp45_city1_std,
+                #             color=color_dict.get('heating_rcp45'),
+                #             ls=ls_dict.get('city1'),capsize=3)
+                
+                # ax.errorbar(period_list, 
+                #             cooling_rcp85_city1_mean, 
+                #             cooling_rcp85_city1_std,
+                #             color=color_dict.get('cooling_rcp85'),
+                #             ls=ls_dict.get('city1'),capsize=3)
+                
+                # ax.errorbar(period_list, 
+                #             heating_rcp85_city1_mean, 
+                #             heating_rcp85_city1_std,
+                #             color=color_dict.get('heating_rcp85'),
+                #             ls=ls_dict.get('city1'),capsize=3)
                 
                 ax.errorbar(period_list, 
                             cooling_rcp45_city2_mean, 
@@ -1407,10 +1651,10 @@ def main():
                 ax.set_ylabel('Annual energy needs (kWh.m$^{-2}$.yr$^{-1}$)')
                 ax.legend()
                 # ax.set_xlabel('Floor insulation thickness (m)')
-                ax.set_ylim(bottom=0.,top=100)
+                ax.set_ylim(bottom=0.,top=150)
                 # ax.set_ylim()
                 
-                plt.savefig(os.path.join(figs_folder,'{}.png'.format('effect_climate_change_{}_{}_{}-{}'.format(city_1,city_2,period[0],period[1]))),bbox_inches='tight')
+                plt.savefig(os.path.join(figs_folder,'{}.png'.format('effect_climate_change_{}'.format(city_2))),bbox_inches='tight')
                 
                 plt.show()
                 
