@@ -57,10 +57,13 @@ def get_projected_weather_data(city,zcl_codint,nmod,rcp,future_period,principal_
     dt = dt[dt.index.year.isin(future_period_list)]
     
     # il faut que les deux periodes aient la même durée
+    # print(future_period_list)
     ref_period = [ref_year+1-len(future_period_list),ref_year]
-    change_year_dict = {proj_year:ref_year for proj_year,ref_year in zip(future_period,ref_period)}
-    
-    new_index = [pd.to_datetime('{}-{}-{}'.format(change_year_dict.get(y),m,d)) for y,m,d in zip(dt.index.year,dt.index.month,dt.index.day)]
+    ref_period_list = list(range(ref_period[0],ref_period[1]+1))
+    # print(ref_period_list)
+    change_year_dict = {proj_year:ref_year for proj_year,ref_year in zip(future_period_list,ref_period_list)}
+    # print(change_year_dict)
+    new_index = [pd.to_datetime('{}-{}-{}'.format(change_year_dict.get(y),m,d),errors='coerce') for y,m,d in zip(dt.index.year,dt.index.month,dt.index.day)]
     dt.index = new_index
 
     weather_data = get_historical_weather_data(city,ref_period,principal_orientation)
@@ -139,10 +142,13 @@ def main():
                                           zcl_codint=Climat('H1a').codint,
                                           nmod=0,
                                           rcp=85,
-                                          future_period=[2090,2090],
+                                          future_period=[2085,2090],
                                           principal_orientation='S')
         print(data)
         data[['ref_temperature_2m','temperature_2m']].plot()
+        
+        for t in ['ref_temperature_2m','temperature_2m']:
+            print(data[t].mean())
         # print(data)
         
     tac = time.time()
