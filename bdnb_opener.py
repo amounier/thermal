@@ -36,6 +36,7 @@ from urllib.error import HTTPError
 from unidecode import unidecode
 from pyogrio.errors import DataSourceError
 import subprocess
+import matplotlib
 # from pyproj import Transformer
 
 
@@ -991,7 +992,7 @@ def draw_local_map(geometry,style='map',figsize=12, radius=370, grey_background=
 
 
 
-def neighbourhood_map(batiment_groupe_id, path,save=True):
+def neighbourhood_map(batiment_groupe_id, path, dpe_id=False, save=True):
     """
     carte des alentours d'un bâtiment de la BDNB
 
@@ -1008,10 +1009,17 @@ def neighbourhood_map(batiment_groupe_id, path,save=True):
 
     """
     # requête à la BDNB
-    r = requests.get('https://api.bdnb.io/v1/bdnb/donnees/batiment_groupe_complet/adresse',
-                     params={'batiment_groupe_id': 'eq.'+batiment_groupe_id,#},
-                             'select': 'batiment_groupe_id, s_geom_groupe, contient_fictive_geom_groupe, geom_groupe'},
-                     headers = {"Accept": "application/geo+json"},)
+    if dpe_id:
+        # TODO ne marche pas
+        r = requests.get('https://api.bdnb.io/v1/bdnb/donnees/batiment_groupe_complet/adresse',
+                         params={'identifiant_dpe': 'eq.'+batiment_groupe_id,#},
+                                 'select': 'batiment_groupe_id, s_geom_groupe, contient_fictive_geom_groupe, geom_groupe'},
+                         headers = {"Accept": "application/geo+json"},)
+    else:
+        r = requests.get('https://api.bdnb.io/v1/bdnb/donnees/batiment_groupe_complet/adresse',
+                         params={'batiment_groupe_id': 'eq.'+batiment_groupe_id,#},
+                                 'select': 'batiment_groupe_id, s_geom_groupe, contient_fictive_geom_groupe, geom_groupe'},
+                         headers = {"Accept": "application/geo+json"},)
 
     # print(r.text)
     
@@ -1072,7 +1080,10 @@ def get_batiment_groupe_infos(batiment_groupe_id,variables=None):
     return res
 
 
-def draw_city_map(list_bg_id, city='Paris', style='map',figsize=20, grey_background=True, save_path=None, include_OSM_copyright=True):
+def draw_city_map(bg_id, city='Paris', style='map',figsize=20, 
+                  grey_background=True, save_path=None, 
+                  include_OSM_copyright=True, external_disk=True,
+                  automatic_cbar_values=True,cbar_label=''):
         """
         based on https://www.theurbanist.com.au/2021/03/plotting-openstreetmap-images-with-cartopy/
 
@@ -1111,8 +1122,23 @@ def draw_city_map(list_bg_id, city='Paris', style='map',figsize=20, grey_backgro
         scale = dict_city_map_parameters.get(city).get('scale')
         extent = dict_city_map_parameters.get(city).get('extent')
         
+        if type(bg_id)==type(pd.DataFrame()):
+            cmap = matplotlib.colormaps.get_cmap('viridis')
+            c = bg_id.columns[0]
+            
+            if automatic_cbar_values:
+                cbar_max = bg_id[c].quantile(0.99)
+                cbar_min = bg_id[c].quantile(0.01)
+                
+            colors = (bg_id[c]-cbar_min)/(cbar_max-cbar_min)
+            colors = list(map(cmap,colors))
+            
+            list_bg_id = bg_id.index
+        else:
+            list_bg_id = bg_id
+            
         # retrive geometry info from bdnb
-        _, _, bdnb_batiment_groupe_compile = get_bdnb()
+        _, _, bdnb_batiment_groupe_compile = get_bdnb(external_disk=external_disk)
         bdnb_batiment_groupe_compile = bdnb_batiment_groupe_compile[['batiment_groupe_id','geometry']]
         bdnb_batiment_groupe_compile = bdnb_batiment_groupe_compile.compute()
         bdnb_batiment_groupe_compile = bdnb_batiment_groupe_compile[bdnb_batiment_groupe_compile.batiment_groupe_id.isin(list_bg_id)]
@@ -1126,12 +1152,32 @@ def draw_city_map(list_bg_id, city='Paris', style='map',figsize=20, grey_backgro
         # add OSM with zoom specification
         ax.add_image(img, int(scale)) 
         
+        if type(bg_id)==type(pd.DataFrame()):
+            bdnb_batiment_groupe_compile['color'] = colors
+        else:
+            bdnb_batiment_groupe_compile['color'] = ['tab:blue']*len(bdnb_batiment_groupe_compile.index)
+        
         # add building on map
-        ax.add_geometries(bdnb_batiment_groupe_compile.geometry, crs=data_crs, color='tab:blue')
+        # ax.add_geometries(bdnb_batiment_groupe_compile.geometry, crs=data_crs, colors=colors)
+        bdnb_batiment_groupe_compile.plot(color=bdnb_batiment_groupe_compile.color, ax=ax, transform=ccrs.PlateCarree(),)
+        
+        if type(bg_id)==type(pd.DataFrame()):
+            cbar_ax = fig.add_axes([0, 0, 0.1, 0.1])
+            posn = ax.get_position()
+            cbar_ax.set_position([posn.x0+posn.width+0.01, posn.y0, 0.02, posn.height])
+            norm = matplotlib.colors.Normalize(vmin=cbar_min, vmax=cbar_max)
+            mappable = matplotlib.cm.ScalarMappable(norm=norm, cmap=cmap)
+            
+            cbar_label_var = cbar_label
+            _ = plt.colorbar(mappable, cax=cbar_ax, label=cbar_label_var, extend='neither', extendfrac=0.02)
         
         # add OSM copyright
         if include_OSM_copyright:
-            ax.text(0.5, -0.035, '\xa9 OpenStreetMap contributors', fontsize='x-large', horizontalalignment='center',verticalalignment='bottom', transform=ax.transAxes)
+            if figsize > 15:
+                fontsize = 'x-large'
+            else:
+                fontsize = None
+            ax.text(0.5, -0.035, '\xa9 OpenStreetMap contributors', fontsize=fontsize, horizontalalignment='center',verticalalignment='bottom', transform=ax.transAxes)
             
         # sauvegarde de l'image
         if save_path is not None:

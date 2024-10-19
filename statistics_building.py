@@ -8,12 +8,13 @@ Created on Mon Oct 14 16:25:15 2024
 
 import os 
 import time
-from datetime import date
+from datetime import date, datetime
 import pandas as pd
 import tqdm
 import numpy as np
 import matplotlib.pyplot as plt
 import random as rd
+import pickle
 
 rd.seed(0)
 
@@ -77,6 +78,38 @@ def compute_heater_statistics(dep_code,external_disk,output_folder):
     return
 
 
+def test_DPE_stats(dep_code,external_disk,output_folder,period='1948-1974'):
+    #TODO à completer pour les MFH et AB
+    dep_dpe_id_typologies_dict_name = 'dep{}_dpe_id_typologies_dict'.format(dep_code)
+    dep_dpe_id_typologies_dict = {}
+    
+    dpe, rel, _ = get_bdnb(dep=dep_code,external_disk=external_disk)
+    dpe = dpe[dpe.type_dpe.isin(['dpe arrêté 2021 3cl logement','dpe arrêté 2021 re2020 logement'])]
+    
+    variables = ['identifiant_dpe','type_batiment_dpe', 'surface_mur_deperditif', 'periode_construction_dpe']
+    
+    # supp_variables_sec_heater = ['type_energie_chauffage_appoint',
+    #                              'type_generateur_chauffage_appoint']
+    
+    dpe = dpe[variables]
+    dpe = dpe[(dpe.type_batiment_dpe=='appartement')&(dpe.periode_construction_dpe==period)]
+    dpe = dpe.compute()
+    
+    rel = rel[['batiment_groupe_id', 'identifiant_dpe']].dropna().set_index('identifiant_dpe')['batiment_groupe_id'].compute().to_dict()
+    
+    for dpe_id, smd in zip(dpe.identifiant_dpe,dpe.surface_mur_deperditif):
+        dep_dpe_id_typologies_dict[rel.get(dpe_id)] = smd
+   
+    # enregistrement comme pickle
+    now_ts = datetime.now().strftime("%Y-%m-%dT%H")
+    pickle_file_name = os.path.join(output_folder, dep_dpe_id_typologies_dict_name + period + ".pickle")
+    pickle.dump((dep_dpe_id_typologies_dict), open(pickle_file_name, "wb"))
+    
+    # energy_needs_dict_1, energy_needs_dict_2 = pickle.load(open('energy_needs_2024-10-17T04.pickle', 'rb'))
+    
+    return
+
+
 #%% ===========================================================================
 # script principal
 # =============================================================================
@@ -100,10 +133,10 @@ def main():
     external_disk_connection = 'MPBE' in os.listdir('/media/amounier/')
     
 #%% Statistiques sur les systèmes de chauffage de la base DPE
-    if True:
+    if False:
         
         # Génération des fichiers statistiques par départements
-        if True and external_disk_connection:
+        if False and external_disk_connection:
             departements = France().departements
             
             for dep in tqdm.tqdm(departements):
@@ -538,7 +571,38 @@ def main():
                     ax.legend(labels=labels_cat, loc='upper center')
                     plt.savefig(os.path.join(figs_folder,'{}.png'.format('statistiques_nationale_type_energie_secondaire_{}_principal'.format(tg.replace(' ','_')))),bbox_inches='tight')
                     plt.show()
-                
+
+    #%% Identification des typologies de bâtiments dans la base DPE
+    if True:
+        departement = Departement(75)
+        period_list = ['1948-1974','1989-2000']
+        # for p in period_list:
+        #     test_DPE_stats(dep_code = departement.code,
+        #                    external_disk=external_disk_connection,
+        #                    output_folder=os.path.join(output, folder),
+        #                    period=p)
+        
+        import seaborn as sns
+        
+        fig,ax = plt.subplots(figsize=(5,5),dpi=300)
+        
+        for p in period_list[1:]:
+            dep_stats_dict = pickle.load(open(os.path.join(output,folder,'dep75_dpe_id_typologies_dict{}.pickle'.format(p)), 'rb'))
+            dep_stats = pd.DataFrame().from_dict({'bg_id':dep_stats_dict.keys(),'surface_mur_deperditif_{}'.format(p):dep_stats_dict.values()}).set_index('bg_id')
+            dep_stats = dep_stats[dep_stats['surface_mur_deperditif_{}'.format(p)]<100]
+        
+        # fig,ax = plt.subplots(figsize=(5,5),dpi=300)
+            ax.histplot(dep_stats['surface_mur_deperditif_{}'.format(p)] ax=ax,stat='percent')
+            ax.set_xlabel('Surface déperditive de murs (m$^2$)')
+        plt.show()
+        
+        # from bdnb_opener import draw_city_map
+        
+        # draw_city_map(dep_stats, external_disk=external_disk_connection,
+        #               cbar_label='Surface déperditive de murs (m$^2$)',
+        #               figsize=10)
+        # plt.show()
+        
     tac = time.time()
     print('Done in {:.2f}s.'.format(tac-tic))
     
