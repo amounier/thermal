@@ -41,7 +41,7 @@ import matplotlib
 
 
 
-
+from administrative import Departement
 
 
 # =============================================================================
@@ -1186,7 +1186,7 @@ def draw_city_map(bg_id, city='Paris', style='map',figsize=20,
         return fig,ax
     
     
-def plot_dpe_distribution(path, dep='75', save=True, max_xlim=600):
+def plot_dpe_distribution(path, dep='75', save=True, max_xlim=600, external_disk=True):
     """
     graphe de la distribution des DPE, en indiquant les limites entre catégories
 
@@ -1204,7 +1204,7 @@ def plot_dpe_distribution(path, dep='75', save=True, max_xlim=600):
 
     """
     def get_dpe_conso(dep):
-        dpe_data, _ , _ = get_bdnb(dep)
+        dpe_data, _ , _ = get_bdnb(dep,external_disk=external_disk)
         dpe_data = dpe_data[dpe_data.type_dpe=='dpe arrêté 2021 3cl logement'][['conso_5_usages_ep_m2','conso_5_usages_ef_m2']].compute() 
         return dpe_data
     
@@ -1226,7 +1226,7 @@ def plot_dpe_distribution(path, dep='75', save=True, max_xlim=600):
         ax.bar(list(counter_dict_eti.keys()), list(counter_dict_eti.values()), width=1., color=color, label=eti)
     
     ax.set_xlim([0,max_xlim])
-    ax.set_ylabel("Nombre d'observations (département {})".format(dep))
+    ax.set_ylabel("Nombre d'observations ({})".format(Departement(dep).name))
     ax.legend()
     ax.set_xlabel("Consommation annuelle en énergie primaire (kWh.m$^{-2}$)")
     ax.set_xticks(ticks=[int(x) for x in list(set(list(np.asarray(list(etiquette_ep_dict.values())).flatten()))) if not np.isinf(x)] + [max_xlim])
@@ -1512,7 +1512,7 @@ def main():
     #%% graphe des distribution des DPE présents dans la BDNB (paris pour l'instant)
     if False:
         # uniquement cette fonction a été mise à jour pour le changement le département 
-        plot_dpe_distribution(dep=departement, path=output_path,max_xlim=600)
+        plot_dpe_distribution(dep=departement, path=output_path,max_xlim=600, external_disk=False)
     
     #%% plot des diagnostics suspects
     if False:

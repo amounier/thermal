@@ -15,10 +15,13 @@ import numpy as np
 import matplotlib.pyplot as plt
 import random as rd
 import pickle
+import seaborn as sns
+from scipy import stats
+import matplotlib
 
 rd.seed(0)
 
-from bdnb_opener import get_bdnb
+from bdnb_opener import get_bdnb, plot_dpe_distribution
 from administrative import France, Departement, draw_departement_map
 
 
@@ -573,7 +576,7 @@ def main():
                     plt.show()
 
     #%% Identification des typologies de bâtiments dans la base DPE
-    if True:
+    if False:
         departement = Departement(75)
         period_list = ['1948-1974','1989-2000']
         # for p in period_list:
@@ -582,7 +585,7 @@ def main():
         #                    output_folder=os.path.join(output, folder),
         #                    period=p)
         
-        import seaborn as sns
+        
         
         fig,ax = plt.subplots(figsize=(5,5),dpi=300)
         
@@ -592,8 +595,8 @@ def main():
             dep_stats = dep_stats[dep_stats['surface_mur_deperditif_{}'.format(p)]<100]
         
         # fig,ax = plt.subplots(figsize=(5,5),dpi=300)
-            ax.histplot(dep_stats['surface_mur_deperditif_{}'.format(p)] ax=ax,stat='percent')
-            ax.set_xlabel('Surface déperditive de murs (m$^2$)')
+            ax.hist(dep_stats['surface_mur_deperditif_{}'.format(p)])
+        ax.set_xlabel('Surface déperditive de murs (m$^2$)')
         plt.show()
         
         # from bdnb_opener import draw_city_map
@@ -602,6 +605,135 @@ def main():
         #               cbar_label='Surface déperditive de murs (m$^2$)',
         #               figsize=10)
         # plt.show()
+    
+    #%% Lien entre les étiquettes DPE et la surface des logements, lien entre la période de construction et la surface des logements 
+    # Regarder les trois éléments les uns les autres
+    if False:
+        departement = Departement(24)
+        max_energy_cons = 750
+        
+        # histogramme des consommations dans la base DPE
+        if True:
+            plot_dpe_distribution(dep=departement.code, path=os.path.join(output,folder),max_xlim=max_energy_cons, external_disk=external_disk_connection)
+        
+        # tous les grapĥes 
+        if True:
+            dpe,_,_ = get_bdnb(departement.code, external_disk=external_disk_connection)
+            
+            dpe = dpe[dpe.type_dpe=='dpe arrêté 2021 3cl logement'][['conso_5_usages_ep_m2','conso_5_usages_ef_m2','periode_construction_dpe','surface_habitable_logement']].compute()
+            dpe = dpe.dropna()
+            
+            dpe_surfplot = dpe[np.abs(stats.zscore(dpe['surface_habitable_logement']))<3]
+            dpe_surfplot = dpe_surfplot[np.abs(stats.zscore(dpe_surfplot['conso_5_usages_ep_m2']))<3]
+            
+            # dpe = dpe[dpe.conso_5_usages_ep_m2<dpe.conso_5_usages_ep_m2.quantile(0.95)]
+            
+            order = ['avant 1948','1948-1974','1975-1977','1978-1982','1983-1988','1989-2000','2001-2005','2006-2012','2013-2021','après 2021',]
+            
+            etiquette_colors_dict = {'A':(0, 156, 109),'B':(82, 177, 83),'C':(120, 189, 118),'D':(244, 231, 15),'E':(240, 181, 15),'F':(235, 130, 53),'G':(215, 34, 31)}
+            etiquette_colors_dict = {k: tuple(map(lambda x: x/255, v)) for k,v in etiquette_colors_dict.items()}
+            etiquette_ep_dict = {'A':[0,70],'B':[70,110],'C':[110,180],'D':[180,250],'E':[250,330],'F':[330,420],'G':[420,np.inf]}
+            
+            # les outliers sont enlevées pour des zscore < 3 : source
+            
+            
+            fig,ax = plt.subplots(figsize=(5,5), dpi=300)
+            
+            sns.boxplot(x='periode_construction_dpe',y='conso_5_usages_ep_m2',data=dpe_surfplot, 
+                        ax=ax, order=order, color='w',linecolor='k')
+            ax.set_ylabel('Consommation annuelle en énergie primaire (kWh.m$^{-2}$)')
+            ax.set_xlabel('Période de construction ({})'.format(departement.name))
+            xlims = ax.get_xlim()
+            ax.set_ylim([0,max_energy_cons])
+            
+            for letter,(y_low,y_high) in etiquette_ep_dict.items():
+                y_max = max(ax.get_ylim())+1
+                y_high = min(y_high, y_max)
+                ax.fill_between(xlims, [y_high]*2, [y_low]*2, color=etiquette_colors_dict.get(letter),alpha=0.42)
+            
+            ax.set_xlim(xlims)
+            plt.xticks(rotation=90)
+            plt.savefig(os.path.join(figs_folder,'{}.png'.format('consumption_period_construction_dep{}'.format(departement.code))), bbox_inches='tight')
+            plt.show()
+            
+        
+            fig,ax = plt.subplots(figsize=(5,5), dpi=300)
+            sns.boxplot(x='periode_construction_dpe',y='surface_habitable_logement',data=dpe_surfplot, 
+                        ax=ax, order=order, color='lightgrey',linecolor='k')
+            ax.set_ylabel('Surface du logement (m$^{2}$)')
+            ax.set_xlabel('Période de construction ({})'.format(departement.name))
+            ax.set_ylim([0,150])
+            plt.xticks(rotation=90)
+            
+            plt.savefig(os.path.join(figs_folder,'{}.png'.format('surface_period_construction_dep{}'.format(departement.code))), bbox_inches='tight')
+            plt.show()
+            
+            
+            
+            add_DPE_lines = True
+            add_DPE_lines_small_surface_update = True
+            
+            
+            max_energy_cons = min(max_energy_cons, dpe_surfplot.conso_5_usages_ep_m2.max())
+            
+            cmap = matplotlib.colormaps.get_cmap('viridis')
+            
+            fig,ax = plt.subplots(figsize=(5,5), dpi=300)
+            h,_,_,_ = ax.hist2d(dpe_surfplot.surface_habitable_logement,dpe_surfplot.conso_5_usages_ep_m2,density=True,vmin=0,
+                                bins=[np.asarray(range(int(dpe_surfplot.surface_habitable_logement.max()))),np.asarray(range(int(dpe_surfplot.conso_5_usages_ep_m2.max())))])
+            
+            h,_,_,_ = ax.hist2d(dpe_surfplot.surface_habitable_logement,dpe_surfplot.conso_5_usages_ep_m2,density=True,vmin=0,vmax=np.quantile(h,0.99),cmap=cmap,
+                                 bins=[np.asarray(range(int(dpe_surfplot.surface_habitable_logement.max()))),np.asarray(range(int(dpe_surfplot.conso_5_usages_ep_m2.max())))])
+            ax.set_xlabel('Surface du logement (m$^{2}$)')
+            ax.set_ylabel('Consommation annuelle en énergie primaire (kWh.m$^{-2}$)')
+            xlims = [0,150]
+            
+            if add_DPE_lines:
+                for letter,(y_low,y_high) in etiquette_ep_dict.items():
+                    y_max = max(ax.get_ylim())+1
+                    y_high = min(y_high, y_max)
+                    # ax.plot(xlims,[y_low]*2, color=etiquette_colors_dict.get(letter),lw=0.5,label=letter,ls=':') 
+                    ax.plot(xlims,[y_high]*2, color=etiquette_colors_dict.get(letter),lw=1,ls=':') 
+            
+            if add_DPE_lines_small_surface_update:
+                dpe_threshold = pd.read_csv(os.path.join('data','INSEE','DPE_petites_surfaces.csv')).set_index('S_REF')
+                surface_list = list(range(151))
+                
+                for letter,(y_low,y_high) in etiquette_ep_dict.items():
+                    if letter == 'G':
+                        continue 
+                    
+                    dpe_energy_limits = []
+                    for s in surface_list:
+                        if s < 8:
+                            s = 8
+                        
+                        if s < 40:
+                            energy_lim = dpe_threshold.loc[s]['CEP_{}'.format(letter)]
+                        else:
+                            energy_lim = y_high
+                        dpe_energy_limits.append(energy_lim)
+                            
+                    ax.plot(surface_list,dpe_energy_limits, color=etiquette_colors_dict.get(letter),lw=1,ls='-') 
+            
+            
+            cbar_ax = fig.add_axes([0, 0, 0.1, 0.1])
+            posn = ax.get_position()
+            cbar_ax.set_position([posn.x0+posn.width+0.02, posn.y0, 0.04, posn.height])
+            norm = matplotlib.colors.Normalize(vmin=0, vmax=np.quantile(h,0.99))
+            mappable = matplotlib.cm.ScalarMappable(norm=norm, cmap=cmap)
+            
+            cbar_label_var = 'Density'
+            _ = plt.colorbar(mappable, cax=cbar_ax, label=cbar_label_var, extend='max', extendfrac=0.02)
+            
+            # ax.legend(loc='upper right')
+            ax.set_xlim(xlims)
+            ax.set_ylim([0,max_energy_cons])
+            # plt.xticks(rotation=90)
+            
+            plt.savefig(os.path.join(figs_folder,'{}.png'.format('surface_consumption_dep{}'.format(departement.code))), bbox_inches='tight')
+            plt.show()
+            
         
     tac = time.time()
     print('Done in {:.2f}s.'.format(tac-tic))
