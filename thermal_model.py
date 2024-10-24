@@ -27,12 +27,13 @@ from thermal_sensitivity import plot_thermal_sensitivity
 from future_meteorology import get_projected_weather_data
 from administrative import Departement, Climat
 
-air_thermal_capacity = 1000 # J/(kg.K)
-air_density = 1.2 # kg/m3
 
-ground_thermal_capacity = 1000 #J /(kg.K)
-ground_density = 2500 # kg/m3
-ground_thermal_conductivity = 1.5 # W/(m.K)
+AIR_THERMAL_CAPACITY = 1000 # J/(kg.K)
+AIR_DENSITY = 1.2 # kg/m3
+
+GROUND_THERMAL_CAPACITY = 1000 # J/(kg.K)
+GROUND_DENSITY = 2500 # kg/m3
+GROUND_THERMAL_CONDUCTIVITY = 1.5 # W/(m.K)
 
 
 def get_P_heater(Ti, Ti_min, Pmax, method='all_or_nothing'):
@@ -125,7 +126,7 @@ def get_ventilation_minimum_air_flow(typology, plot=False, figs_folder=None):
 
     """
     ventilation_minimum_air_flow = typology.surface * 0.8 + 24.3 # m3/h
-    ventilation_minimum_air_flow = air_density*ventilation_minimum_air_flow/3600 # kg/s
+    ventilation_minimum_air_flow = AIR_DENSITY*ventilation_minimum_air_flow/3600 # kg/s
     
     # Affichage des données légales et de la modélisation associée
     if plot or figs_folder is not None:
@@ -161,14 +162,14 @@ def get_infiltration_air_flow(typology):
     
     air_infiltration = air_infiltration_dict.get(typology.air_infiltration,typology.air_infiltration)
     air_infiltration = air_infiltration*typology.volume # m3/h
-    air_infiltration = air_density*air_infiltration/3600 # kg/s
+    air_infiltration = AIR_DENSITY*air_infiltration/3600 # kg/s
     
     return air_infiltration
 
 
 def compute_R_air(typology):
     # total_air_flow = get_infiltration_air_flow(typology) + get_ventilation_minimum_air_flow(typology)
-    U_air = get_infiltration_air_flow(typology) * air_thermal_capacity + get_ventilation_minimum_air_flow(typology) * air_thermal_capacity * (1-typology.ventilation_efficiency)
+    U_air = get_infiltration_air_flow(typology) * AIR_THERMAL_CAPACITY + get_ventilation_minimum_air_flow(typology) * AIR_THERMAL_CAPACITY * (1-typology.ventilation_efficiency)
     R_air = 1/U_air
     return R_air
 
@@ -420,8 +421,8 @@ def compute_C_f(typology):
     return C_f
 
 def compute_C_i(typology):
-    mass_air = air_density * typology.volume
-    C_air = air_thermal_capacity * mass_air
+    mass_air = AIR_DENSITY * typology.volume
+    C_air = AIR_THERMAL_CAPACITY * mass_air
     
     # estimations au doigt mouillé : cf Antonopoulos and Koronaki (1999) #TODO à rafiner
     C_internal_partitions = 10*C_air
@@ -431,11 +432,11 @@ def compute_C_i(typology):
     return C_i
 
 def compute_R_g(typology):
-    R_g = typology.floor_ground_distance/(ground_thermal_conductivity * typology.ground_section)
+    R_g = typology.floor_ground_distance/(GROUND_THERMAL_CONDUCTIVITY * typology.ground_section)
     return R_g
 
 def compute_C_g(typology):
-    C_g = ground_thermal_capacity * ground_density * typology.ground_volume
+    C_g = GROUND_THERMAL_CAPACITY * GROUND_DENSITY * typology.ground_volume
     return C_g
 
 
@@ -1071,7 +1072,7 @@ def main():
             
             
         # Étude de l'effet de la valeur U des fenêtres
-        if True:
+        if False:
             def get_annual_energy_needs(typology,weather_data,behaviour, by_surface=True):
                 simulation_data = SFH_test_model(typology, conventionnel, weather_data)
                 simulation_data = aggregate_resolution(simulation_data, resolution='h')
