@@ -21,7 +21,7 @@ import pickle
 
 from utils import plot_timeserie
 from meteorology import get_init_ground_temperature, get_historical_weather_data
-from typologies import Typology
+from typologies import Typology, dict_orientation_angle
 from behaviour import Behaviour
 from thermal_sensitivity import plot_thermal_sensitivity
 from future_meteorology import get_projected_weather_data
@@ -981,7 +981,7 @@ def main():
                                          figs_folder=figs_folder, reg_code=city, reg_name='SFH test typology - {}'.format(city), year=year,C0_init=0,k_init=500,ylabel='Hourly energy needs (Wh)')
                 
     #%% Graphes Poster SGR 
-    if True:
+    if False:
         
         # Étude de l'effet de l'épaisseur d'isolant sur la consommation annuelle
         if False:
@@ -1047,7 +1047,7 @@ def main():
             fig,ax = plt.subplots(figsize=(5,5),dpi=300)
             ax.errorbar(thickness_list, 
                         [e.loc['heating_needs'] for e in energy_needs_mean_list_1], 
-                        [e.loc['cooling_needs'] for e in energy_needs_std_list_1],
+                        [e.loc['heating_needs'] for e in energy_needs_std_list_1],
                         color='tab:red',label='Heating needs ({})'.format(city_1),capsize=3)
             ax.errorbar(thickness_list, 
                         [e.loc['cooling_needs'] for e in energy_needs_mean_list_1], 
@@ -1055,7 +1055,7 @@ def main():
                         color='tab:blue',label='Cooling needs ({})'.format(city_1),capsize=3)
             ax.errorbar(thickness_list, 
                         [e.loc['heating_needs'] for e in energy_needs_mean_list_2], 
-                        [e.loc['cooling_needs'] for e in energy_needs_std_list_2],
+                        [e.loc['heating_needs'] for e in energy_needs_std_list_2],
                         color='tab:red',label='Heating needs ({})'.format(city_2),ls='--',capsize=3)
             ax.errorbar(thickness_list, 
                         [e.loc['cooling_needs'] for e in energy_needs_mean_list_2], 
@@ -1135,7 +1135,7 @@ def main():
             fig,ax = plt.subplots(figsize=(5,5),dpi=300)
             ax.errorbar(U_value_windows_list, 
                         [e.loc['heating_needs'] for e in energy_needs_mean_list_1], 
-                        [e.loc['cooling_needs'] for e in energy_needs_std_list_1],
+                        [e.loc['heating_needs'] for e in energy_needs_std_list_1],
                         color='tab:red',label='Heating needs ({})'.format(city_1),capsize=3)
             ax.errorbar(U_value_windows_list, 
                         [e.loc['cooling_needs'] for e in energy_needs_mean_list_1], 
@@ -1143,7 +1143,7 @@ def main():
                         color='tab:blue',label='Cooling needs ({})'.format(city_1),capsize=3)
             ax.errorbar(U_value_windows_list, 
                         [e.loc['heating_needs'] for e in energy_needs_mean_list_2], 
-                        [e.loc['cooling_needs'] for e in energy_needs_std_list_2],
+                        [e.loc['heating_needs'] for e in energy_needs_std_list_2],
                         color='tab:red',label='Heating needs ({})'.format(city_2),ls='--',capsize=3)
             ax.errorbar(U_value_windows_list, 
                         [e.loc['cooling_needs'] for e in energy_needs_mean_list_2], 
@@ -1157,6 +1157,137 @@ def main():
             plt.savefig(os.path.join(figs_folder,'{}.png'.format('effect_windows_u_value_{}_{}_{}-{}'.format(city_1,city_2,period[0],period[1]))),bbox_inches='tight')
             
             plt.show()
+        
+        # Effets de l'orientation
+        if False:
+            def get_annual_energy_needs(typology,weather_data,behaviour, by_surface=True):
+                simulation_data = SFH_test_model(typology, conventionnel, weather_data)
+                simulation_data = aggregate_resolution(simulation_data, resolution='h')
+                
+                yearly_data = aggregate_resolution(simulation_data, resolution='YE',agg_method='sum')
+                yearly_data = yearly_data/1000
+                surface_yearly_data = yearly_data/typology.surface
+                
+                if by_surface:
+                    return surface_yearly_data[['heating_needs','cooling_needs']]
+                else:
+                    return yearly_data[['heating_needs','cooling_needs']]
+                
+            orientation_list = ['N','NE','E','SE','S','SW','W','NW']
+            energy_needs_mean_list_1 = []
+            energy_needs_std_list_1 = []
+            energy_needs_mean_list_2 = []
+            energy_needs_std_list_2 = []
+            
+            typo_name = 'FR.N.SFH.01.Test'
+            typo = Typology(typo_name)
+            typo.roof_U = 0.36
+            typo.floor_insulation_thickness = 0.1
+            typo.w0_insulation_thickness = 0.1
+            typo.w1_insulation_thickness = 0.1
+            typo.w2_insulation_thickness = 0.1
+            typo.w3_insulation_thickness = 0.1
+            
+            # Définition des habitudes
+            conventionnel = Behaviour('conventionnel_th-bce_2020')
+            conventionnel.heating_rules = {i:[19]*24 for i in range(1,8)}
+            conventionnel.cooling_rules = {i:[26]*24 for i in range(1,8)}
+            
+            for ori in tqdm.tqdm(orientation_list):
+                typo.w0_orientation = ori
+                typo.update_orientation()
+                
+                # Génération du fichier météo
+                city_1 = 'Paris'
+                period = [2015,2020]
+                principal_orientation = typo.w0_orientation
+                weather_data_1 = get_historical_weather_data(city_1,period,ori)
+                weather_data_1 = refine_resolution(weather_data_1, resolution='600s')
+                
+                city_2 = 'Marseille'
+                period = [2015,2020]
+                principal_orientation = typo.w0_orientation
+                weather_data_2 = get_historical_weather_data(city_2,period,ori)
+                weather_data_2 = refine_resolution(weather_data_2, resolution='600s')
+                
+                
+                energy_needs_1 = get_annual_energy_needs(typo, weather_data_1, conventionnel)
+                energy_needs_mean_list_1.append(energy_needs_1.mean(axis=0))
+                energy_needs_std_list_1.append(energy_needs_1.std(axis=0))
+                
+                energy_needs_2 = get_annual_energy_needs(typo, weather_data_2, conventionnel)
+                energy_needs_mean_list_2.append(energy_needs_2.mean(axis=0))
+                energy_needs_std_list_2.append(energy_needs_2.std(axis=0))
+            
+            now_ts = datetime.now().strftime("%Y-%m-%dT%H")
+            pickle_file_name = "annual_needs_orientation" + now_ts + ".pickle"
+            pickle.dump((energy_needs_mean_list_1, 
+                         energy_needs_std_list_1,
+                         energy_needs_mean_list_2,
+                         energy_needs_std_list_2), open(pickle_file_name, "wb"))
+            
+            
+            energy_needs_mean_list_1, energy_needs_std_list_1,energy_needs_mean_list_2,energy_needs_std_list_2 = pickle.load(open('annual_needs_orientation2024-10-24T17.pickle', 'rb'))
+            
+            # Plot cartésien (pas fun)
+            fig,ax = plt.subplots(figsize=(5,5),dpi=300)
+            ax.errorbar(orientation_list, 
+                        [e.loc['heating_needs'] for e in energy_needs_mean_list_1], 
+                        [e.loc['heating_needs'] for e in energy_needs_std_list_1],
+                        color='tab:red',label='Heating needs ({})'.format(city_1),capsize=3,ls='',marker='o')
+            ax.errorbar(orientation_list, 
+                        [e.loc['cooling_needs'] for e in energy_needs_mean_list_1], 
+                        [e.loc['cooling_needs'] for e in energy_needs_std_list_1],
+                        color='tab:blue',label='Cooling needs ({})'.format(city_1),capsize=3,ls='',marker='o')
+            ax.errorbar(orientation_list, 
+                        [e.loc['heating_needs'] for e in energy_needs_mean_list_2], 
+                        [e.loc['heating_needs'] for e in energy_needs_std_list_2],
+                        color='tab:red',label='Heating needs ({})'.format(city_2),ls='',capsize=3,marker='o',mfc='w')
+            ax.errorbar(orientation_list, 
+                        [e.loc['cooling_needs'] for e in energy_needs_mean_list_2], 
+                        [e.loc['cooling_needs'] for e in energy_needs_std_list_2],
+                        color='tab:blue',label='Cooling needs ({})'.format(city_2),ls='',capsize=3,marker='o',mfc='w')
+            ax.set_ylabel('Annual energy needs over {}-{} '.format(period[0],period[1])+'(kWh.m$^{-2}$.yr$^{-1}$)')
+            ax.legend()
+            ax.set_xlabel('Main façade orientation')
+            ax.set_ylim(bottom=0.,top=100)
+            
+            plt.savefig(os.path.join(figs_folder,'{}.png'.format('effect_orientation_{}_{}_{}-{}'.format(city_1,city_2,period[0],period[1]))),bbox_inches='tight')
+            plt.show()
+            
+            
+            # Plot polaire, bcp plus marrant mais illisible : annueler
+            # fig,ax = plt.subplots(dpi=300,figsize=(5,5),subplot_kw={'projection': 'polar'})
+
+            # ax.set_theta_zero_location("N")
+            # ax.set_theta_direction(-1)
+            # ax.set_rlabel_position(0)
+            # # ax.set_rlim(bottom=90, top=0)
+            # # ax.set_rticks(list(range(0,91,20)))
+            # # ax.set_yticklabels(['{}°'.format(e) if e!=0 else '' for e in ax.get_yticks()])
+            # ax.set_xticks(np.pi/180. * np.linspace(0,  360, 12, endpoint=False))
+            # ax.grid(True)
+            # ax.set_xticklabels([{0:'N',90:'E',180:'S',270:'W'}.get(e,'{:.0f}°'.format(e)) for e in np.linspace(0,  360, 12, endpoint=False)])
+            
+            # ax.errorbar([2*np.pi/360*dict_orientation_angle.get(e) for e in orientation_list], 
+            #             [e.loc['heating_needs'] for e in energy_needs_mean_list_1], 
+            #             [e.loc['heating_needs'] for e in energy_needs_std_list_1],
+            #             color='tab:red',label='Heating needs ({})'.format(city_1),capsize=3,ls='',marker='o')
+            # ax.errorbar([2*np.pi/360*dict_orientation_angle.get(e) for e in orientation_list], 
+            #             [e.loc['cooling_needs'] for e in energy_needs_mean_list_1], 
+            #             [e.loc['cooling_needs'] for e in energy_needs_std_list_1],
+            #             color='tab:blue',label='Cooling needs ({})'.format(city_1),capsize=3,ls='',marker='o')
+            # ax.errorbar([2*np.pi/360*dict_orientation_angle.get(e) for e in orientation_list], 
+            #             [e.loc['heating_needs'] for e in energy_needs_mean_list_2], 
+            #             [e.loc['heating_needs'] for e in energy_needs_std_list_2],
+            #             color='tab:red',label='Heating needs ({})'.format(city_2),ls='',capsize=3,marker='o',mfc='w')
+            # ax.errorbar([2*np.pi/360*dict_orientation_angle.get(e) for e in orientation_list], 
+            #             [e.loc['cooling_needs'] for e in energy_needs_mean_list_2], 
+            #             [e.loc['cooling_needs'] for e in energy_needs_std_list_2],
+            #             color='tab:blue',label='Cooling needs ({})'.format(city_2),ls='',capsize=3,marker='o',mfc='w')
+            # ax.set_title('Annual energy needs over {}-{} '.format(period[0],period[1])+'(kWh.m$^{-2}$.yr$^{-1}$)')
+            # plt.savefig(os.path.join(figs_folder,'{}.png'.format('effect_orientation_polar_plot_{}_{}_{}-{}'.format(city_1,city_2,period[0],period[1]))),bbox_inches='tight')
+            # plt.show()
             
         # Étude de l'effet de l'épaisseur d'isolant de plancher sur la consommation annuelle
         if False:
@@ -1222,7 +1353,7 @@ def main():
             fig,ax = plt.subplots(figsize=(5,5),dpi=300)
             ax.errorbar(thickness_list, 
                         [e.loc['heating_needs'] for e in energy_needs_mean_list_1], 
-                        [e.loc['cooling_needs'] for e in energy_needs_std_list_1],
+                        [e.loc['heating_needs'] for e in energy_needs_std_list_1],
                         color='tab:red',label='Heating needs ({})'.format(city_1),capsize=3)
             ax.errorbar(thickness_list, 
                         [e.loc['cooling_needs'] for e in energy_needs_mean_list_1], 
@@ -1230,7 +1361,7 @@ def main():
                         color='tab:blue',label='Cooling needs ({})'.format(city_1),capsize=3)
             ax.errorbar(thickness_list, 
                         [e.loc['heating_needs'] for e in energy_needs_mean_list_2], 
-                        [e.loc['cooling_needs'] for e in energy_needs_std_list_2],
+                        [e.loc['heating_needs'] for e in energy_needs_std_list_2],
                         color='tab:red',label='Heating needs ({})'.format(city_2),ls='--',capsize=3)
             ax.errorbar(thickness_list, 
                         [e.loc['cooling_needs'] for e in energy_needs_mean_list_2], 
@@ -1320,7 +1451,7 @@ def main():
             fig,ax = plt.subplots(figsize=(5,5),dpi=300)
             ax.errorbar(thickness_list*glazing_surface_total, 
                         [e.loc['heating_needs'] for e in energy_needs_mean_list_1], 
-                        [e.loc['cooling_needs'] for e in energy_needs_std_list_1],
+                        [e.loc['heating_needs'] for e in energy_needs_std_list_1],
                         color='tab:red',label='Heating needs ({})'.format(city_1),capsize=3)
             ax.errorbar(thickness_list*glazing_surface_total, 
                         [e.loc['cooling_needs'] for e in energy_needs_mean_list_1], 
@@ -1328,7 +1459,7 @@ def main():
                         color='tab:blue',label='Cooling needs ({})'.format(city_1),capsize=3)
             ax.errorbar(thickness_list*glazing_surface_total, 
                         [e.loc['heating_needs'] for e in energy_needs_mean_list_2], 
-                        [e.loc['cooling_needs'] for e in energy_needs_std_list_2],
+                        [e.loc['heating_needs'] for e in energy_needs_std_list_2],
                         color='tab:red',label='Heating needs ({})'.format(city_2),ls='--',capsize=3)
             ax.errorbar(thickness_list*glazing_surface_total, 
                         [e.loc['cooling_needs'] for e in energy_needs_mean_list_2], 
