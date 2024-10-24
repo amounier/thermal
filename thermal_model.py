@@ -742,7 +742,6 @@ def main():
     
     #%% Test de vitesse de calcul en fonction de la résolution
     if False:
-        warnings.simplefilter("ignore") # à cause du calcul de l'azimuth et de l'altitude du soleil 
         details = False
     
         def divisors(n):
@@ -888,7 +887,6 @@ def main():
         
     #%% Premier test pour le poster de SGR
     if False:
-        warnings.simplefilter("ignore") # à cause du calcul de l'azimuth et de l'altitude du soleil 
         
         # Définition de la typologie
         typo_name = 'FR.N.SFH.01.Test'
@@ -990,7 +988,7 @@ def main():
                 simulation_data = SFH_test_model(typology, conventionnel, weather_data)
                 simulation_data = aggregate_resolution(simulation_data, resolution='h')
                 
-                yearly_data = aggregate_resolution(simulation_data, resolution='Y',agg_method='sum')
+                yearly_data = aggregate_resolution(simulation_data, resolution='YE',agg_method='sum')
                 yearly_data = yearly_data/1000
                 surface_yearly_data = yearly_data/typology.surface
                 
@@ -1071,13 +1069,101 @@ def main():
             
             plt.show()
             
+            
+        # Étude de l'effet de la valeur U des fenêtres
+        if True:
+            def get_annual_energy_needs(typology,weather_data,behaviour, by_surface=True):
+                simulation_data = SFH_test_model(typology, conventionnel, weather_data)
+                simulation_data = aggregate_resolution(simulation_data, resolution='h')
+                
+                yearly_data = aggregate_resolution(simulation_data, resolution='YE',agg_method='sum')
+                yearly_data = yearly_data/1000
+                surface_yearly_data = yearly_data/typology.surface
+                
+                if by_surface:
+                    return surface_yearly_data[['heating_needs','cooling_needs']]
+                else:
+                    return yearly_data[['heating_needs','cooling_needs']]
+                
+            U_value_windows_list = np.linspace(0.5,5,10)
+            energy_needs_mean_list_1 = []
+            energy_needs_std_list_1 = []
+            energy_needs_mean_list_2 = []
+            energy_needs_std_list_2 = []
+            
+            typo_name = 'FR.N.SFH.01.Test'
+            typo = Typology(typo_name)
+            typo.roof_U = 0.36
+            typo.floor_insulation_thickness = 0.1
+            typo.w0_insulation_thickness = 0.1
+            typo.w1_insulation_thickness = 0.1
+            typo.w2_insulation_thickness = 0.1
+            typo.w3_insulation_thickness = 0.1
+            
+            # Génération du fichier météo
+            city_1 = 'Paris'
+            period = [2015,2020]
+            principal_orientation = typo.w0_orientation
+            weather_data_1 = get_historical_weather_data(city_1,period,principal_orientation)
+            weather_data_1 = refine_resolution(weather_data_1, resolution='600s')
+            
+            city_2 = 'Marseille'
+            period = [2015,2020]
+            principal_orientation = typo.w0_orientation
+            weather_data_2 = get_historical_weather_data(city_2,period,principal_orientation)
+            weather_data_2 = refine_resolution(weather_data_2, resolution='600s')
+            
+            # Définition des habitudes
+            conventionnel = Behaviour('conventionnel_th-bce_2020')
+            conventionnel.heating_rules = {i:[19]*24 for i in range(1,8)}
+            conventionnel.cooling_rules = {i:[26]*24 for i in range(1,8)}
+            
+            for uw in tqdm.tqdm(U_value_windows_list):
+                
+                typo.windows_U = uw
+                
+                energy_needs_1 = get_annual_energy_needs(typo, weather_data_1, conventionnel)
+                energy_needs_mean_list_1.append(energy_needs_1.mean(axis=0))
+                energy_needs_std_list_1.append(energy_needs_1.std(axis=0))
+                
+                energy_needs_2 = get_annual_energy_needs(typo, weather_data_2, conventionnel)
+                energy_needs_mean_list_2.append(energy_needs_2.mean(axis=0))
+                energy_needs_std_list_2.append(energy_needs_2.std(axis=0))
+            
+            
+            fig,ax = plt.subplots(figsize=(5,5),dpi=300)
+            ax.errorbar(U_value_windows_list, 
+                        [e.loc['heating_needs'] for e in energy_needs_mean_list_1], 
+                        [e.loc['cooling_needs'] for e in energy_needs_std_list_1],
+                        color='tab:red',label='Heating needs ({})'.format(city_1),capsize=3)
+            ax.errorbar(U_value_windows_list, 
+                        [e.loc['cooling_needs'] for e in energy_needs_mean_list_1], 
+                        [e.loc['cooling_needs'] for e in energy_needs_std_list_1],
+                        color='tab:blue',label='Cooling needs ({})'.format(city_1),capsize=3)
+            ax.errorbar(U_value_windows_list, 
+                        [e.loc['heating_needs'] for e in energy_needs_mean_list_2], 
+                        [e.loc['cooling_needs'] for e in energy_needs_std_list_2],
+                        color='tab:red',label='Heating needs ({})'.format(city_2),ls='--',capsize=3)
+            ax.errorbar(U_value_windows_list, 
+                        [e.loc['cooling_needs'] for e in energy_needs_mean_list_2], 
+                        [e.loc['cooling_needs'] for e in energy_needs_std_list_2],
+                        color='tab:blue',label='Cooling needs ({})'.format(city_2),ls='--',capsize=3)
+            ax.set_ylabel('Annual energy needs over {}-{} '.format(period[0],period[1])+'(kWh.m$^{-2}$.yr$^{-1}$)')
+            ax.legend()
+            ax.set_xlabel('Windows U-value (W.m$^{-2}$.K$^{-1}$)')
+            ax.set_ylim(bottom=0.,top=100)
+            
+            plt.savefig(os.path.join(figs_folder,'{}.png'.format('effect_windows_u_value_{}_{}_{}-{}'.format(city_1,city_2,period[0],period[1]))),bbox_inches='tight')
+            
+            plt.show()
+            
         # Étude de l'effet de l'épaisseur d'isolant de plancher sur la consommation annuelle
         if False:
             def get_annual_energy_needs(typology,weather_data,behaviour, by_surface=True):
                 simulation_data = SFH_test_model(typology, conventionnel, weather_data,progressbar=False)
                 simulation_data = aggregate_resolution(simulation_data, resolution='h')
                 
-                yearly_data = aggregate_resolution(simulation_data, resolution='Y',agg_method='sum')
+                yearly_data = aggregate_resolution(simulation_data, resolution='YE',agg_method='sum')
                 yearly_data = yearly_data/1000
                 surface_yearly_data = yearly_data/typology.surface
                 
@@ -1166,7 +1252,7 @@ def main():
                 simulation_data = SFH_test_model(typology, conventionnel, weather_data,progressbar=False)
                 simulation_data = aggregate_resolution(simulation_data, resolution='h')
                 
-                yearly_data = aggregate_resolution(simulation_data, resolution='Y',agg_method='sum')
+                yearly_data = aggregate_resolution(simulation_data, resolution='YE',agg_method='sum')
                 yearly_data = yearly_data/1000
                 surface_yearly_data = yearly_data/typology.surface
                 
@@ -1259,7 +1345,7 @@ def main():
             
             
         # Étude de l'effet des scénarios de chgmt climatique
-        if True:
+        if False:
             
             # Premier test :
             if True:
@@ -1311,7 +1397,7 @@ def main():
                                figs_folder=figs_folder, save_fig='thermal_model_energy_needs_{}_{}_{}'.format(city,period[0],typo_name))
                 
                 
-                simulation_data = aggregate_resolution(simulation_data, resolution='Y',agg_method='sum')
+                simulation_data = aggregate_resolution(simulation_data, resolution='YE',agg_method='sum')
                 annual_heating_consumption = simulation_data.heating_needs.mean()/1000
                 surface_annual_heating_consumption = annual_heating_consumption/typo.surface
                 
@@ -1383,7 +1469,7 @@ def main():
                             
                             simulation_data_1 = SFH_test_model(typo, conventionnel, weather_data_1,progressbar=False)
                             simulation_data_1 = aggregate_resolution(simulation_data_1, resolution='h')
-                            simulation_data_1 = aggregate_resolution(simulation_data_1, resolution='Y',agg_method='sum')
+                            simulation_data_1 = aggregate_resolution(simulation_data_1, resolution='YE',agg_method='sum')
                             
                             annual_heating_consumption_1 = simulation_data_1.heating_needs.mean()/1000
                             surface_annual_heating_consumption_1 = annual_heating_consumption_1/typo.surface
@@ -1392,7 +1478,7 @@ def main():
                             
                             simulation_data_2 = SFH_test_model(typo, conventionnel, weather_data_2,progressbar=False)
                             simulation_data_2 = aggregate_resolution(simulation_data_2, resolution='h')
-                            simulation_data_2 = aggregate_resolution(simulation_data_2, resolution='Y',agg_method='sum')
+                            simulation_data_2 = aggregate_resolution(simulation_data_2, resolution='YE',agg_method='sum')
                             
                             annual_heating_consumption_2 = simulation_data_2.heating_needs.mean()/1000
                             surface_annual_heating_consumption_2 = annual_heating_consumption_2/typo.surface
