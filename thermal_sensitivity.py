@@ -238,7 +238,7 @@ def main():
     
     
     #%% Premiers tests de thermosensibilité
-    if True:
+    if False:
         for reg_code in dict_region_code_region_name.keys():
             # la Corse n'est pas intégrée par Enedis
             if reg_code == 94:
@@ -278,6 +278,83 @@ def main():
             plot_thermal_sensitivity(temperature=x,consumption=y,figs_folder=figs_folder,
                                      reg_code=reg_code,reg_name=reg_name,year=year)
             
+        
+    #%% Vérification des courbes de charges hebdomadaires 
+    if True:
+        cons = open_electricity_consumption(scale='regional')
+        list_cols = []
+        for regcode in dict_region_code_chef_lieu.keys():
+            if regcode == 94:
+                continue
+            new_col = 'total_energie_soutiree_wh_reg_{}_par_point_soutirage'.format(regcode)
+            cons[new_col] = cons['total_energie_soutiree_wh_reg_{}'.format(regcode)] / cons['nb_points_soutirage_reg_{}'.format(regcode)]
+            list_cols.append(new_col)
+            
+        cons['weekday'] = cons.index.dayofweek
+        cons['hour'] = cons.index.hour
+        list_cols += ['weekday','hour']
+        
+        weekdays = [x for xs in [[i]*24 for i in range(7)] for x in xs]
+        hours = list(range(24))*7
+        weekly_cons = pd.DataFrame().from_dict({'weekday':weekdays,'hour':hours}).set_index(['weekday','hour'])
+        
+        season = 'JJA'
+        regions = [28,93]
+        
+        season_dict = {'JJA':[6,7,8],
+                       'DJF':[12,1,2],
+                       'MAM':[3,4,5],
+                       'SON':[9,10,11]}
+        
+        dayofweek_dict = {0:'Monday',
+                          1:'Tuesday',
+                          2:'Wednesday',
+                          3:'Thursday',
+                          4:'Friday',
+                          5:'Saturday',
+                          6:'Sunday'}
+        
+        mean_col_dict = {'total_energie_soutiree_wh_reg_{}_par_point_soutirage'.format(regcode):'energie_soutiree_moyenne_wh_reg_{}'.format(regcode) for regcode in dict_region_code_chef_lieu.keys()}
+        std_col_dict = {'total_energie_soutiree_wh_reg_{}_par_point_soutirage'.format(regcode):'energie_soutiree_std_wh_reg_{}'.format(regcode) for regcode in dict_region_code_chef_lieu.keys()}
+        
+        mean_weekly = cons[cons.index.month.isin(season_dict.get(season))][list_cols].groupby(by=['weekday','hour']).mean()
+        std_weekly = cons[cons.index.month.isin(season_dict.get(season))][list_cols].groupby(by=['weekday','hour']).std()
+        
+        mean_weekly = mean_weekly.rename(columns=mean_col_dict)
+        std_weekly = std_weekly.rename(columns=std_col_dict)
+        
+        weekly_cons = weekly_cons.join(mean_weekly)
+        weekly_cons = weekly_cons.join(std_weekly)
+        
+        weekly_cons['weekday_hour'] = [hour + 24*dow for dow,hour in weekly_cons.index]
+        
+        fig,ax = plt.subplots(figsize=(15,5),dpi=300)
+        
+        for regcode in regions:
+            if regcode == 94:
+                continue
+            ax.plot(weekly_cons.weekday_hour, weekly_cons['energie_soutiree_moyenne_wh_reg_{}'.format(regcode)],
+                    label=dict_region_code_region_name.get(regcode)+' ({})'.format(season))
+            ax.fill_between(weekly_cons.weekday_hour, 
+                            weekly_cons['energie_soutiree_moyenne_wh_reg_{}'.format(regcode)]+weekly_cons['energie_soutiree_std_wh_reg_{}'.format(regcode)],
+                            weekly_cons['energie_soutiree_moyenne_wh_reg_{}'.format(regcode)]-weekly_cons['energie_soutiree_std_wh_reg_{}'.format(regcode)],alpha=0.2)
+        
+        ylims = ax.get_ylim()
+        for e in range(1,7):
+            ax.plot([e*24]*2,ylims,color='k',ls=':',zorder=-1)
+        ax.set_ylim(ylims)
+        
+        xticks = list(range(0,weekly_cons['weekday_hour'].max()+6,6))
+        ax.set_xlim([0,24*7])
+        ax.set_xticks(xticks)
+        ax.set_xticklabels([e%24 if e%24!=12 else '12\n{}'.format(dayofweek_dict.get(e//24)) for e in xticks])
+        
+        ax.set_ylabel('Mean hourly consumption by connection point (Wh)')
+        plt.legend()
+        
+        plt.savefig(os.path.join(figs_folder,'{}.png'.format('hourly_consumption_over_week_regions_{}_season_{}'.format('-'.join(map(str, regions)),season))), bbox_inches='tight')
+        plt.show()
+        
         
         
         
