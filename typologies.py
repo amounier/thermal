@@ -145,6 +145,7 @@ class Typology():
         # cf Thbat parois opaques p21
         # TODO à clarifier dans le cas 2D
         self.floor_ground_depth = params.get('building_depth')
+        # 0.3 + floor height si cave 
         self.floor_ground_distance = self.get_floor_ground_distance()
         self.ground_depth = self.floor_ground_depth + 1 # à justifier
         self.ground_section = self.perimeter * self.ground_depth
