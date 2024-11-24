@@ -102,6 +102,7 @@ class Climat:
 class France:
     def __init__(self):
         self.departements = [Departement(e) for e in list_dep_code]
+        self.climats = sorted(list(set([e.climat for e in self.departements])))
         
 
 
@@ -143,6 +144,56 @@ def draw_departement_map(dict_dep,figs_folder,cbar_min=0,cbar_max=1.,
         plt.savefig(os.path.join(figs_folder,'{}.png'.format(save)),bbox_inches='tight')
     return fig,ax
 
+
+def draw_climat_map(dict_dep,figs_folder,cbar_min=0,cbar_max=1.,
+                    automatic_cbar_values=False, cbar_label=None, 
+                    map_title=None,save=None, cmap=None,zcl_label=False):
+    
+    fig,ax = blank_national_map()
+    
+    if cmap is None:
+        cmap = matplotlib.colormaps.get_cmap('viridis')
+    
+    plotter = pd.DataFrame().from_dict({'climats':dict_dep.keys(),'vals':dict_dep.values()})
+    plotter['geometry'] = [d.geometry for d in plotter.climats]
+    plotter = gpd.GeoDataFrame(plotter, geometry=plotter.geometry)
+    
+    if automatic_cbar_values:
+        cbar_max = plotter.vals.quantile(0.99)
+        cbar_min = plotter.vals.quantile(0.01)
+        cbar_extend = 'both'
+    else:
+        cbar_extend = 'neither'
+    
+    plotter['color'] = (plotter.vals-cbar_min)/(cbar_max-cbar_min)
+    plotter['color'] = plotter['color'].apply(cmap)
+    
+    # print(plotter.color)
+    
+    plotter.plot(color=plotter.color, ax=ax, transform=ccrs.PlateCarree(),)
+    plotter.boundary.plot(ax=ax, transform=ccrs.PlateCarree(), color='k',lw=0.5)
+    
+    if zcl_label:
+        for zcl in dict_dep.keys():
+            ax.text(zcl.geometry.centroid.x, zcl.geometry.centroid.y, '{}'.format(zcl.code), 
+                    horizontalalignment='center', transform=ccrs.Geodetic(), zorder=20, color='w',
+                    bbox=dict(facecolor='k', alpha=0.5))
+    
+    if not all(plotter.color==(0.0, 0.0, 0.0, 0.0)):
+        cbar_ax = fig.add_axes([0, 0, 0.1, 0.1])
+        posn = ax.get_position()
+        cbar_ax.set_position([posn.x0+posn.width+0.02, posn.y0, 0.04, posn.height])
+        norm = matplotlib.colors.Normalize(vmin=cbar_min, vmax=cbar_max)
+        mappable = matplotlib.cm.ScalarMappable(norm=norm, cmap=cmap)
+        
+        cbar_label_var = cbar_label
+        _ = plt.colorbar(mappable, cax=cbar_ax, label=cbar_label_var, extend=cbar_extend, extendfrac=0.02)
+    
+    ax.set_title(map_title)
+    if save is not None:
+        plt.savefig(os.path.join(figs_folder,'{}.png'.format(save)),bbox_inches='tight')
+    return fig,ax
+
 #%% ===========================================================================
 # Script principal
 # =============================================================================
@@ -170,10 +221,14 @@ def main():
         # print(dep)
         draw_departement_map({dep:0.5}, figs_folder=figs_folder, save='test_{}'.format(dep.code))
     
-    if False:
+    if True:
         zcl = Climat('H1a')
-        print(zcl.code)
-        print(zcl.codint)
+        # print(zcl.code)
+        # print(zcl.codint)
+        
+        france = France()
+        
+        draw_climat_map({Climat(e):None for e in france.climats},zcl_label=True, figs_folder=figs_folder, save='test_{}'.format(zcl.code))
         # [print(d) for d in zcl.departements]
         
     #%% Téléchargement des préfectures pour intégratiuon à département
