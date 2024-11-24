@@ -980,8 +980,8 @@ def main():
                 plot_thermal_sensitivity(temperature=data_sensitivity.temperature_2m.to_list(), consumption=data_sensitivity.energy_needs.to_list(), 
                                          figs_folder=figs_folder, reg_code=city, reg_name='SFH test typology - {}'.format(city), year=year,C0_init=0,k_init=500,ylabel='Hourly energy needs (Wh)')
                 
-    #%% Graphes Poster SGR 
-    if False:
+    #%% Graphes Préliminaires
+    if True:
         
         # Étude de l'effet de l'épaisseur d'isolant sur la consommation annuelle
         if False:
@@ -1472,6 +1472,100 @@ def main():
             # ax.set_ylim()
             
             plt.savefig(os.path.join(figs_folder,'{}.png'.format('effect_glazing_surface_{}_{}_{}-{}'.format(city_1,city_2,period[0],period[1]))),bbox_inches='tight')
+            
+            plt.show()
+            
+            
+        # Étude de l'effet de la valeur Uw des vitrages
+        if True:
+            def get_annual_energy_needs(typology,weather_data,behaviour, by_surface=True):
+                simulation_data = SFH_test_model(typology, conventionnel, weather_data,progressbar=False)
+                simulation_data = aggregate_resolution(simulation_data, resolution='h')
+                
+                yearly_data = aggregate_resolution(simulation_data, resolution='YE',agg_method='sum')
+                yearly_data = yearly_data/1000
+                surface_yearly_data = yearly_data/typology.surface
+                
+                if by_surface:
+                    return surface_yearly_data[['heating_needs','cooling_needs']]
+                else:
+                    return yearly_data[['heating_needs','cooling_needs']]
+                
+            Uw_list = np.linspace(0.5,5,15)
+            energy_needs_mean_list_1 = []
+            energy_needs_std_list_1 = []
+            energy_needs_mean_list_2 = []
+            energy_needs_std_list_2 = []
+            
+            typo_name = 'FR.N.SFH.01.Test'
+            typo = Typology(typo_name)
+            typo.roof_U = 0.36
+            typo.w0_insulation_thickness = 0.1
+            typo.w1_insulation_thickness = 0.1
+            typo.w2_insulation_thickness = 0.1
+            typo.w3_insulation_thickness = 0.1
+            typo.floor_insulation_thickness = 0
+            
+            # Génération du fichier météo
+            city_1 = 'Paris'
+            period = [2015,2020]
+            principal_orientation = typo.w0_orientation
+            weather_data_1 = get_historical_weather_data(city_1,period,principal_orientation)
+            weather_data_1 = refine_resolution(weather_data_1, resolution='600s')
+            
+            city_2 = 'Marseille'
+            period = [2015,2020]
+            principal_orientation = typo.w0_orientation
+            weather_data_2 = get_historical_weather_data(city_2,period,principal_orientation)
+            weather_data_2 = refine_resolution(weather_data_2, resolution='600s')
+            
+            # Définition des habitudes
+            conventionnel = Behaviour('conventionnel_th-bce_2020')
+            conventionnel.heating_rules = {i:[19]*24 for i in range(1,8)}
+            conventionnel.cooling_rules = {i:[26]*24 for i in range(1,8)}
+            
+            for u in tqdm.tqdm(Uw_list):
+                
+                typo.windows_U = u
+                
+                energy_needs_1 = get_annual_energy_needs(typo, weather_data_1, conventionnel)
+                energy_needs_mean_list_1.append(energy_needs_1.mean(axis=0))
+                energy_needs_std_list_1.append(energy_needs_1.std(axis=0))
+                
+                energy_needs_2 = get_annual_energy_needs(typo, weather_data_2, conventionnel)
+                energy_needs_mean_list_2.append(energy_needs_2.mean(axis=0))
+                energy_needs_std_list_2.append(energy_needs_2.std(axis=0))
+            
+                if u > 4.9:
+                    simulation_data = SFH_test_model(typo, conventionnel, weather_data_1,progressbar=False)
+                    plot_timeserie(simulation_data[['temperature_2m','internal_temperature']],figsize=(15,5),
+                                   xlim=[pd.to_datetime('{}-01-01'.format(year)), pd.to_datetime('{}-12-31'.format(year))],ylabel='Temperature (°C)',)
+                                   # figs_folder=figs_folder, save_fig='thermal_model_temperature_{}_{}_{}'.format(city,year,typo_name))
+
+            fig,ax = plt.subplots(figsize=(5,5),dpi=300)
+            ax.errorbar(Uw_list, 
+                        [e.loc['heating_needs'] for e in energy_needs_mean_list_1], 
+                        [e.loc['heating_needs'] for e in energy_needs_std_list_1],
+                        color='tab:red',label='Heating needs ({})'.format(city_1),capsize=3)
+            ax.errorbar(Uw_list, 
+                        [e.loc['cooling_needs'] for e in energy_needs_mean_list_1], 
+                        [e.loc['cooling_needs'] for e in energy_needs_std_list_1],
+                        color='tab:blue',label='Cooling needs ({})'.format(city_1),capsize=3)
+            ax.errorbar(Uw_list, 
+                        [e.loc['heating_needs'] for e in energy_needs_mean_list_2], 
+                        [e.loc['heating_needs'] for e in energy_needs_std_list_2],
+                        color='tab:red',label='Heating needs ({})'.format(city_2),ls='--',capsize=3)
+            ax.errorbar(Uw_list, 
+                        [e.loc['cooling_needs'] for e in energy_needs_mean_list_2], 
+                        [e.loc['cooling_needs'] for e in energy_needs_std_list_2],
+                        color='tab:blue',label='Cooling needs ({})'.format(city_2),ls='--',capsize=3)
+            ax.set_ylabel('Annual energy needs over {}-{} '.format(period[0],period[1])+'(kWh.m$^{-2}$.yr$^{-1}$)')
+            # ax.legend()
+            ax.set_xlabel('Windows U-value (W.m$^{-2}$.K$^{-1}$)')
+            ax.set_ylim(bottom=0.,top=150)
+            # ax.set_ylim()
+            
+            plt.savefig(os.path.join(figs_folder,'{}.png'.format('effect_windows_U_{}_{}_{}-{}'.format(city_1,city_2,period[0],period[1]))),bbox_inches='tight')
             
             plt.show()
             
