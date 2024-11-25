@@ -11,8 +11,6 @@ import os
 import pandas as pd
 from datetime import date
 import requests
-from geopy.geocoders import Nominatim
-from geopy.exc import GeocoderUnavailable
 import matplotlib.pyplot as plt
 import numpy as np
 from scipy.integrate import odeint
@@ -24,44 +22,12 @@ import pysolar
 pysolar.use_math()
 
 from utils import plot_timeserie
+from administrative import get_coordinates
 
 import warnings
 
 
-def get_coordinates(city):
-    """
-    Récupération des coordonnées d'une ville via l'API OSM. 
 
-    Parameters
-    ----------
-    city : str
-        DESCRIPTION.
-
-    Returns
-    -------
-    longitude : float
-        DESCRIPTION.
-    latitude : float
-        DESCRIPTION.
-
-    """
-    coordinates_dict = {'Paris':(2.320041, 48.85889),
-                        'Marseille':(5.369953, 43.296174),
-                        'Brest':(-4.486009, 48.390528)
-                       }
-    
-    if city in coordinates_dict.keys():
-        longitude, latitude = coordinates_dict[city]
-        return longitude, latitude
-    else:
-        try:
-            # initialisation de l'instance Nominatim (API OSM), changer l'agent si besoin
-            geolocator = Nominatim(user_agent="amounier")
-            location = geolocator.geocode(city)
-            longitude, latitude = round(location.longitude,ndigits=6), round(location.latitude, ndigits=6)
-        except GeocoderUnavailable:
-            raise KeyError('No internet connexion, offline availables cities are : {}'.format(', '.join(list(coordinates_dict.keys()))))
-    return longitude, latitude
 
     
 def get_open_meteo_url(longitude, latitude, year, hourly_variables):

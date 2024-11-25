@@ -15,6 +15,8 @@ from datetime import date
 import matplotlib
 import cartopy.crs as ccrs
 from shapely.ops import unary_union
+from geopy.geocoders import Nominatim
+from geopy.exc import GeocoderUnavailable
 
 from utils import blank_national_map
 
@@ -49,10 +51,54 @@ list_dep_code = ['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11
 
 # list_reg = list(set([dict_code_dep_name_reg.get(cd) for cd in list_dep]))
 
-# TODO : rajouter une classe France pour les stats nationale par exemple
-# TODO : rajouter une classe city pour faire le lien avec les données météo
+# rajouter une classe France pour les stats nationale par exemple
+# rajouter une classe city pour faire le lien avec les données météo
     
+def get_coordinates(city):
+    """
+    Récupération des coordonnées d'une ville via l'API OSM. 
+
+    Parameters
+    ----------
+    city : str
+        DESCRIPTION.
+
+    Returns
+    -------
+    longitude : float
+        DESCRIPTION.
+    latitude : float
+        DESCRIPTION.
+
+    """
+    coordinates_dict = {'Paris':(2.320041, 48.85889),
+                        'Marseille':(5.369953, 43.296174),
+                        'Brest':(-4.486009, 48.390528)
+                       }
     
+    if city in coordinates_dict.keys():
+        longitude, latitude = coordinates_dict[city]
+        return longitude, latitude
+    else:
+        try:
+            # initialisation de l'instance Nominatim (API OSM), changer l'agent si besoin
+            geolocator = Nominatim(user_agent="amounier")
+            location = geolocator.geocode(city)
+            longitude, latitude = round(location.longitude,ndigits=6), round(location.latitude, ndigits=6)
+        except GeocoderUnavailable:
+            raise KeyError('No internet connexion, offline availables cities are : {}'.format(', '.join(list(coordinates_dict.keys()))))
+    return longitude, latitude
+
+
+class City:
+    def __init__(self,name):
+        self.name = name
+        self.coordinates = get_coordinates(self.name)
+        
+    def __str__(self):
+        return self.name
+    
+
 class Departement:
     def __init__(self,dep_code):
         if type(dep_code) == int:
@@ -147,7 +193,8 @@ def draw_departement_map(dict_dep,figs_folder,cbar_min=0,cbar_max=1.,
 
 def draw_climat_map(dict_dep,figs_folder,cbar_min=0,cbar_max=1.,
                     automatic_cbar_values=False, cbar_label=None, 
-                    map_title=None,save=None, cmap=None,zcl_label=False):
+                    map_title=None,save=None, cmap=None,zcl_label=False,
+                    add_city_points=None, add_legend=True):
     
     fig,ax = blank_national_map()
     
@@ -178,6 +225,14 @@ def draw_climat_map(dict_dep,figs_folder,cbar_min=0,cbar_max=1.,
             ax.text(zcl.geometry.centroid.x, zcl.geometry.centroid.y, '{}'.format(zcl.code), 
                     horizontalalignment='center', transform=ccrs.Geodetic(), zorder=20, color='w',
                     bbox=dict(facecolor='k', alpha=0.5))
+            
+    if add_city_points is not None:
+        for city in add_city_points:
+            city = City(city)
+            ax.plot(city.coordinates[0],city.coordinates[1], 
+                    transform=ccrs.PlateCarree(), color='tab:blue',ls='',
+                    marker='o',label=city.name)
+        
     
     if not all(plotter.color==(0.0, 0.0, 0.0, 0.0)):
         cbar_ax = fig.add_axes([0, 0, 0.1, 0.1])
@@ -189,6 +244,9 @@ def draw_climat_map(dict_dep,figs_folder,cbar_min=0,cbar_max=1.,
         cbar_label_var = cbar_label
         _ = plt.colorbar(mappable, cax=cbar_ax, label=cbar_label_var, extend=cbar_extend, extendfrac=0.02)
     
+    if add_legend:
+        ax.legend()
+        
     ax.set_title(map_title)
     if save is not None:
         plt.savefig(os.path.join(figs_folder,'{}.png'.format(save)),bbox_inches='tight')
@@ -228,7 +286,10 @@ def main():
         
         france = France()
         
-        draw_climat_map({Climat(e):None for e in france.climats},zcl_label=True, figs_folder=figs_folder, save='test_{}'.format(zcl.code))
+        draw_climat_map({Climat(e):None for e in france.climats},zcl_label=False, 
+                        figs_folder=figs_folder, save='zcl_{}'.format(zcl.code),
+                        add_city_points=['Beauvais'])
+        
         # [print(d) for d in zcl.departements]
         
     #%% Téléchargement des préfectures pour intégratiuon à département
