@@ -22,7 +22,7 @@ from administrative import France, Departement, draw_departement_map
 dict_angle_orientation = {i*45:o for i,o in enumerate(['N','NE','E','SE','S','SW','W','NW'])}
 dict_orientation_angle = {v:k for k,v in dict_angle_orientation.items()}
 
-# TODO : completer la classe typology
+#  completer la classe typology
 # TODO : completer la classe material 
 
 
@@ -61,11 +61,26 @@ def open_tabula_typologies():
 
 
 class Typology():
-    def __init__(self,code):
+    def __init__(self,code,level='initial'):
+        """
+        Initialisation de la typologie à partir des paramètres TABULA
+
+        Parameters
+        ----------
+        code : str
+            Code TABULA.
+        level : str, optional
+            Niveau d'isolation, parmi : 'initial', 'standard', 'advanced'. The default is 'initial'.
+
+        Returns
+        -------
+        None.
+
+        """
         self.code = code
         
         params = open_tabula_typologies().loc[self.code].to_dict()
-        self.desc = params.get('building_name')
+        # self.desc = params.get('building_name')
         
         # orientation des murs
         self.w0_orientation = params.get('building_orientation')
@@ -74,11 +89,12 @@ class Typology():
         self.w3_orientation = dict_angle_orientation.get((dict_orientation_angle.get(self.w2_orientation)+90)%360)
         
         # paramètres géométriques
-        self.ground_surface = params.get('building_ground_surface')
         self.surface = params.get('building_surface')
-        self.roof_surface = self.ground_surface
         self.levels = params.get('building_levels')
-        self.height = params.get('floor_height')
+        self.ground_surface = self.surface/self.levels
+        self.roof_surface = self.ground_surface
+        
+        self.height = params.get('building_floor_height')
         self.volume = self.surface*self.height
         self.form_factor = params.get('building_form_factor')
         self.w0_length = np.sqrt(self.ground_surface/self.form_factor)
@@ -90,25 +106,25 @@ class Typology():
         self.converted_attic = bool(params.get('building_converted_attic'))
         
         # caractéristiques des ventilations et infiltrations
-        self.air_infiltration = params.get('air_infiltration')
-        self.ventilation_efficiency = params.get('ventilation_efficiency')
+        self.air_infiltration = params.get('{}_air_infiltration'.format(level))
+        self.ventilation_efficiency = params.get('{}_ventilation_efficiency'.format(level))
         
         # caractéristiques du toit
-        self.roof_color = params.get('building_roof_color')
-        self.roof_U = params.get('building_roof_U')
-        self.ceiling_U = params.get('building_ceiling_U')
+        self.roof_color = params.get('{}_roof_color'.format(level))
+        self.roof_U = params.get('{}_roof_U'.format(level))
+        self.ceiling_U = params.get('{}_ceiling_U'.format(level))
         
         # caractéristiques des vitrages
         self.h_windows_surface = params.get('building_horizontal_windows_surface')
-        self.w0_windows_surface = params.get('building_wall0_windows_surface')
-        self.w1_windows_surface = params.get('building_wall1_windows_surface')
-        self.w2_windows_surface = params.get('building_wall2_windows_surface')
-        self.w3_windows_surface = params.get('building_wall3_windows_surface')
-        self.windows_U = params.get('building_windows_U')
-        self.windows_Ug = params.get('building_windows_Ug')
+        self.w0_windows_surface = params.get('building_wall0_windows_surface')+0.001
+        self.w1_windows_surface = params.get('building_wall1_windows_surface')+0.001
+        self.w2_windows_surface = params.get('building_wall2_windows_surface')+0.001
+        self.w3_windows_surface = params.get('building_wall3_windows_surface')+0.001
+        self.windows_U = params.get('{}_windows_U'.format(level))
+        self.windows_Ug = params.get('{}_windows_Ug'.format(level))
         
         # caractérisation de la porte
-        self.door_U = params.get('building_door_U')
+        self.door_U = params.get('{}_door_U'.format(level))
         self.door_surface = 2 #m2
         
         # caractéristiques des murs
@@ -127,37 +143,44 @@ class Typology():
         self.w2_structure_thickness = params.get('building_wall2_structure_thickness')
         self.w3_structure_thickness = params.get('building_wall3_structure_thickness')
         
-        self.w0_insulation_material = Material(params.get('building_wall0_insulation_material'))
-        self.w1_insulation_material = Material(params.get('building_wall1_insulation_material'))
-        self.w2_insulation_material = Material(params.get('building_wall2_insulation_material'))
-        self.w3_insulation_material = Material(params.get('building_wall3_insulation_material'))
-        self.w0_insulation_thickness = params.get('building_wall0_insulation_thickness')
-        self.w1_insulation_thickness = params.get('building_wall1_insulation_thickness')
-        self.w2_insulation_thickness = params.get('building_wall2_insulation_thickness')
-        self.w3_insulation_thickness = params.get('building_wall3_insulation_thickness')
-        self.w0_insulation_position = params.get('building_wall0_insulation_position')
-        self.w1_insulation_position = params.get('building_wall1_insulation_position')
-        self.w2_insulation_position = params.get('building_wall2_insulation_position')
-        self.w3_insulation_position = params.get('building_wall3_insulation_position')
+        self.w0_insulation_material = Material(params.get('{}_wall0_insulation_material'.format(level)))
+        self.w1_insulation_material = Material(params.get('{}_wall1_insulation_material'.format(level)))
+        self.w2_insulation_material = Material(params.get('{}_wall2_insulation_material'.format(level)))
+        self.w3_insulation_material = Material(params.get('{}_wall3_insulation_material'.format(level)))
+        self.w0_insulation_thickness = params.get('{}_wall0_insulation_thickness'.format(level))
+        self.w1_insulation_thickness = params.get('{}_wall1_insulation_thickness'.format(level))
+        self.w2_insulation_thickness = params.get('{}_wall2_insulation_thickness'.format(level))
+        self.w3_insulation_thickness = params.get('{}_wall3_insulation_thickness'.format(level))
+        self.w0_insulation_position = params.get('{}_wall0_insulation_position'.format(level))
+        self.w1_insulation_position = params.get('{}_wall1_insulation_position'.format(level))
+        self.w2_insulation_position = params.get('{}_wall2_insulation_position'.format(level))
+        self.w3_insulation_position = params.get('{}_wall3_insulation_position'.format(level))
         
         # caractéristiques du sol
         # cf Rantala and Leivo 2006 et Skotnicova and Lausova (2016).
         # cf Thbat parois opaques p21
         # TODO à clarifier dans le cas 2D
-        self.floor_ground_depth = params.get('building_depth')
         # 0.3 + floor height si cave 
+        
+        self.floor_ground_depth = 0.3
+        if self.basement:
+            self.floor_ground_depth += 3
+        
         self.floor_ground_distance = self.get_floor_ground_distance()
-        self.ground_depth = self.floor_ground_depth + 1 # à justifier
+        self.ground_depth = self.floor_ground_depth + self.floor_ground_distance 
         self.ground_section = self.perimeter * self.ground_depth
         self.ground_volume = self.ground_surface * self.ground_depth
         self.floor_structure_material = Material(params.get('building_floor_structure_material'))
         self.floor_structure_thickness = params.get('building_floor_structure_thickness')
-        self.floor_insulation_material = Material(params.get('building_floor_insulation_material'))
-        self.floor_insulation_thickness = params.get('building_floor_insulation_thickness')
+        self.floor_insulation_material = Material(params.get('{}_floor_insulation_material'.format(level)))
+        self.floor_insulation_thickness = params.get('{}_floor_insulation_thickness'.format(level))
         
-        # print(params)
+        # puissance maximale des émetteurs
         self.heater_maximum_power= 10000 # W
         self.cooler_maximum_power= 10000 # W
+        
+        # besoins de chauffage TABULA
+        self.heating_needs = params.get('{}_heating_needs'.format(level)) # kWh/m2/yr
 
     def __str__(self):
         return self.code
@@ -177,6 +200,7 @@ class Typology():
         horizontal_distance = np.mean(distance)
         floor_ground_distance = np.sqrt(horizontal_distance**2 + self.floor_ground_depth**2)
         return floor_ground_distance
+    
 
 # Peut-etre à bouger dans un nouveau fichier identification (ou pas, à voir)
 # : stocker les statistiques de typologies dans les départements (dans Departement)
@@ -465,9 +489,9 @@ def main():
         print(typo)
         
     #%% Étude de la distance au bord de plaque
-    if True:
+    if False:
     
-        code = 'FR.N.SFH.01.Test'
+        code = 'FR.N.SFH.01.Gen'
         typo = Typology(code)
         
         print(typo.floor_ground_distance)
@@ -503,6 +527,43 @@ def main():
         plt.savefig(os.path.join(figs_folder,'{}.png'.format('distance_from_edge')),bbox_inches='tight')
         
         plt.show()
+        
+    #%% Comparaisons entre typologies 
+    if True:
+        building_type = 'SFH'
+        # building_type = 'TH'
+        # building_type = 'MFH'
+        # building_type = 'AB'
+        
+        heating_needs = {}
+        for i in range(1,11):
+            code = 'FR.N.{}.{:02d}.Gen'.format(building_type,i)
+
+            for level in ['initial','standard','advanced']:
+                typo = Typology(code,level)
+                
+                heating_needs[(code,level)] = typo.heating_needs
+            
+        # print(heating_needs)
+        
+        fig,ax = plt.subplots(figsize=(15,5),dpi=300)
+        for i in range(1,11):
+            j = i*7
+            X = [j,j+2,j+4]
+            Y = [heating_needs.get(('FR.N.{}.{:02d}.Gen'.format(building_type,i),e)) for e in ['initial','standard','advanced']]
+            
+            if i == 1:
+                ax.plot(X,Y,color='k',ls=':',marker='o',label='TABULA')
+            else:
+                ax.plot(X,Y,color='k',ls=':',marker='o')
+                
+        ax.set_ylim(bottom=0.)
+        ax.set_ylabel('Heating needs (kWh.m$^{-2}$.yr$^{-1}$)')
+        ax.legend()
+        ax.set_xticks([(i*7)+2 for i in range(1,11)],['{}.{:02d}'.format(building_type,i) for i in range(1,11)])
+        
+        plt.savefig(os.path.join(figs_folder,'{}.png'.format('{}_TABULA_consumption'.format(building_type))),bbox_inches='tight')
+            
     
     tac = time.time()
     print('Done in {:.2f}s.'.format(tac-tic))
