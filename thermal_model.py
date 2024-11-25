@@ -960,7 +960,7 @@ def main():
             print('Besoins annuels de refroidissement à {} en {}: {:.0f} kWh/an'.format(city, year, annual_cooling_consumption))
             print('Besoins annuels de refroidissement à {} en {}: {:.0f} kWh/(m2.an)'.format(city, year, surface_annual_cooling_consumption))
             
-            monthly_data = aggregate_resolution(simulation_data, resolution='M',agg_method='sum')
+            monthly_data = aggregate_resolution(simulation_data, resolution='ME',agg_method='sum')
             monthly_data = monthly_data/1000
             
             plot_timeserie(monthly_data[['heating_needs','cooling_needs']],figsize=(5,5),
@@ -981,7 +981,7 @@ def main():
                                          figs_folder=figs_folder, reg_code=city, reg_name='SFH test typology - {}'.format(city), year=year,C0_init=0,k_init=500,ylabel='Hourly energy needs (Wh)')
                 
     #%% Graphes Préliminaires
-    if True:
+    if False:
         
         # Étude de l'effet de l'épaisseur d'isolant sur la consommation annuelle
         if False:
@@ -1477,7 +1477,7 @@ def main():
             
             
         # Étude de l'effet de la valeur Uw des vitrages
-        if True:
+        if False:
             def get_annual_energy_needs(typology,weather_data,behaviour, by_surface=True):
                 simulation_data = SFH_test_model(typology, conventionnel, weather_data,progressbar=False)
                 simulation_data = aggregate_resolution(simulation_data, resolution='h')
@@ -1969,7 +1969,12 @@ def main():
                 plt.savefig(os.path.join(figs_folder,'{}.png'.format('effect_climate_change_{}'.format(city_2))),bbox_inches='tight')
                 
                 plt.show()
-                
+    
+    #%% Comparaisons des typologies TABULA
+    if True:
+        pass
+    
+    
     tac = time.time()
     print('Done in {:.2f}s.'.format(tac-tic))
     
