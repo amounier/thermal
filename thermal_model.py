@@ -25,7 +25,7 @@ from typologies import Typology, dict_orientation_angle
 from behaviour import Behaviour
 from thermal_sensitivity import plot_thermal_sensitivity
 from future_meteorology import get_projected_weather_data
-from administrative import Departement, Climat
+from administrative import Departement, Climat, France, draw_climat_map
 
 
 AIR_THERMAL_CAPACITY = 1000 # J/(kg.K)
@@ -115,6 +115,27 @@ def get_P_cooler(Ti, Ti_max, Pmax, method='all_or_nothing'):
     return P_cooler
 
 
+def get_P_vmeca(Ti,Te,P_heater,P_cooler,typology):
+    U_air = get_ventilation_minimum_air_flow(typology) * AIR_THERMAL_CAPACITY * (1-typology.ventilation_efficiency)
+    
+    # bypass et surventilation nocturne
+    f_sv = 1
+    if typology.ventilation_efficiency > 0:
+        if P_heater == 0:
+            f_sv = f_sv/(1-typology.ventilation_efficiency)
+        if P_cooler > 0:
+            f_sv = f_sv * 2
+            
+    P_vmeca = U_air * (Te-Ti)
+    return P_vmeca
+
+
+def get_P_vnat(Ti,Te,typology,behaviour):
+    # TODO : comportements de ventilation manuelles par ouverture des fenêtres
+    P_vnat = 0
+    return P_vnat
+
+
 def dot3(A,B,C):
     return np.dot(A,np.dot(B,C))
 
@@ -174,9 +195,15 @@ def compute_R_air(typology):
     return R_air
 
 
+def compute_R_inf(typology):
+    U_air = get_infiltration_air_flow(typology) * AIR_THERMAL_CAPACITY
+    R_inf = 1/U_air
+    return R_inf
+
+
 def get_external_convection_heat_transfer(wind_speed=5,method='th-bat',plot=False,figs_folder=None):
     """
-    Supposition d'un vent moyen de 10m/s, à corriger avec des données météo ?
+    Supposition d'un vent moyen de 5m/s, à corriger avec des données météo ?
 
     """
     if method=='wiki':
@@ -207,13 +234,13 @@ def get_external_convection_heat_transfer(wind_speed=5,method='th-bat',plot=Fals
 
 def get_external_radiation_heat_transfer(Tm=None, method='cste',plot=False,figs_folder=None):
     """
-    Supposition d'un vent moyen de 10m/s, à corriger avec des données météo ?
+    À corriger dynamiquement ?
 
     """
     if method=='cste':
         # https://rt-re-batiment.developpement-durable.gouv.fr/IMG/pdf/4-fascicule_parois_opaques_methodes.pdf p15
         # pour une température moyenne de 10°C
-        h = get_external_radiation_heat_transfer(Tm=20, method='th-bat')
+        h = get_external_radiation_heat_transfer(Tm=10, method='th-bat')
     
     elif method=='th-bat':
         # https://rt-re-batiment.developpement-durable.gouv.fr/IMG/pdf/4-fascicule_parois_opaques_methodes.pdf p15
@@ -225,8 +252,15 @@ def get_external_radiation_heat_transfer(Tm=None, method='cste',plot=False,figs_
     return h
 
 
+def compute_R_uih(typology):
+    # https://rt-re-batiment.developpement-durable.gouv.fr/IMG/pdf/4-fascicule_parois_opaques_methodes.pdf
+    hi = 2.5 # W/(m2.K)
+    R_uih = 1/(hi * typology.roof_surface) # K/W
+    return R_uih
+
+
 def compute_R_ueh(typology):
-    h_ext_conv = get_external_convection_heat_transfer()
+    h_ext_conv = get_external_convection_heat_transfer(wind_speed=5)
     h_ext_rad = get_external_radiation_heat_transfer()
     h_ext = h_ext_conv + h_ext_rad
     R_ueh = 1/(h_ext * typology.roof_surface) # K/W
@@ -265,8 +299,9 @@ def compute_Rw0i(typology):
     R_w0wall = typology.w0_structure_thickness/(typology.w0_structure_material.thermal_conductivity * typology.w0_surface)
     
     if typology.w0_insulation_position == 'ITI':
-        # TODO penser à rajouter les ponts thermiques
+        # penser à rajouter les ponts thermiques plus précisément
         R_w0iso_in = typology.w0_insulation_thickness/(typology.w0_insulation_material.thermal_conductivity * typology.w0_surface)
+        R_w0iso_in = R_w0iso_in*0.73
     else: 
         R_w0iso_in = 0
     
@@ -294,8 +329,9 @@ def compute_Rw1i(typology):
     R_w1wall = typology.w1_structure_thickness/(typology.w1_structure_material.thermal_conductivity * typology.w1_surface)
     
     if typology.w1_insulation_position == 'ITI':
-        # TODO penser à rajouter les ponts thermiques
+        # penser à rajouter les ponts thermiques plus précisément
         R_w1iso_in = typology.w1_insulation_thickness/(typology.w1_insulation_material.thermal_conductivity * typology.w1_surface)
+        R_w1iso_in = R_w1iso_in*0.73
     else: 
         R_w1iso_in = 0
     
@@ -321,8 +357,9 @@ def compute_Rw2i(typology):
     R_w2wall = typology.w2_structure_thickness/(typology.w2_structure_material.thermal_conductivity * typology.w2_surface)
     
     if typology.w2_insulation_position == 'ITI':
-        # TODO penser à rajouter les ponts thermiques
+        # penser à rajouter les ponts thermiques plus précisément
         R_w2iso_in = typology.w2_insulation_thickness/(typology.w2_insulation_material.thermal_conductivity * typology.w2_surface)
+        R_w2iso_in = R_w2iso_in*0.73
     else: 
         R_w2iso_in = 0
     
@@ -348,8 +385,9 @@ def compute_Rw3i(typology):
     R_w3wall = typology.w3_structure_thickness/(typology.w3_structure_material.thermal_conductivity * typology.w3_surface)
     
     if typology.w3_insulation_position == 'ITI':
-        # TODO penser à rajouter les ponts thermiques
+        # penser à rajouter les ponts thermiques plus précisément
         R_w3iso_in = typology.w3_insulation_thickness/(typology.w3_insulation_material.thermal_conductivity * typology.w3_surface)
+        R_w3iso_in = R_w3iso_in*0.73
     else: 
         R_w3iso_in = 0
     
@@ -371,6 +409,11 @@ def compute_Rw3e(typology):
     R_w3e = R_w3wall/2 + R_w3iso_out 
     return R_w3e
 
+def compute_C_c(typology):
+    volume_c = typology.ceiling_structure_thickness * typology.roof_surface # m3
+    mass_c = volume_c * typology.ceiling_structure_material.density # kg
+    C_c = typology.ceiling_structure_material.thermal_capacity * mass_c # J/K
+    return C_c
 
 def compute_C_w0(typology):
     volume_w0 = typology.w0_structure_thickness * typology.w0_surface # m3
@@ -396,40 +439,84 @@ def compute_C_w3(typology):
     C_w3 = typology.w3_structure_material.thermal_capacity * mass_w3 # J/K
     return C_w3
 
-def compute_Rdi(typology):
-    R_df = typology.floor_structure_thickness/(typology.floor_structure_material.thermal_conductivity * typology.ground_surface)
-    
-    # TODO modifier le modèle pour pouvoir avoir différents type d'isolation du sol
-    # TODO ajouter les ponts thermiques
-    R_diso_in = typology.floor_insulation_thickness/(typology.floor_insulation_material.thermal_conductivity * typology.ground_surface)
-    
-    # https://rt-re-batiment.developpement-durable.gouv.fr/IMG/pdf/4-fascicule_parois_opaques_methodes.pdf p16
-    hi = 2.9 # W/(m2.K)
-    R_dih = 1/(hi * typology.w0_surface) # K/W
-    
-    R_di = R_df/2 + R_diso_in + R_dih
-    return R_di
-
-def compute_R_df(typology):
-    R_df = typology.floor_structure_thickness/(typology.floor_structure_material.thermal_conductivity * typology.ground_surface)
-    return R_df
-
 def compute_C_f(typology):
     volume_f = typology.floor_structure_thickness * typology.ground_surface # m3
     mass_f = volume_f * typology.floor_structure_material.density # kg
     C_f = typology.floor_structure_material.thermal_capacity * mass_f # J/K
     return C_f
 
+def compute_Rfi(typology):
+    R_df = typology.floor_structure_thickness/(typology.floor_structure_material.thermal_conductivity * typology.ground_surface)
+    
+    # ajouter les ponts thermiques
+    # Pour l'instant, juste une diminution de l'efficacité (ie de l'epaisseur)
+    if typology.floor_insulation_position == 'ITI':
+        R_diso_in = typology.floor_insulation_thickness/(typology.floor_insulation_material.thermal_conductivity * typology.ground_surface)
+        R_diso_in = R_diso_in*0.73
+    else:
+        R_diso_in = 0
+        
+    # https://rt-re-batiment.developpement-durable.gouv.fr/IMG/pdf/4-fascicule_parois_opaques_methodes.pdf p16
+    hi = 2.9 # W/(m2.K)
+    R_dih = 1/(hi * typology.ground_surface) # K/W
+    
+    R_di = R_df/2 + R_diso_in + R_dih
+    return R_di
+
+
+def compute_Rfg(typology):
+    R_df = typology.floor_structure_thickness/(typology.floor_structure_material.thermal_conductivity * typology.ground_surface)
+    
+    if typology.floor_insulation_position == 'ITE':
+        R_diso_out = typology.floor_insulation_thickness/(typology.floor_insulation_material.thermal_conductivity * typology.ground_surface)
+    else:
+        R_diso_out = 0
+    
+    R_di = R_df/2 + R_diso_out
+    return R_di
+
+def compute_R_df(typology):
+    R_df = typology.floor_structure_thickness/(typology.floor_structure_material.thermal_conductivity * typology.ground_surface)
+    return R_df
+
 def compute_C_i(typology):
     mass_air = AIR_DENSITY * typology.volume
     C_air = AIR_THERMAL_CAPACITY * mass_air
     
-    # estimations au doigt mouillé : cf Antonopoulos and Koronaki (1999) #TODO à rafiner
+    # estimations au doigt mouillé : cf Antonopoulos and Koronaki (1999) 
+    #TODO à rafiner
     C_internal_partitions = 10*C_air
     C_mobilier = 0.2*C_internal_partitions 
     
     C_i = C_air + C_mobilier + C_internal_partitions
     return C_i
+
+
+def compute_C_u(typology):
+    mass_air = AIR_DENSITY * typology.roof_surface/2 * typology.height
+    C_air = AIR_THERMAL_CAPACITY * mass_air
+    
+    # estimations au doigt mouillé : cf Antonopoulos and Koronaki (1999) 
+    #TODO à rafiner
+    C_internal_partitions = 2*C_air
+    C_mobilier = 0.2*C_internal_partitions 
+    
+    C_u = C_air + C_mobilier + C_internal_partitions
+    return C_u
+
+
+def compute_C_d(typology):
+    mass_air = AIR_DENSITY * typology.ground_surface * typology.height
+    C_air = AIR_THERMAL_CAPACITY * mass_air
+    
+    # estimations au doigt mouillé : cf Antonopoulos and Koronaki (1999) 
+    #TODO à rafiner
+    C_internal_partitions = 2*C_air
+    C_mobilier = 0.2*C_internal_partitions 
+    
+    C_d = C_air + C_mobilier + C_internal_partitions
+    return C_d
+
 
 def compute_R_g(typology):
     R_g = typology.floor_ground_distance/(GROUND_THERMAL_CONDUCTIVITY * typology.ground_section)
@@ -440,24 +527,33 @@ def compute_C_g(typology):
     return C_g
 
 
-def get_solar_absorption_coefficient(typology):
+def get_solar_absorption_coefficient(typology,wall):
     dict_color_absorption = {'light':0.4,
                              'medium':0.6,
                              'dark':0.8,
                              'black':1.}
     
-    absorption_coefficient = dict_color_absorption.get(typology.roof_color)
+    if wall == 'roof':
+        absorption_coefficient = dict_color_absorption.get(typology.roof_color)
+    else:
+        color = {0:typology.w0_color,
+                 1:typology.w1_color,
+                 2:typology.w2_color,
+                 3:typology.w3_color,}.get(wall)
+        absorption_coefficient = dict_color_absorption.get(color)
     return absorption_coefficient
 
 
 def compute_external_Phi(typology, weather_data, wall):
     # coefficient d'absorption du flux solaire
-    alpha = get_solar_absorption_coefficient(typology)
+    #TODO : à préciser
+    # alpha = get_solar_absorption_coefficient(typology)
     
     # orientation de la paroi
     if wall == 'roof':
         orientation = 'H'
         surface = typology.roof_surface
+        alpha = get_solar_absorption_coefficient(typology,wall)
     else:
         orientation = {0:typology.w0_orientation,
                        1:typology.w1_orientation,
@@ -467,21 +563,61 @@ def compute_external_Phi(typology, weather_data, wall):
                    1:typology.w1_surface,
                    2:typology.w2_surface,
                    3:typology.w3_surface,}.get(wall)
+        alpha = get_solar_absorption_coefficient(typology,wall)
         
-    sun_radiation = weather_data['direct_sun_radiation_{}'.format(orientation)].values + weather_data['diffuse_sun_radiation_{}'.format(orientation)].values
+    sun_radiation = weather_data['direct_sun_radiation_{}'.format(orientation)].values #+ weather_data['diffuse_sun_radiation_{}'.format(orientation)].values
     Phi_se = sun_radiation * surface * alpha
     return Phi_se
 
 
-def get_solar_transmission_factor(typology,weather_data):
+def get_solar_transmission_factor(typology,weather_data,wall):
     # Dans les règles Th-bat : voir norme NF P50 777, puis norme NF EN 410 
     # TODO à raffiner selon le nombre de couches principalement (et peut-être l'angle d'incidence ?)
-    solar_factor = 0.5 # g (ratio)
+    # solar_factor = 0.5 # g (ratio)
+    solar_factor = 1
+    
+    wall_orientation = {0:typology.w0_orientation,
+                        1:typology.w1_orientation,
+                        2:typology.w2_orientation,
+                        3:typology.w3_orientation,}.get(wall)
+    valid_orientations = ['N','NE','E','SE','S','SW','W','NW']
+    dict_angle_orientation = {i*45:o for i,o in enumerate(valid_orientations)}
+    dict_orientation_angle = {v:k for k,v in dict_angle_orientation.items()}
+    
+    wall_angle = dict_orientation_angle.get(wall_orientation)
+    
+    sun_angle = np.abs(weather_data.sun_azimuth.values - wall_angle)
+    sun_alt = np.asarray([max(e,0) for e in weather_data.sun_altitude.values])
+    sun_angle = sun_angle + sun_alt
+    sun_angle = np.where(sun_alt==0, 90,sun_angle)
+    
+    solar_factor = np.maximum(np.cos(np.deg2rad(sun_angle)),0)
     return solar_factor
 
+
+def get_elements_masking(typology,weather_data,wall):
+    # TODO : masquage des éléments architecturaux 
+    return 1
+
+
+def get_environment_masking(typology,weather_data,wall,minimal_altitude=10):
+    # TODO : masquage de l'environnement
+    sun_alt = np.asarray([max(e,0) for e in weather_data.sun_altitude.values])
+    env_mask = np.where(sun_alt>minimal_altitude, 1,0)
+    
+    # plt.plot(weather_data.index[:300],sun_alt[:300])
+    # plt.plot(weather_data.index[:300],env_mask[:300])
+    return env_mask
+
+
 def compute_internal_Phi(typology, weather_data, wall):
+    # TODO : à préciser
     # coefficient d'absorption du flux solaire
-    g = get_solar_transmission_factor(typology,weather_data)
+    Ug = typology.windows_Ug
+    solar_factor = get_solar_transmission_factor(typology,weather_data,wall)
+    
+    solar_env_mask = get_environment_masking(typology,weather_data,wall)
+    solar_elem_mask = get_elements_masking(typology,weather_data,wall)
     
     # orientation de la paroi
     if wall == 'roof':
@@ -497,8 +633,8 @@ def compute_internal_Phi(typology, weather_data, wall):
                    2:typology.w2_windows_surface,
                    3:typology.w3_windows_surface,}.get(wall)
     
-    sun_radiation = weather_data['direct_sun_radiation_{}'.format(orientation)].values + weather_data['diffuse_sun_radiation_{}'.format(orientation)].values
-    Phi_si = sun_radiation * surface * g
+    sun_radiation = weather_data['direct_sun_radiation_{}'.format(orientation)].values# + weather_data['diffuse_sun_radiation_{}'.format(orientation)].values
+    Phi_si = sun_radiation * solar_factor * solar_env_mask * solar_elem_mask * surface * Ug
     return Phi_si
 
 
@@ -548,7 +684,7 @@ def SFH_test_model(typology, behaviour, weather_data, progressbar=False):
     C_w3 = compute_C_w3(typology)
     
     # Variables thermiques vers le bas
-    R_di = compute_Rdi(typology)
+    R_di = compute_Rfi(typology)
     R_df = compute_R_df(typology)
     C_f = compute_C_f(typology)
     
@@ -634,6 +770,9 @@ def SFH_test_model(typology, behaviour, weather_data, progressbar=False):
     
     B[6,0] = 1/C_g * 1/R_g
     
+    
+    pickle.dump(A, open('.A_SFH.pickle', "wb"))
+    
     # Matrices discretisées 
     F = expm(A * delta_t)
     G = dot3(inv(A), F-np.eye(A.shape[0]), B)
@@ -671,6 +810,7 @@ def SFH_test_model(typology, behaviour, weather_data, progressbar=False):
         iterator = tqdm.tqdm(range(1,len(time_)), total=len(time_)-1)
     else:
         iterator = range(1,len(time_))
+        
     for i in iterator:
         # Te = U[i,0]
         Ti = X[i-1,0]
@@ -685,7 +825,7 @@ def SFH_test_model(typology, behaviour, weather_data, progressbar=False):
         heating_needs[i-1] = P_heater
         cooling_needs[i-1] = -P_cooler
         
-        U[i,11] = P_heater + P_cooler # i-1 ou i #TODO : à vérifier Rouchier, Madsen : peu de différence en tout cas
+        U[i,11] = P_heater + P_cooler # i-1 ou i # à vérifier Rouchier, Madsen : peu de différence en tout cas
         
         X[i] = np.dot(F,X[i-1]) + np.dot(G, U[i].T)
     
@@ -703,6 +843,337 @@ def SFH_test_model(typology, behaviour, weather_data, progressbar=False):
     weather_data['cooling_needs'] = cooling_needs
     
     return weather_data
+
+
+def run_thermal_model(typology, behaviour, weather_data, progressbar=False):
+    """
+    Modélisation thermique RC
+
+    Parameters
+    ----------
+    typology : TYPE
+        DESCRIPTION.
+    behaviour : TYPE
+        DESCRIPTION.
+    weather_data : TYPE
+        DESCRIPTION.
+    progressbar : TYPE, optional
+        DESCRIPTION. The default is False.
+
+    Returns
+    -------
+    data : TYPE
+        DESCRIPTION.
+
+    """
+    # Variables thermiques internes
+    C_i = compute_C_i(typology)
+    
+    # Variables thermiques d'infiltrations
+    R_inf = compute_R_inf(typology)
+    R_door = 1/(typology.door_U * typology.door_surface)
+    
+    # Variables thermiques vers le haut
+    R_uih = compute_R_uih(typology)
+    R_uceiling = (typology.ceiling_U + typology.roof_U)/2
+    R_uroof = R_uceiling
+    R_ueh = compute_R_ueh(typology)
+    R_uhceiling = R_uih
+    R_uhroof = R_uih
+    C_c = compute_C_c(typology)
+    C_u = compute_C_u(typology)
+    
+    # Variables thermiques des murs latéraux 
+    R_w0w = 1/(typology.windows_U * typology.w0_windows_surface)
+    R_w0i = compute_Rw0i(typology)
+    R_w0e = compute_Rw0e(typology)
+    R_w0eh = compute_R_w0eh(typology)
+    C_w0 = compute_C_w0(typology)
+    
+    R_w1w = 1/(typology.windows_U * typology.w1_windows_surface)
+    R_w1i = compute_Rw1i(typology)
+    R_w1e = compute_Rw1e(typology)
+    R_w1eh = compute_R_w1eh(typology)
+    C_w1 = compute_C_w1(typology)
+    
+    R_w2w = 1/(typology.windows_U * typology.w2_windows_surface)
+    R_w2i = compute_Rw2i(typology)
+    R_w2e = compute_Rw2e(typology)
+    R_w2eh = compute_R_w2eh(typology)
+    C_w2 = compute_C_w2(typology)
+    
+    R_w3w = 1/(typology.windows_U * typology.w3_windows_surface)
+    R_w3i = compute_Rw3i(typology)
+    R_w3e = compute_Rw3e(typology)
+    R_w3eh = compute_R_w3eh(typology)
+    C_w3 = compute_C_w3(typology)
+    
+    # Variables thermiques vers le bas
+    R_fi = compute_Rfi(typology)
+    R_dfh = R_uih
+    R_fg = compute_Rfg(typology)
+    R_dgh = R_uih
+    C_f = compute_C_f(typology)
+    C_d = compute_C_d(typology)
+    
+    # Variables thermiques du sol
+    R_g = compute_R_g(typology)
+    C_g = compute_C_g(typology)
+    foundation_depth = typology.floor_ground_distance
+    
+    # Autres variables 
+    Ti_setpoint_winter, Ti_setpoint_summer = behaviour.get_set_point_temperature(weather_data)
+    P_max_heater = typology.heater_maximum_power
+    P_max_cooler = typology.cooler_maximum_power
+    internal_thermal_gains = behaviour.get_internal_gains(typology.surface,weather_data)
+    
+    
+    time_ = np.asarray(weather_data.index)
+    delta_t = (time_[1]-time_[0]) / np.timedelta64(1, 's')
+    
+    # Définition de la matrice A
+    A = np.zeros((10,10))
+    
+    # R_door (collectif) ?
+    A[0,0] = 1/C_i * (-1/R_inf
+                      -1/R_uih
+                      -1/R_w0w - 1/R_w0i - 1/R_door
+                      -1/R_w1w - 1/R_w1i
+                      -1/R_w2w - 1/R_w2i
+                      -1/R_w3w - 1/R_w3i
+                      -1/R_fi)
+    
+    A[0,1] = 1/C_i * (1/R_w0i)
+    A[0,2] = 1/C_i * (1/R_w1i)
+    A[0,3] = 1/C_i * (1/R_w2i)
+    A[0,4] = 1/C_i * (1/R_w3i)
+    A[0,5] = 1/C_i * (1/R_uih)
+    A[0,7] = 1/C_i * (1/R_fi)
+    
+    A[1,0] = 1/C_w0 * (1/R_w0i)
+    A[2,0] = 1/C_w1 * (1/R_w1i)
+    A[3,0] = 1/C_w2 * (1/R_w2i)
+    A[4,0] = 1/C_w3 * (1/R_w3i)
+    
+    # Remplacement de Te par Ti pour les parois adiabatiques
+    if typology.w3_adiabatic:
+        A[4,0] = 1/C_w3 * (1/R_w3i) + 1/C_w3 * (1/(R_w3eh+R_w3e))
+    if typology.w2_adiabatic:
+        A[3,0] = 1/C_w2 * (1/R_w2i) + 1/C_w2 * (1/(R_w2eh+R_w2e))
+    if typology.w1_adiabatic:
+        A[2,0] = 1/C_w1 * (1/R_w1i) + 1/C_w1 * (1/(R_w1eh+R_w1e))
+    
+    A[1,1] = 1/C_w0 * (-1/R_w0e -1/R_w0i + R_w0eh/(R_w0e*(R_w0eh+R_w0e)))
+    A[2,2] = 1/C_w1 * (-1/R_w1e -1/R_w1i + R_w1eh/(R_w1e*(R_w1eh+R_w1e)))
+    A[3,3] = 1/C_w2 * (-1/R_w2e -1/R_w2i + R_w2eh/(R_w2e*(R_w2eh+R_w2e)))
+    A[4,4] = 1/C_w3 * (-1/R_w3e -1/R_w3i + R_w3eh/(R_w3e*(R_w3eh+R_w3e)))
+    A[5,0] = 1/C_c * (1/R_uih) 
+    
+    
+    if typology.converted_attic:
+        A[5,5] = 1/C_c * (-1/(R_uceiling + R_uroof)
+                          -1/R_uih
+                          +R_ueh/((R_uceiling+R_uroof)*(R_uroof+R_uceiling+R_ueh)))
+        
+    else:
+        A[5,5] = 1/C_c * (-1/(R_uhceiling+R_uceiling) -1/R_uih)
+        A[5,6] = 1/C_c * (1/(R_uhceiling+R_uceiling))
+        A[6,6] = 1/C_u * (-1/(R_uroof+R_uhroof)
+                          -1/(R_uhceiling+R_uceiling)
+                          +R_ueh/((R_uroof+R_uhroof)*(R_uroof+R_uhroof+R_ueh)))
+        A[6,5] = 1/C_u * (1/(R_uhceiling+R_uceiling))
+        
+    A[7,0] = 1/C_f * (1/R_fi)
+    
+    if typology.basement:
+        A[7,7] = 1/C_f * (-1/(R_dfh+R_fg) - 1/R_fi)
+        A[7,8] = 1/C_f * (1/(R_dfh+R_fg))
+        A[8,8] = 1/C_d * (-1/R_dgh - 1/(R_dfh+R_fg))
+        A[8,7] = 1/C_d * (1/(R_dfh+R_fg))
+        A[8,9] = 1/C_d * (1/R_dgh)
+        A[9,9] = 1/C_g * (-1/R_g - 1/R_dgh)
+        A[9,8] = 1/C_g * (1/R_dgh)
+        
+        # remplacement de Tf par Ti
+        if typology.floor_adiabatic:
+            A[7,8] = 0
+            A[7,0] = 1/C_f * (1/R_fi) + 1/C_f * (1/(R_dfh+R_fg))
+        
+    else:
+        A[7,7] = 1/C_f * (-1/R_fg - 1/R_fi)
+        A[7,9] = 1/C_f * (1/R_fg)
+        A[9,9] = 1/C_g * (-1/R_g - 1/R_fg)
+        A[9,7] = 1/C_g * (1/R_fg)
+        
+        # remplacement de Tg par Ti
+        if typology.floor_adiabatic:
+            A[7,9] = 0
+            A[7,0] = 1/C_f * (1/R_fi) + 1/C_f * (1/R_fg)
+    
+    # Définition de la matrice B
+    B = np.zeros((10,15))
+    
+    B[0,0] = 1/C_i * (1/R_inf
+                      +1/R_w0w
+                      +1/R_w1w
+                      +1/R_w2w
+                      +1/R_w3w
+                      +1/R_door)
+    
+    B[0,2] = 1/C_i
+    B[0,4] = 1/C_i
+    B[0,6] = 1/C_i
+    B[0,8] = 1/C_i
+    B[0,10] = 1/C_i
+    B[0,11] = 1/C_i
+    B[0,12] = 1/C_i
+    B[0,13] = 1/C_i
+    B[0,14] = 1/C_i
+    
+    B[1,0] = 1/C_w0 * (1/(R_w0eh+R_w0e))
+    B[2,0] = 1/C_w1 * (1/(R_w1eh+R_w1e))
+    B[3,0] = 1/C_w2 * (1/(R_w2eh+R_w2e))
+    B[4,0] = 1/C_w3 * (1/(R_w3eh+R_w3e))
+    
+    # Remplacement de Te par Ti pour les parois adiabatiques
+    if typology.w3_adiabatic:
+        B[4,0] = 0
+    if typology.w2_adiabatic:
+        B[3,0] = 0
+    if typology.w1_adiabatic:
+        B[2,0] = 0
+    
+    B[1,3] = 1/C_w0 * R_w0eh/(R_w0eh+R_w0e)
+    B[2,5] = 1/C_w1 * R_w1eh/(R_w1eh+R_w1e)
+    B[3,7] = 1/C_w2 * R_w2eh/(R_w2eh+R_w2e)
+    B[4,9] = 1/C_w3 * R_w3eh/(R_w3eh+R_w3e)
+    
+    B[9,0] = 1/C_g * (1/R_g)
+    
+    if typology.converted_attic:
+        B[5,0] = 1/C_c * (1/(R_uroof+R_uceiling+R_ueh))
+        B[5,1] = 1/C_c * (R_ueh/(R_uroof+R_uceiling+R_ueh))
+    else:
+        B[6,0] = 1/C_u * (1/(R_uroof+R_uhroof+R_ueh))
+        B[6,1] = 1/C_u * (R_ueh/(R_uroof+R_uhroof+R_ueh))
+    
+    # Suppression des parties vides de la matrice
+    if not typology.basement:
+        A = np.delete(A, 8, 0)
+        A = np.delete(A, 8, 1)
+        B = np.delete(B, 8, 0)
+        
+    if typology.converted_attic:
+        A = np.delete(A, 6, 0)
+        A = np.delete(A, 6, 1)
+        B = np.delete(B, 6, 0)
+    
+    # sauvegarde de A pour analyse
+    pickle.dump(A, open('.A_GENMOD.pickle', "wb"))
+    
+    # Matrices discretisées 
+    F = expm(A * delta_t)
+    G = dot3(inv(A), F-np.eye(A.shape[0]), B)
+    
+    # État initial
+    X = np.zeros((len(time_), 10))
+    U = np.zeros((len(time_), 15))
+    
+    U[:,0] = weather_data.temperature_2m
+    U[:,1] = compute_external_Phi(typology, weather_data, wall='roof') # Phi_sue
+    U[:,2] = [0]*len(weather_data) # Phi_sui
+    U[:,3] = compute_external_Phi(typology, weather_data, wall=0) # Phi_sw0e
+    U[:,4] = compute_internal_Phi(typology, weather_data, wall=0) # Phi_sw0i
+    U[:,5] = compute_external_Phi(typology, weather_data, wall=1) # Phi_sw1e
+    U[:,6] = compute_internal_Phi(typology, weather_data, wall=1) # Phi_sw1i
+    U[:,7] = compute_external_Phi(typology, weather_data, wall=2) # Phi_sw2e
+    U[:,8] = compute_internal_Phi(typology, weather_data, wall=2) # Phi_sw2i
+    U[:,9] = compute_external_Phi(typology, weather_data, wall=3) # Phi_sw3e
+    U[:,10] = compute_internal_Phi(typology, weather_data, wall=3) # Phi_sw3i
+    # U[:,11] Phi_hc
+    U[:,12] = np.asarray(internal_thermal_gains)
+    # U[:,13] Phi_vmeca
+    # U[:,14] Phi_vnat
+    
+    # Remplacement de Te par Ti pour les parois adiabatiques
+    if typology.w3_adiabatic:
+        U[:,9] = compute_external_Phi(typology, weather_data, wall=3)*0 # Phi_sw3e
+        U[:,10] = compute_internal_Phi(typology, weather_data, wall=3)*0 # Phi_sw3i
+    if typology.w2_adiabatic:
+        U[:,7] = compute_external_Phi(typology, weather_data, wall=2)*0 # Phi_sw2e
+        U[:,8] = compute_internal_Phi(typology, weather_data, wall=2)*0 # Phi_sw2i
+    if typology.w1_adiabatic:
+        U[:,5] = compute_external_Phi(typology, weather_data, wall=1)*0 # Phi_sw1e
+        U[:,6] = compute_internal_Phi(typology, weather_data, wall=1)*0 # Phi_sw1i
+    
+    X[0,0] = Ti_setpoint_winter[0] # Ti
+    X[0,1] = 1/(R_w0e+R_w0eh+R_w0i) * (R_w0i * U[0,0] + (R_w0e+R_w0eh) * X[0,0]) # Tw0
+    X[0,2] = 1/(R_w1e+R_w1eh+R_w1i) * (R_w1i * U[0,0] + (R_w1e+R_w1eh) * X[0,0]) # Tw1
+    X[0,3] = 1/(R_w2e+R_w2eh+R_w2i) * (R_w2i * U[0,0] + (R_w2e+R_w2eh) * X[0,0]) # Tw2
+    X[0,4] = 1/(R_w3e+R_w3eh+R_w3i) * (R_w3i * U[0,0] + (R_w3e+R_w3eh) * X[0,0]) # Tw3
+    X[0,5] = 1/(R_ueh+R_uroof+R_uhroof+R_uhceiling+R_uceiling+R_uih) * (R_uih * U[0,0] + (R_ueh+R_uroof+R_uhroof+R_uhceiling+R_uceiling) * X[0,0]) # Tc
+    X[0,6] = 1/(R_ueh+R_uroof+R_uhroof+R_uhceiling+R_uceiling+R_uih) * ((R_uih+R_uceiling+R_uhceiling) * U[0,0] + (R_ueh+R_uroof+R_uhroof) * X[0,0]) # Tu
+    X[0,9] = get_init_ground_temperature(foundation_depth, weather_data) # Tg
+    X[0,7] = 1/(R_dgh+R_dfh+R_fg+R_fi) * (R_fi * X[0,9] + (R_dgh+R_dfh+R_fg) * X[0,0]) # Tf
+    X[0,8] = 1/(R_dgh+R_dfh+R_fg+R_fi) * ((R_fi+R_fg+R_dfh) * X[0,9] + (R_dgh) * X[0,0]) # Td
+    
+    # Suppression des parties vides de la matrice
+    if not typology.basement:
+        X = np.delete(X, 8, 1)
+    if typology.converted_attic:
+        X = np.delete(X, 6, 1)
+    
+    # Remplacement de Te par Ti pour les parois adiabatiques
+    if typology.w3_adiabatic:
+        X[0,4] = X[0,0]
+    if typology.w2_adiabatic:
+        X[0,3] = X[0,0]
+    if typology.w1_adiabatic:
+        X[0,2] = X[0,0]
+    if typology.floor_adiabatic:
+        X[0,7] = X[0,0]
+    
+        
+    # Simulation
+    heating_needs = [0]*len(time_)
+    cooling_needs = [0]*len(time_)
+    
+    if progressbar:
+        iterator = tqdm.tqdm(range(1,len(time_)), total=len(time_)-1)
+    else:
+        iterator = range(1,len(time_))
+        
+    for i in iterator:
+        Te = U[i,0]
+        Ti = X[i-1,0]
+        
+        Ts_heater = Ti_setpoint_winter[i-1]
+        Ts_cooler = Ti_setpoint_summer[i-1]
+        
+        P_heater = get_P_heater(Ti, Ti_min=Ts_heater, Pmax=P_max_heater, method='linear_tolerance')
+        P_cooler = get_P_cooler(Ti, Ti_max=Ts_cooler, Pmax=P_max_cooler, method='linear_tolerance')
+        
+        P_vmeca = get_P_vmeca(Ti,Te,P_heater,P_cooler,typology)
+        P_vnat = get_P_vnat(Ti,Te,typology,behaviour)
+        
+        heating_needs[i-1] = P_heater
+        cooling_needs[i-1] = -P_cooler
+        
+        U[i,11] = P_heater + P_cooler # i-1 ou i # à vérifier Rouchier, Madsen : peu de différence en tout cas
+        U[i,13] = P_vmeca
+        U[i,14] = P_vnat
+        
+        X[i] = np.dot(F,X[i-1]) + np.dot(G, U[i].T)
+    
+    heating_needs[-1] = get_P_heater(X[i,0], Ti_min=Ti_setpoint_winter[i], Pmax=P_max_heater, method='linear_tolerance')
+    cooling_needs[-1] = get_P_cooler(X[i,0], Ti_max=Ti_setpoint_summer[i], Pmax=P_max_cooler, method='linear_tolerance')
+    
+    weather_data['internal_temperature'] = X[:,0]
+    weather_data['heating_needs'] = heating_needs
+    weather_data['cooling_needs'] = cooling_needs
+    
+    return weather_data
+
     
     
 def refine_resolution(data, resolution):
@@ -803,7 +1274,7 @@ def main():
             
             start_compute = time.time()
             
-            simulation_data = SFH_test_model(typo, conventionnel, weather_data_fine_res,progressbar=False)
+            simulation_data = run_thermal_model(typo, conventionnel, weather_data_fine_res,progressbar=False)
             simulation_data = aggregate_resolution(simulation_data, resolution='h')
             
             end_compute = time.time()
@@ -838,6 +1309,11 @@ def main():
                 print('Besoins annuels de refroidissement à {} en {}: {:.0f} kWh/an'.format(city, year, annual_cooling_consumption))
                 print('Besoins annuels de refroidissement à {} en {}: {:.0f} kWh/(m2.an)'.format(city, year, surface_annual_cooling_consumption))
         
+        power_max_heating = np.asarray(power_max_heating)/power_max_heating[0]
+        power_max_cooling = np.asarray(power_max_cooling)/power_max_cooling[0]
+        heating_needs_list = np.asarray(heating_needs_list)/heating_needs_list[0]
+        cooling_needs_list = np.asarray(cooling_needs_list)/cooling_needs_list[0]
+        
         fig,ax = plt.subplots(dpi=300,figsize=(5,5))
         ax.semilogy(resolution_list, time_compute,color='k',marker='o')
         ax.set_ylabel('Computation time for one year simulation (s)')
@@ -848,49 +1324,30 @@ def main():
         
         fig,ax = plt.subplots(dpi=300,figsize=(5,5))
         ax.plot(resolution_list, heating_needs_list,color='tab:red',label='Heating',marker='o')
-        # ax.plot(resolution_list, cooling_needs_list,color='tab:blue',label='Cooling')
-        ax.set_ylabel('Annual energy needs (kWh.m$^{-2}$.yr$^{-1}$)')
-        # ax.set_ylim(bottom=0.)
-        ax.legend()
-        ax.set_xlabel('Temporal resolution time step (s)')
-        plt.savefig(os.path.join(figs_folder,'{}.png'.format('resolution_effect_energy_needs_heating_{}_{}'.format(city,period[0]))),bbox_inches='tight')
-        plt.show()
-        
-        fig,ax = plt.subplots(dpi=300,figsize=(5,5))
-        ax.plot(resolution_list, power_max_heating,color='tab:red',label='Heating',marker='o')
-        # ax.plot(resolution_list, power_max_cooling,color='tab:blue',label='Cooling')
-        ax.set_ylabel('Maximal power needs (Wh)')
-        # ax.set_ylim(bottom=0.)
-        ax.legend()
-        ax.set_xlabel('Temporal resolution time step (s)')
-        plt.savefig(os.path.join(figs_folder,'{}.png'.format('resolution_effect_max_power_heating_{}_{}'.format(city,period[0]))),bbox_inches='tight')
-        plt.show()
-        
-        fig,ax = plt.subplots(dpi=300,figsize=(5,5))
-        # ax.plot(resolution_list, heating_needs_list,color='tab:red',label='Heating')
         ax.plot(resolution_list, cooling_needs_list,color='tab:blue',label='Cooling',marker='o')
         ax.set_ylabel('Annual energy needs (kWh.m$^{-2}$.yr$^{-1}$)')
         # ax.set_ylim(bottom=0.)
         ax.legend()
         ax.set_xlabel('Temporal resolution time step (s)')
-        plt.savefig(os.path.join(figs_folder,'{}.png'.format('resolution_effect_energy_needs_cooling_{}_{}'.format(city,period[0]))),bbox_inches='tight')
+        plt.savefig(os.path.join(figs_folder,'{}.png'.format('resolution_effect_energy_needs_{}_{}'.format(city,period[0]))),bbox_inches='tight')
         plt.show()
         
         fig,ax = plt.subplots(dpi=300,figsize=(5,5))
-        # ax.plot(resolution_list, power_max_heating,color='tab:red',label='Heating')
+        ax.plot(resolution_list, power_max_heating,color='tab:red',label='Heating',marker='o')
         ax.plot(resolution_list, power_max_cooling,color='tab:blue',label='Cooling',marker='o')
         ax.set_ylabel('Maximal power needs (Wh)')
         # ax.set_ylim(bottom=0.)
         ax.legend()
         ax.set_xlabel('Temporal resolution time step (s)')
-        plt.savefig(os.path.join(figs_folder,'{}.png'.format('resolution_effect_max_power_cooling_{}_{}'.format(city,period[0]))),bbox_inches='tight')
+        plt.savefig(os.path.join(figs_folder,'{}.png'.format('resolution_effect_max_power_{}_{}'.format(city,period[0]))),bbox_inches='tight')
         plt.show()
-        
+    
     #%% Premier test pour le poster de SGR
     if False:
         
         # Définition de la typologie
-        typo_name = 'FR.N.SFH.01.Test'
+        # typo_name = 'FR.N.SFH.01.Test'
+        typo_name = 'FR.N.SFH.01.Gen'
         typo = Typology(typo_name)
         
         # typo.w0_structure_thickness = 0.3
@@ -1290,7 +1747,7 @@ def main():
             # plt.show()
             
         # Étude de l'effet de l'épaisseur d'isolant de plancher sur la consommation annuelle
-        if False:
+        if True:
             def get_annual_energy_needs(typology,weather_data,behaviour, by_surface=True):
                 simulation_data = SFH_test_model(typology, conventionnel, weather_data,progressbar=False)
                 simulation_data = aggregate_resolution(simulation_data, resolution='h')
@@ -1370,7 +1827,7 @@ def main():
             ax.set_ylabel('Annual energy needs over {}-{} '.format(period[0],period[1])+'(kWh.m$^{-2}$.yr$^{-1}$)')
             # ax.legend()
             ax.set_xlabel('Floor insulation thickness (m)')
-            ax.set_ylim(bottom=0.,top=100)
+            ax.set_ylim(bottom=0.,top=150)
             # ax.set_ylim()
             
             plt.savefig(os.path.join(figs_folder,'{}.png'.format('effect_floor_insulation_thickness_{}_{}_{}-{}'.format(city_1,city_2,period[0],period[1]))),bbox_inches='tight')
@@ -1640,7 +2097,7 @@ def main():
                 print('Besoins annuels de refroidissement à {} en {}: {:.0f} kWh/(m2.an)'.format(city, year, surface_annual_cooling_consumption))
             
             # Graphe 3 sur les effets du changement climatique
-            # TODO : attention, pour l'instant la météo future est en carton (un peu)
+            # attention, pour l'instant la météo future est en carton (un peu)
             if True:
                 period_list = [2020,2040,2060,2080,2100]
                 # period_list = [2099]
@@ -1971,9 +2428,205 @@ def main():
                 plt.show()
     
     #%% Comparaisons des typologies TABULA
-    if True:
-        pass
+    if False:
+        # Génération du fichier météo
+        city = 'Beauvais'
+        # period = [2010,2020]
+        # period = [1990,2000]
+        period = [1990,2020]
+        
+        # Checkpoint weather data
+        weather_data_checkfile = ".weather_data_{}_{}_{}_".format(city,period[0],period[1]) + today + ".pickle"
+        if weather_data_checkfile not in os.listdir():
+            weather_data = get_historical_weather_data(city,period)
+            weather_data = refine_resolution(weather_data, resolution='600s')
+            pickle.dump(weather_data, open(weather_data_checkfile, "wb"))
+        else:
+            weather_data = pickle.load(open(weather_data_checkfile, 'rb'))
+        
+        # Carte de France avec la localisation de la ville
+        if False:
+            draw_climat_map({Climat(e):None for e in France().climats},zcl_label=False, 
+                            figs_folder=figs_folder, save='map_France_{}'.format(city),
+                            add_city_points=[city])
+        
+        # Affichage des données météo 
+        if False:
+            plot_weather_data = aggregate_resolution(weather_data.copy(), resolution='d')
+            plot_timeserie(plot_weather_data[['temperature_2m']],figsize=(15,5),
+                           labels=[city], ylabel='Mean air temperature (°C)',
+                           xlim=[pd.to_datetime('{}-01-01'.format(period[0])), pd.to_datetime('{}-12-31'.format(period[1]))],
+                           figs_folder=figs_folder, save_fig='temperature_{}_{}_{}'.format(city,period[0],period[1]))
+        
+        # Définition des habitudes
+        conventionnel = Behaviour('conventionnel_th-bce_2020')
+        conventionnel.heating_rules = {i:[19]*24 for i in range(1,8)}
+        conventionnel.cooling_rules = {i:[26]*24 for i in range(1,8)}
+        # changer les règles de présence ? 
     
+        
+        # Premier test du modèle général
+        if False:
+            # Définition de la typologie
+            typo_name = 'FR.N.SFH.01.Gen'
+            typo = Typology(typo_name)
+            
+            t1 = time.time()
+            simulation = run_thermal_model(typo, conventionnel, weather_data)
+            simulation = aggregate_resolution(simulation, resolution='h')
+            t2 = time.time()
+            print('{} ans de simulation : {:.2f}s.'.format(len(list(range(*period))),t2-t1))
+            
+            # print(simulation_data.columns)
+            heating_cooling_modelling = aggregate_resolution(simulation[['heating_needs','cooling_needs']], resolution='YE',agg_method='sum')
+            heating_cooling_modelling = heating_cooling_modelling/1000
+            heating_cooling_modelling = heating_cooling_modelling/typo.surface
+            heating_cooling_modelling.index = heating_cooling_modelling.index.year
+            
+            print(heating_cooling_modelling)
+            
+        
+        # Test de vitesse de calcul en fonction de la durée de la période
+        if False:
+            period_len_list = list(range(1,31))
+            speed_list = []
+            
+            tmp_checkfile = ".speed_test_{}_".format(city) + today + ".pickle"
+            if tmp_checkfile not in os.listdir():
+                for y in tqdm.tqdm(period_len_list):
+                    period_test = [1990,1990+y-1]
+                    
+                    # Checkpoint weather data
+                    weather_data_checkfile = ".weather_data_{}_{}_{}_".format(city,period_test[0],period_test[1]) + today + ".pickle"
+                    if weather_data_checkfile not in os.listdir():
+                        weather_data = get_historical_weather_data(city,period_test)
+                        weather_data = refine_resolution(weather_data, resolution='600s')
+                        pickle.dump(weather_data, open(weather_data_checkfile, "wb"))
+                    else:
+                        weather_data = pickle.load(open(weather_data_checkfile, 'rb'))
+                
+                    # Définition de la typologie
+                    typo_name = 'FR.N.SFH.01.Gen'
+                    typo = Typology(typo_name)
+                    
+                    t1 = time.time()
+                    simulation = run_thermal_model(typo, conventionnel, weather_data)
+                    simulation = aggregate_resolution(simulation, resolution='h')
+                    t2 = time.time()
+                    speed_list.append(t2-t1)
+                
+            if tmp_checkfile not in os.listdir():
+                pickle.dump(speed_list, open(tmp_checkfile, "wb"))
+            
+            speed_list = pickle.load(open(tmp_checkfile, 'rb'))
+            
+            fig,ax= plt.subplots(figsize=(5,5),dpi=300)
+            ax.plot(period_len_list,speed_list,marker='o',ls='',label='data')
+            ax.set_ylim(bottom=0.)
+            ax.set_xlim(left=0.)
+            ax.set_xlabel('Modelling period (yr)')
+            ax.set_ylabel('Computation time (s)')
+            X = np.asarray(period_len_list)
+            Y = np.asarray(speed_list)
+            a,b = np.polyfit(X,Y,deg=1)
+            Y_hat = a*X+b
+            r2 = r2_score(Y, Y_hat)
+            ax.plot(X,Y_hat,color='k',label='linear fit (R$^2$={:.2f}, {:.2f} s'.format(r2,a)+'.yr$^{-1}$)')
+            ax.legend()
+            plt.savefig(os.path.join(figs_folder,'{}.png'.format('computation_speed')),bbox_inches='tight')
+            
+            plt.show()
+            
+        
+        # Comparaison entre typologies
+        if False:
+            
+            for building_type in ['SFH','TH','MFH','AB']:
+            
+                heating_needs_TABULA = {}
+                heating_needs_GENMOD = {}
+                for i in tqdm.tqdm(range(1,11),desc=building_type):
+                    code = 'FR.N.{}.{:02d}.Gen'.format(building_type,i)
+    
+                    for level in ['initial','standard','advanced']:
+                        typo = Typology(code,level)
+                        
+                        heating_needs_TABULA[(code,level)] = typo.heating_needs
+                        
+                        tmp_checkfile = ".heating_needs_{}_{}_{}_{}_".format(city,period[0],period[1],building_type) + today + ".pickle"
+                        if tmp_checkfile not in os.listdir():
+                            simulation = run_thermal_model(typo, conventionnel, weather_data)
+                            simulation = aggregate_resolution(simulation, resolution='h')
+                            
+                            heating_cooling_modelling = aggregate_resolution(simulation[['heating_needs','cooling_needs']], resolution='YE',agg_method='sum')
+                            heating_cooling_modelling = heating_cooling_modelling/1000
+                            heating_cooling_modelling = heating_cooling_modelling/typo.surface
+                            heating_cooling_modelling.index = heating_cooling_modelling.index.year
+                            
+                            heating_needs_GENMOD[(code,level)] = heating_cooling_modelling.heating_needs.values
+                        
+                
+                if tmp_checkfile not in os.listdir():
+                    pickle.dump(heating_needs_GENMOD, open(tmp_checkfile, "wb"))
+                
+                heating_needs_GENMOD = pickle.load(open(tmp_checkfile, 'rb'))
+                
+                fig,ax = plt.subplots(figsize=(15,5),dpi=300)
+                for i in range(1,11):
+                    code = 'FR.N.{}.{:02d}.Gen'.format(building_type,i)
+                    
+                    j = i*7
+                    X = [j,j+2,j+4]
+                    Y = [heating_needs_TABULA.get(('FR.N.{}.{:02d}.Gen'.format(building_type,i),e)) for e in ['initial','standard','advanced']]
+                    
+                    if i == 1:
+                        ax.plot(X,Y,color='tab:blue',ls=':',marker='o',label='TABULA')
+                    else:
+                        ax.plot(X,Y,color='tab:blue',ls=':',marker='o')
+                        
+                    for k,level in enumerate(['initial','standard','advanced']):
+                        if i==1 and k==1:
+                            ax.boxplot(heating_needs_GENMOD[(code,level)],positions=[X[k]],widths=1, label='Model')
+                        else:
+                            ax.boxplot(heating_needs_GENMOD[(code,level)],positions=[X[k]],widths=1)
+                        
+                        
+                ax.set_ylim(bottom=0.)
+                ax.set_ylabel('Heating needs (kWh.m$^{-2}$.yr$^{-1}$)')
+                ax.legend()
+                ax.set_xticks([(i*7)+2 for i in range(1,11)],['{}.{:02d}'.format(building_type,i) for i in range(1,11)])
+                
+                plt.savefig(os.path.join(figs_folder,'{}.png'.format('{}_TABULA_consumption'.format(building_type))),bbox_inches='tight')
+            
+            
+        
+    #%% Résolution de matrice singulière 
+    if False:
+        print()
+        
+        A = pickle.load(open('.A_SFH.pickle', "rb"))
+        # print(A)
+        for i in range(len(A)):
+            L = []
+            for j in range(len(A[0])):
+                L.append('{:.1E}'.format(A[i][j]))
+            print(L)
+            
+        A = np.asarray(A)
+        print(np.linalg.det(A))
+        
+        print()
+        
+        A = pickle.load(open('.A_GENMOD.pickle', "rb"))
+        # print(A)
+        for i in range(len(A)):
+            L = []
+            for j in range(len(A[0])):
+                L.append('{:.1E}'.format(A[i][j]))
+            print(L)
+            
+        A = np.asarray(A)
+        print(np.linalg.det(A))
     
     tac = time.time()
     print('Done in {:.2f}s.'.format(tac-tic))

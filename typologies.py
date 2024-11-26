@@ -81,6 +81,8 @@ class Typology():
         
         params = open_tabula_typologies().loc[self.code].to_dict()
         # self.desc = params.get('building_name')
+        self.type = params.get('building_type')
+        # print(params.keys())
         
         # orientation des murs
         self.w0_orientation = params.get('building_orientation')
@@ -94,16 +96,50 @@ class Typology():
         self.ground_surface = self.surface/self.levels
         self.roof_surface = self.ground_surface
         
+        # paramètres d'habitation
+        self.rdc = bool(params.get('building_rdc_level'))
+        self.households = params.get('building_households')
+        
+        # caractéristiques inférieures et supérieurs 
+        self.basement = bool(params.get('building_basement'))
+        self.converted_attic = bool(params.get('building_converted_attic'))
+        
+        # je considère les RDC LNC comme des caves
+        if self.type in ['SFH','TH'] and not self.rdc:
+            self.levels = self.levels - 0.5
+            self.basement = True
+            
+        # caractérisation de la mitoyenneté
+        self.nb_non_detached = params.get('building_semi_detached')
+        self.w0_adiabatic = False
+        self.w1_adiabatic = False
+        self.w2_adiabatic = False
+        self.w3_adiabatic = False
+        self.floor_adiabatic = False
+        self.ceiling_adiabatic = False
+        
+        if self.nb_non_detached == 1:
+            self.w1_adiabatic = True
+        if self.nb_non_detached == 2:
+            self.w1_adiabatic = True
+            self.w3_adiabatic = True
+        if self.nb_non_detached == 3:
+            self.w1_adiabatic = True
+            self.w2_adiabatic = True
+            self.w3_adiabatic = True
+            
+        if self.type in ['AB','MFH'] and not self.rdc:
+            self.floor_adiabatic = True
+            self.levels = self.levels - 1
+            
+        # TODO : parois adiabatiques dans les logements collectifs
+        
         self.height = params.get('building_floor_height')
         self.volume = self.surface*self.height
         self.form_factor = params.get('building_form_factor')
         self.w0_length = np.sqrt(self.ground_surface/self.form_factor)
         self.w1_length = self.w0_length*self.form_factor
         self.perimeter = 2*(self.w0_length + self.w1_length)
-        
-        # caractéristiques inférieures et supérieurs 
-        self.basement = bool(params.get('building_basement'))
-        self.converted_attic = bool(params.get('building_converted_attic'))
         
         # caractéristiques des ventilations et infiltrations
         self.air_infiltration = params.get('{}_air_infiltration'.format(level))
@@ -113,6 +149,8 @@ class Typology():
         self.roof_color = params.get('{}_roof_color'.format(level))
         self.roof_U = params.get('{}_roof_U'.format(level))
         self.ceiling_U = params.get('{}_ceiling_U'.format(level))
+        self.ceiling_structure_material = Material(params.get('building_ceiling_structure_material'))
+        self.ceiling_structure_thickness = params.get('building_ceiling_structure_thickness')
         
         # caractéristiques des vitrages
         self.h_windows_surface = params.get('building_horizontal_windows_surface')
@@ -128,11 +166,16 @@ class Typology():
         self.door_surface = 2 #m2
         
         # caractéristiques des murs
-        # TODO définir self.walls et mettre toutes variables dans ce dictionnaire (ou pas)
+        # définir self.walls et mettre toutes variables dans ce dictionnaire (ou pas)
         self.w0_surface = self.w0_length*self.height*self.levels - self.w0_windows_surface
         self.w1_surface = self.w1_length*self.height*self.levels - self.w1_windows_surface
         self.w2_surface = self.w0_length*self.height*self.levels - self.w2_windows_surface
         self.w3_surface = self.w1_length*self.height*self.levels - self.w3_windows_surface
+        
+        self.w0_color = params.get('{}_walls_color'.format(level))
+        self.w1_color = params.get('{}_walls_color'.format(level))
+        self.w2_color = params.get('{}_walls_color'.format(level))
+        self.w3_color = params.get('{}_walls_color'.format(level))
         
         self.w0_structure_material = Material(params.get('building_wall0_structure_material'))
         self.w1_structure_material = Material(params.get('building_wall1_structure_material'))
@@ -159,9 +202,8 @@ class Typology():
         # caractéristiques du sol
         # cf Rantala and Leivo 2006 et Skotnicova and Lausova (2016).
         # cf Thbat parois opaques p21
-        # TODO à clarifier dans le cas 2D
+        #  clarifier dans le cas 2D
         # 0.3 + floor height si cave 
-        
         self.floor_ground_depth = 0.3
         if self.basement:
             self.floor_ground_depth += 3
@@ -174,10 +216,11 @@ class Typology():
         self.floor_structure_thickness = params.get('building_floor_structure_thickness')
         self.floor_insulation_material = Material(params.get('{}_floor_insulation_material'.format(level)))
         self.floor_insulation_thickness = params.get('{}_floor_insulation_thickness'.format(level))
+        self.floor_insulation_position = params.get('{}_floor_insulation_position'.format(level))
         
         # puissance maximale des émetteurs
-        self.heater_maximum_power= 10000 # W
-        self.cooler_maximum_power= 10000 # W
+        self.heater_maximum_power = 10000*self.households # W
+        self.cooler_maximum_power = 10000*self.households # W
         
         # besoins de chauffage TABULA
         self.heating_needs = params.get('{}_heating_needs'.format(level)) # kWh/m2/yr
@@ -190,6 +233,8 @@ class Typology():
         self.w2_orientation = dict_angle_orientation.get((dict_orientation_angle.get(self.w1_orientation)+90)%360)
         self.w3_orientation = dict_angle_orientation.get((dict_orientation_angle.get(self.w2_orientation)+90)%360)
 
+    # TODO : créer une fonction qui update toutes les variables (protégées ?)
+    
     def get_floor_ground_distance(self,nb_discretize=50):
         X,Y = np.linspace(0, self.w0_length, nb_discretize), np.linspace(0, self.w1_length, nb_discretize)
         distance = np.zeros((len(X),len(Y)))
@@ -483,7 +528,7 @@ def main():
         
         
     #%% Tests de la classe Typology
-    if False:
+    if True:
         code = 'FR.N.TH.06.Gen'
         typo = Typology(code)
         print(typo)
@@ -529,7 +574,7 @@ def main():
         plt.show()
         
     #%% Comparaisons entre typologies 
-    if True:
+    if False:
         building_type = 'SFH'
         # building_type = 'TH'
         # building_type = 'MFH'
