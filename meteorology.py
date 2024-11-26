@@ -271,7 +271,7 @@ def get_list_orientations(principal_orientation):
 
 
 
-def get_historical_weather_data(city, period, principal_orientation, display_units=False):
+def get_historical_weather_data(city, period, display_units=False):
     # initialisation des données météo
     variables = ['temperature_2m','diffuse_radiation_instant','direct_normal_irradiance_instant']
     coordinates = get_coordinates(city)
@@ -291,7 +291,8 @@ def get_historical_weather_data(city, period, principal_orientation, display_uni
     data['sun_azimuth'] = azimuth
     
     # défintion de la liste des orientations du bâtiment
-    orientations = get_list_orientations(principal_orientation)
+    # orientations = get_list_orientations(principal_orientation)
+    orientations = ['N','NE','E','SE','S','SW','W','NW','H']
     
     for ori in orientations:
         col_coef_dri = 'coefficient_direct_{}_irradiance'.format(ori)
