@@ -2428,7 +2428,7 @@ def main():
                 plt.show()
     
     #%% Comparaisons des typologies TABULA
-    if False:
+    if True:
         # Génération du fichier météo
         city = 'Beauvais'
         # period = [2010,2020]
@@ -2539,9 +2539,10 @@ def main():
             
         
         # Comparaison entre typologies
-        if False:
+        if True:
             
-            for building_type in ['SFH','TH','MFH','AB']:
+            # for building_type in ['SFH','TH','MFH','AB']:
+            for building_type in ['TH']:
             
                 heating_needs_TABULA = {}
                 heating_needs_GENMOD = {}

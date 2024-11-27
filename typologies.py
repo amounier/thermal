@@ -105,8 +105,12 @@ class Typology():
         self.converted_attic = bool(params.get('building_converted_attic'))
         
         # je considère les RDC LNC comme des caves
-        if self.type in ['SFH','TH'] and not self.rdc:
+        if self.type in ['SFH'] and not self.rdc:
             self.levels = self.levels - 0.5
+            self.basement = True
+        
+        if self.type in ['TH'] and not self.rdc:
+            self.levels = self.levels + 1 
             self.basement = True
             
         # caractérisation de la mitoyenneté
