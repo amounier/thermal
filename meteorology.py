@@ -584,7 +584,7 @@ def main():
                 
                 
     #%% Caractérisation et étude du flux solaire par orientation
-    if False:
+    if True:
         variables = ['direct_radiation_instant','diffuse_radiation_instant','direct_normal_irradiance_instant']
         city = 'Marseille'
         year = 2022
@@ -600,7 +600,7 @@ def main():
                                xlim=[pd.to_datetime('{}-01-01'.format(year)), pd.to_datetime('{}-12-31'.format(year))],save_fig='{}_{}_{}'.format(c,city,year))
         
         # Étude de l'azimuth et de l'élévation
-        if False:
+        if True:
             warnings.simplefilter("ignore")
     
             dates = data.copy().index
@@ -622,7 +622,7 @@ def main():
                                xlim=[pd.to_datetime('{}-01-01'.format(year)), pd.to_datetime('{}-12-31'.format(year))],save_fig='verif_solar_{}_{}'.format(city,year))
             
             # graphe polaire du parcours du soleil dans l'année
-            if False:
+            if True:
                 fig,ax = plt.subplots(dpi=300,figsize=(5,5),subplot_kw={'projection': 'polar'})
 
                 ax.set_theta_zero_location("N")
