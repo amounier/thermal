@@ -154,7 +154,7 @@ class Behaviour():
         while start_date.dayofweek > 0:
             start_date += np.timedelta64(1, 'D')
             
-        end_date = start_date + 6 * np.timedelta64(1, 'D')
+        end_date = start_date + 7 * np.timedelta64(1, 'D')
         
         data = pd.DataFrame(index=pd.date_range(start=start_date,end=end_date,freq='h'))
         heating_temperature = [self.heating_rules[d.dayofweek+1][d.hour] for d in data.index]
@@ -166,7 +166,7 @@ class Behaviour():
         ax.plot(data.index,data.heating_temperature,label='Heating',color='tab:red')
         ax.plot(data.index,data.cooling_temperature,label='Cooling',color='tab:blue')
         ax.legend()
-        ax.set_ylim(bottom=10.)
+        ax.set_ylim(bottom=10.,top=30)
         ax.set_ylabel('Setpoint temperature (°C)')
         
         locator = mdates.AutoDateLocator()
@@ -203,12 +203,16 @@ def main():
     
     #%% Test de la classe Behaviour
     if True:
-        conventionnel = Behaviour('conventionnel_th-bce_2020')
+        behaviour = 'conventionnel_th-bce_2020'
+        conventionnel = Behaviour(behaviour)
         
         # Affichage des règles de consommation conventionnelle
-        if False:
+        if True:
+            conventionnel.heating_rules = {i:[19]*24 for i in range(1,8)}
+            conventionnel.cooling_rules = {i:[26]*24 for i in range(1,8)}
+            
             conventionnel.plot_rules(figs_folder)
-            conventionnel.get_number_equivalent_adults(0,figs_folder)
+            # conventionnel.get_number_equivalent_adults(0,figs_folder)
         
         from meteorology import get_coordinates, open_meteo_historical_data
         
@@ -220,6 +224,35 @@ def main():
         
         heating_setpoint, cooling_setpoint = conventionnel.get_set_point_temperature(weather_data)
         internal_gains = conventionnel.get_internal_gains(80,weather_data)
+        weather_data['internal_gains'] = internal_gains
+        
+        # Graphe des apports internes
+        if True:
+            start_date = pd.to_datetime('{}-01-01'.format(year)) # de préférence commençant un lundi
+            while start_date.dayofweek > 0:
+                start_date += np.timedelta64(1, 'D')
+                
+            end_date = start_date + 7 * np.timedelta64(1, 'D')
+            
+            data = pd.DataFrame(index=pd.date_range(start=start_date,end=end_date,freq='h'))
+            data = data.join(weather_data[['internal_gains']])
+            
+            
+            fig, ax = plt.subplots(dpi=300,figsize=(5,5))
+            ax.plot(data.index,data.internal_gains,label='Internal gains',color='k')
+            ax.legend()
+            ax.set_ylim(bottom=0.)
+            ax.set_ylabel('Internal gains for a 80m$^2$ dwelling (W)')
+            
+            locator = mdates.AutoDateLocator()
+            # formatter = mdates.ConciseDateFormatter(locator)
+            formatter = mdates.DateFormatter('%a')
+            ax.xaxis.set_major_locator(locator)
+            ax.xaxis.set_major_formatter(formatter)
+            
+            if figs_folder is not None:
+                plt.savefig(os.path.join(figs_folder,'{}.png'.format('{}_internal_gains_rules'.format(behaviour))),bbox_inches='tight')
+            
         
         
         
