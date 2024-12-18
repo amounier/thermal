@@ -546,7 +546,7 @@ def get_solar_absorption_coefficient(typology,wall):
 
 def compute_external_Phi(typology, weather_data, wall):
     # coefficient d'absorption du flux solaire
-    #TODO : à préciser
+    # TODO : à préciser pour les masquages et clarifier les flux solaires diffus
     # alpha = get_solar_absorption_coefficient(typology)
     
     # orientation de la paroi
@@ -573,9 +573,7 @@ def compute_external_Phi(typology, weather_data, wall):
 def get_solar_transmission_factor(typology,weather_data,wall):
     # Dans les règles Th-bat : voir norme NF P50 777, puis norme NF EN 410 
     # TODO à raffiner selon le nombre de couches principalement (et peut-être l'angle d'incidence ?)
-    # solar_factor = 0.5 # g (ratio)
-    solar_factor = 1
-    
+
     wall_orientation = {0:typology.w0_orientation,
                         1:typology.w1_orientation,
                         2:typology.w2_orientation,
@@ -875,13 +873,17 @@ def run_thermal_model(typology, behaviour, weather_data, progressbar=False):
     
     # Variables thermiques vers le haut
     R_uih = compute_R_uih(typology)
-    R_uceiling = (typology.ceiling_U + typology.roof_U)/2
-    R_uroof = R_uceiling
+    R_ucr = (1/(typology.ceiling_U * typology.roof_surface) + 1/(typology.roof_U * typology.roof_surface))
+    R_uceiling = R_ucr/2
+    R_uroof = R_ucr/2
     R_ueh = compute_R_ueh(typology)
     R_uhceiling = R_uih
     R_uhroof = R_uih
     C_c = compute_C_c(typology)
     C_u = compute_C_u(typology)
+    
+    # TODO à ajouter pour les 4 composantes
+    typology.modelled_Uph = 1/(R_uih + R_uceiling + R_uroof + R_ueh)
     
     # Variables thermiques des murs latéraux 
     R_w0w = 1/(typology.windows_U * typology.w0_windows_surface)
@@ -908,6 +910,10 @@ def run_thermal_model(typology, behaviour, weather_data, progressbar=False):
     R_w3eh = compute_R_w3eh(typology)
     C_w3 = compute_C_w3(typology)
     
+    typology.modelled_Umur = 1/(R_w0i + R_w0e + R_w0eh + R_w1i + R_w1e + R_w1eh + R_w2i + R_w3e + R_w3eh + R_w3i + R_w3e + R_w3eh)
+    
+    typology.modelled_Uw = 1/(R_w0w + R_w1w + R_w2w + R_w3w)
+    
     # Variables thermiques vers le bas
     R_fi = compute_Rfi(typology)
     R_dfh = R_uih
@@ -915,6 +921,8 @@ def run_thermal_model(typology, behaviour, weather_data, progressbar=False):
     R_dgh = R_uih
     C_f = compute_C_f(typology)
     C_d = compute_C_d(typology)
+    
+    typology.modelled_Upb = 1/(R_dgh + R_dfh + R_fg + R_fi)
     
     # Variables thermiques du sol
     R_g = compute_R_g(typology)
@@ -2433,7 +2441,7 @@ def main():
         city = 'Beauvais'
         # period = [2010,2020]
         # period = [1990,2000]
-        period = [1990,2020]
+        period = [2010,2020]
         
         # Checkpoint weather data
         weather_data_checkfile = ".weather_data_{}_{}_{}_".format(city,period[0],period[1]) + today + ".pickle"
@@ -2552,7 +2560,7 @@ def main():
                     for level in ['initial','standard','advanced']:
                         typo = Typology(code,level)
                         
-                        heating_needs_TABULA[(code,level)] = typo.heating_needs
+                        heating_needs_TABULA[(code,level)] = typo.tabula_heating_needs
                         
                         tmp_checkfile = ".heating_needs_{}_{}_{}_{}_".format(city,period[0],period[1],building_type) + today + ".pickle"
                         if tmp_checkfile not in os.listdir():
