@@ -94,7 +94,8 @@ class Typology():
         self.surface = params.get('building_surface')
         self.levels = params.get('building_levels')
         self.ground_surface = self.surface/self.levels
-        self.roof_surface = self.ground_surface
+        self.roof_ratio = params.get('building_roof_ratio')
+        self.roof_surface = self.ground_surface * self.roof_ratio
         
         # paramètres d'habitation
         self.rdc = bool(params.get('building_rdc_level'))
@@ -227,7 +228,20 @@ class Typology():
         self.cooler_maximum_power = 10000*self.households # W
         
         # besoins de chauffage TABULA
-        self.heating_needs = params.get('{}_heating_needs'.format(level)) # kWh/m2/yr
+        self.tabula_heating_needs = params.get('{}_heating_needs'.format(level)) # kWh/m2/yr
+        
+        # comparaison des valeurs U
+        self.tabula_Uph = params.get('{}_Uph'.format(level)) # W/m2/K
+        self.tabula_Umur = params.get('{}_Umur'.format(level)) # W/m2/K
+        self.tabula_Uw = params.get('{}_Uw'.format(level)) # W/m2/K
+        self.tabula_Upb = params.get('{}_Upb'.format(level)) # W/m2/K
+        
+        # valeurs U calculées lors de la résolution du modèle thermique
+        self.modelled_Uph = None
+        self.modelled_Uph = None
+        self.modelled_Uph = None
+        self.modelled_Uph = None
+        
 
     def __str__(self):
         return self.code
@@ -591,7 +605,7 @@ def main():
             for level in ['initial','standard','advanced']:
                 typo = Typology(code,level)
                 
-                heating_needs[(code,level)] = typo.heating_needs
+                heating_needs[(code,level)] = typo.tabula_heating_needs
             
         # print(heating_needs)
         
@@ -611,7 +625,7 @@ def main():
         ax.legend()
         ax.set_xticks([(i*7)+2 for i in range(1,11)],['{}.{:02d}'.format(building_type,i) for i in range(1,11)])
         
-        plt.savefig(os.path.join(figs_folder,'{}.png'.format('{}_TABULA_consumption'.format(building_type))),bbox_inches='tight')
+        plt.savefig(os.path.join(figs_folder,'{}.png'.format('{}_TABULA_consumption_tabula_only'.format(building_type))),bbox_inches='tight')
             
     
     tac = time.time()
