@@ -61,6 +61,7 @@ class Behaviour():
             self.heating_rules = None
             self.cooling_rules = None
             self.presence_rules = None
+            self.cst_internal_gains = None
         
     def __str__(self):
         return self.name
@@ -140,9 +141,12 @@ class Behaviour():
                 
                 total_gains = equipment_gains + light_gains + people_gains
                 internal_gains.append(total_gains)
-                
         else:
             internal_gains = [None]*len(weather_data)
+            
+        if self.cst_internal_gains is not None:
+            gains = self.cst_internal_gains*surface
+            internal_gains = [gains]*len(weather_data)
                 
         return internal_gains
         
