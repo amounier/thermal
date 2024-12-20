@@ -37,7 +37,9 @@ class Material():
     """
     Sources principales : 
         https://rt-re-batiment.developpement-durable.gouv.fr/IMG/pdf/2-fascicule_materiaux.pdf
-        https://perso.univ-lemans.fr/~bcasta/Cours%20L3%20Echanges%20thermiques/Thermique%20de%20l'inge%C3%8C%C2%81nieur,%20Annexes.pdf
+        https://perso.univ-lemans.fr/~bcasta/Cours%20L3%20Echanges%20thermiques/Thermique%20de%20l'inge%c3%8c%c2%81nieur,%20Annexes.pdf
+        http://pigo.free.fr/_media/re-caracteristiques-thermiques.pdf
+        + parpaing : Sassine et al 2022 (10.1007/s42452-020-03881-x) + https://www.professionnels-isolation.com/performances-energetiques-parpaing/
         
     """
     def __init__(self,name):
@@ -152,8 +154,11 @@ class Typology():
         
         # caractéristiques du toit
         self.roof_color = params.get('{}_roof_color'.format(level))
-        self.roof_U = params.get('{}_roof_U'.format(level))
-        self.ceiling_U = params.get('{}_ceiling_U'.format(level))
+        # self.roof_U = params.get('{}_roof_U'.format(level))
+        # self.ceiling_U = params.get('{}_ceiling_U'.format(level))
+        self.roof_U = params.get('{}_Uph'.format(level))
+        self.ceiling_U = params.get('{}_Uph'.format(level))
+        
         self.ceiling_structure_material = Material(params.get('building_ceiling_structure_material'))
         self.ceiling_structure_thickness = params.get('building_ceiling_structure_thickness')
         
@@ -209,6 +214,7 @@ class Typology():
         # cf Thbat parois opaques p21
         #  clarifier dans le cas 2D
         # 0.3 + floor height si cave 
+        
         self.floor_ground_depth = 0.3
         if self.basement:
             self.floor_ground_depth += 3
@@ -219,6 +225,7 @@ class Typology():
         self.ground_volume = self.ground_surface * self.ground_depth
         self.floor_structure_material = Material(params.get('building_floor_structure_material'))
         self.floor_structure_thickness = params.get('building_floor_structure_thickness')
+            
         self.floor_insulation_material = Material(params.get('{}_floor_insulation_material'.format(level)))
         self.floor_insulation_thickness = params.get('{}_floor_insulation_thickness'.format(level))
         self.floor_insulation_position = params.get('{}_floor_insulation_position'.format(level))
@@ -238,9 +245,9 @@ class Typology():
         
         # valeurs U calculées lors de la résolution du modèle thermique
         self.modelled_Uph = None
-        self.modelled_Uph = None
-        self.modelled_Uph = None
-        self.modelled_Uph = None
+        self.modelled_Upb = None
+        self.modelled_Umur = None
+        self.modelled_Uw = None
         
 
     def __str__(self):
@@ -547,7 +554,7 @@ def main():
         
     #%% Tests de la classe Typology
     if True:
-        code = 'FR.N.TH.06.Gen'
+        code = 'FR.N.TH.03.Gen'
         typo = Typology(code)
         print(typo)
         
@@ -626,7 +633,55 @@ def main():
         ax.set_xticks([(i*7)+2 for i in range(1,11)],['{}.{:02d}'.format(building_type,i) for i in range(1,11)])
         
         plt.savefig(os.path.join(figs_folder,'{}.png'.format('{}_TABULA_consumption_tabula_only'.format(building_type))),bbox_inches='tight')
+        
+    # Comparaison des valeurs U
+    if True:
+        building_type = 'SFH'
+        element = 'Umur'
+        
+        building_type = 'TH'
+        # building_type = 'MFH'
+        # building_type = 'AB'
+        
+        U_values_dict = {}
+        for i in range(1,11):
+            code = 'FR.N.{}.{:02d}.Gen'.format(building_type,i)
+
+            for level in ['initial','standard','advanced']:
+                typo = Typology(code,level)
+                
+                tabula_element_dict = {'Umur':typo.tabula_Umur,
+                                       'Uph':typo.tabula_Uph,
+                                       'Upb':typo.tabula_Upb,
+                                       'Uw':typo.tabula_Uw}
+                
+                U_values_dict[(code,level)] = tabula_element_dict.get(element)
             
+        # print(U_values_dict)
+        
+        fig,ax = plt.subplots(figsize=(15,5),dpi=300)
+        for i in range(1,11):
+            j = i*7
+            X = [j,j+2,j+4]
+            Y = [U_values_dict.get(('FR.N.{}.{:02d}.Gen'.format(building_type,i),e)) for e in ['initial','standard','advanced']]
+            
+            if i == 1:
+                ax.plot(X,Y,color='k',ls=':',marker='o',label='TABULA')
+            else:
+                ax.plot(X,Y,color='k',ls=':',marker='o')
+        
+        element_label_dict = {'Umur':'Walls U-value (W.m$^{-2}$.K$^{-1}$)',
+                              'Uph':'Roof U-value (W.m$^{-2}$.K$^{-1}$)',
+                              'Upb':'Floor U-value (W.m$^{-2}$.K$^{-1}$)',
+                              'Uw':'Windows U-value (W.m$^{-2}$.K$^{-1}$)'}
+        
+        ax.set_ylim(bottom=0.)
+        ax.set_ylabel(element_label_dict.get(element))
+        ax.legend()
+        ax.set_xticks([(i*7)+2 for i in range(1,11)],['{}.{:02d}'.format(building_type,i) for i in range(1,11)])
+        
+        plt.savefig(os.path.join(figs_folder,'{}.png'.format('{}_TABULA_Umur_tabula_only'.format(building_type))),bbox_inches='tight')
+                
     
     tac = time.time()
     print('Done in {:.2f}s.'.format(tac-tic))
