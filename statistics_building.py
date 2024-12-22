@@ -135,7 +135,7 @@ def main():
 
     external_disk_connection = 'MPBE' in os.listdir('/media/amounier/')
     
-#%% Statistiques sur les systèmes de chauffage de la base DPE
+    #%% Statistiques sur les systèmes de chauffage de la base DPE
     if False:
         
         # Génération des fichiers statistiques par départements
@@ -733,7 +733,38 @@ def main():
             
             plt.savefig(os.path.join(figs_folder,'{}.png'.format('surface_consumption_dep{}'.format(departement.code))), bbox_inches='tight')
             plt.show()
-            
+    
+    #%% Statistiques des besoins de chauffage DPE par "typologies"
+    if True:
+        dpe = pd.read_csv(os.path.join('data','DPE','dpe-v2-logements-existants.csv'))
+        dpe['Bch'] = dpe.Besoin_chauffage/dpe.Surface_habitable_logement/1000
+        dpe['Bfr'] = np.asarray([e if isinstance(e,float) else  float(e.replace(',','.')) for e in dpe.Besoin_refroidissement])/dpe.Surface_habitable_logement
+        dpe = dpe[['Période_construction','Type_bâtiment','Zone_climatique_','Bfr','Bch']]
+        
+        # for p in list(set(dpe.Période_construction.values)):
+        #     for bt in ['appartement','maison']:
+        #         dpe_filtered = dpe[(dpe.Période_construction==p)&(dpe.Type_bâtiment==bt)&(dpe.Zone_climatique_=='H1a')]
+        
+        # Bch_corr = []
+        # for bch, p in zip(dpe.Bch,dpe.Période_construction):
+        #     if p == '1948-1974':
+        #         # bch /= 10
+        #     Bch_corr.append(bch)
+        # dpe['Bch'] = Bch_corr
+        
+        fig,ax = plt.subplots(figsize=(5,5),dpi=300)
+        sns.histplot(dpe[dpe.Zone_climatique_=='H1a'],x='Bch',hue='Période_construction',ax=ax,stat='percent')
+        ax.set_xlim([0,200])
+        plt.show()
+        # stats_dpe = dpe.groupby(by=['Période_construction','Zone_climatique_','Type_bâtiment'])[['Bch','Bfr']].mean()
+        
+        
+        
+        # print(stats_dpe)
+        
+        # GET https://data.ademe.fr/data-fair/api/v1/datasets/dpe-v2-logements-existants/lines?select=Surface_habitable_logement%2CBesoin_chauffage%2CType_b%C3%A2timent%2CP%C3%A9riode_construction%2CZone_climatique_%2CBesoin_refroidissement    
+
+
         
     tac = time.time()
     print('Done in {:.2f}s.'.format(tac-tic))
