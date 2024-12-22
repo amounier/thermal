@@ -116,7 +116,13 @@ def get_P_cooler(Ti, Ti_max, Pmax, method='all_or_nothing'):
 
 
 def get_P_vmeca(Ti,Te,P_heater,P_cooler,typology):
-    U_air = get_ventilation_minimum_air_flow(typology) * AIR_THERMAL_CAPACITY * (1-typology.ventilation_efficiency)
+    minimal_ventilation_air_flow = get_ventilation_minimum_air_flow(typology)
+    
+    # s'il n'y a pas de ventilation, flux réduit à 0
+    if typology.ventilation_efficiency == 0.0:
+        minimal_ventilation_air_flow = 0
+        
+    U_air = minimal_ventilation_air_flow * AIR_THERMAL_CAPACITY * (1-typology.ventilation_efficiency)
     
     # bypass et surventilation nocturne
     f_sv = 1
@@ -2528,6 +2534,7 @@ def main():
         # Dans le rapport de Pougets, apports internes constants, de 4.17 W/m2
         conventionnel.cst_internal_gains = 4.17 # W/m2
         
+        
         # Premier test du modèle général
         if False:
             # Définition de la typologie
@@ -2613,7 +2620,7 @@ def main():
         if True:
             
             for building_type in ['SFH','TH','MFH','AB']:
-            # for building_type in ['TH']:
+            # for building_type in ['SFH']:
             
                 heating_needs_TABULA = {}
                 Uph_TABULA = {}
@@ -2632,6 +2639,21 @@ def main():
     
                     for level in ['initial','standard','advanced']:
                         typo = Typology(code,level)
+                        
+                        
+                        # "Facteur de réduction de température nocturne pour des locaux partiellement chauffés"
+                        nocturnal_hours = list(range(7)) + [22,23]
+                        if typo.w0_insulation_thickness == 0.:
+                            nocturnal_ratio = 0.85
+                        else:
+                            nocturnal_ratio = 0.95
+                        conventionnel.heating_rules = {i:[19]*24 for i in range(1,8)}
+                        conventionnel.heating_rules = {i:[e*nocturnal_ratio if h in nocturnal_hours else e for h,e in enumerate(conventionnel.heating_rules.get(i))] for i in range(1,8)}
+                        
+                        # graphe des températures de consigne 
+                        if False:
+                            if building_type == 'SFH' and i == 1 and level == 'initial':
+                                conventionnel.plot_rules(figs_folder=figs_folder)
                         
                         heating_needs_TABULA[(code,level)] = typo.tabula_heating_needs
                         Uph_TABULA[(code,level)] = typo.tabula_Uph
@@ -2715,9 +2737,10 @@ def main():
                                       'Upb':'Floor U-value (W.m$^{-2}$.K$^{-1}$)',
                                       'Uw':'Windows U-value (W.m$^{-2}$.K$^{-1}$)'}
                 
+                
                 for element in ['Umur', 'Uph', 'Upb', 'Uw']:
-                # for element in ['Umur']:
-                    fig,ax = plt.subplots(figsize=(15,5),dpi=300)
+                # for element in []:
+                    fig,ax = plt.subplots(figsize=(10,5),dpi=300)
                     for i in range(1,11):
                         code = 'FR.N.{}.{:02d}.Gen'.format(building_type,i)
                         element_GENMOD = element_GENMOD_dict.get(element)
