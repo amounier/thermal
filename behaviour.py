@@ -17,6 +17,7 @@ import matplotlib.dates as mdates
 class Behaviour():
     def __init__(self,name):
         self.name = name
+        self.cst_internal_gains = None
         
         if self.name == 'conventionnel_th-bce_2020':
             self.heating_rules = {1:[19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 16, 16, 16, 16, 16, 16, 16, 16, 19, 19, 19, 19, 19, 19],
@@ -61,7 +62,6 @@ class Behaviour():
             self.heating_rules = None
             self.cooling_rules = None
             self.presence_rules = None
-            self.cst_internal_gains = None
         
     def __str__(self):
         return self.name
@@ -225,6 +225,9 @@ def main():
         variables = ['temperature_2m']
         coordinates = get_coordinates(city)
         weather_data = open_meteo_historical_data(longitude=coordinates[0], latitude=coordinates[1], year=year, hourly_variables=variables)
+        
+        # Graphe pour des apports internes constants
+        conventionnel.cst_internal_gains = 4.17 # W/m2
         
         heating_setpoint, cooling_setpoint = conventionnel.get_set_point_temperature(weather_data)
         internal_gains = conventionnel.get_internal_gains(80,weather_data)
