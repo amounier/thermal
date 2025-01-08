@@ -19,7 +19,7 @@ from administrative import France, Climat, Departement, draw_departement_map, dr
 from climate_zone_characterisation import get_departement_temperature
 
 
-def get_cee_statistics(force=False):
+def get_cee_statistics(fiches=['BAR-TH-104','BAR-TH-129','BAR-TH-150','BAR-TH-159'],force=False):
     """
     Récuparation des données de délivrance des CEE par semestre
     Données brutes disponibles ici : https://www.ecologie.gouv.fr/politiques-publiques/comites-pilotage-lettres-dinformation-statistiques-du-dispositif-certificats
@@ -41,8 +41,6 @@ def get_cee_statistics(force=False):
         
         france = France()
         departements = france.departements
-        
-        fiches = ['BAR-TH-104','BAR-TH-129','BAR-TH-150','BAR-TH-159',]
         
         cee_folder = os.path.join('data','CEE',"SDB délivrances-date d'engagement-Standards-par semestre d'engagement")
         files = [e for e in sorted(os.listdir(cee_folder)) if not e.startswith('.')]
@@ -104,7 +102,7 @@ def main():
     # https://www.statistiques.developpement-durable.gouv.fr/les-renovations-energetiques-aidees-du-secteur-residentiel-entre-2016-et-2021?rubrique=&dossier=843982
     
     # moins de rénovations car climat doux dans le sud : vraiment ?
-    if True:
+    if False:
         data = pd.read_excel(os.path.join('data','SDES','graphiques_onre_2016_2021.xlsx'), sheet_name='Carte1', skiprows=2)
         data['Département'] = [Departement(dep) for dep in data.Département]
         
@@ -147,17 +145,17 @@ def main():
     #%% TREMI
     if False:
         pass
-    s
+    
     
     #%% CEE
-    if False:
+    if True:
         # Pour les PAC air-air : BAR-TH-129 ( = clim fixe)
-        # Pour les PAC air-eau ou eau-eau : BAR-TH-104
+        # Pour les PAC air-eau ou eau-eau : BAR-TH-104 abrogée au 1er janvier 2024
         # PAC hybride individuelle (air-eau + gaz) : BAR-TH-159
         # PAC collectives à absorption air/eau : BAR-TH-150
         
-        fiches = ['BAR-TH-104','BAR-TH-129','BAR-TH-150','BAR-TH-159',]
-        cee_data = get_cee_statistics()
+        fiches = ['BAR-TH-104','BAR-TH-129','BAR-TH-150','BAR-TH-159']
+        cee_data = get_cee_statistics(fiches=fiches, force=False)
         
         # données de 2023 par encore consolidées
         cee_data = cee_data[cee_data.date.dt.year<2023]
