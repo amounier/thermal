@@ -35,6 +35,8 @@ dict_name_dep_code_dep = {n:c for c,n in dict_code_dep_name_dep.items()}
 dict_code_dep_name_reg = {d:r for d,r in zip(adm.code_departement,adm.nom_region)}
 dict_code_dep_geom_dep = {d:g for d,g in zip(geo.code,geo.geometry)}
 dict_code_dep_code_zcl = {d:c for d,c in zip(zcl.code_departement,zcl.zone_climatique)}
+dict_code_zcl_code_zcw = {e:e[:2] for e in ['H1a', 'H1b', 'H1c', 'H2a', 'H2b', 'H2c', 'H2d', 'H3']}
+dict_code_zcl_code_zcs = {e:'d' if e[-1]=='3' else e[-1] for e in ['H1a', 'H1b', 'H1c', 'H2a', 'H2b', 'H2c', 'H2d', 'H3']}
 
 prf = pd.read_csv(os.path.join('data','INSEE','decoupage_administratif','prefectures.csv'))
 dict_name_dep_name_prf = {n:p for n,p in zip(prf.Département,prf.Préfecture)}
@@ -141,7 +143,32 @@ class Climat:
             self.codint *= 10
         
     def __str__(self):
-        return self.name
+        return self.code
+    
+    
+class Climat_winter:
+    def __init__(self,code):
+        self.code = code
+        self.climats = [Climat(k) for k,e in dict_code_zcl_code_zcw.items() if e == self.code]
+        self.geometry = unary_union([d.geometry for d in self.climats])
+        self.codint = int(''.join([str({chr(ord('@')+n).lower():n for n in range(1,27)}.get(l.lower(),l)) for l in self.code]))
+        # gestion du climat H3
+        if self.codint<100:
+            self.codint *= 10
+        
+    def __str__(self):
+        return self.code
+    
+
+class Climat_summer:
+    def __init__(self,code):
+        self.code = code
+        self.climats = [Climat(k) for k,e in dict_code_zcl_code_zcs.items() if e == self.code]
+        self.geometry = unary_union([d.geometry for d in self.climats])
+        self.codint = int(''.join([str({chr(ord('@')+n).lower():n for n in range(1,27)}.get(l.lower(),l)) for l in self.code]))
+        
+    def __str__(self):
+        return self.code
     
     
     
@@ -149,6 +176,8 @@ class France:
     def __init__(self):
         self.departements = [Departement(e) for e in list_dep_code]
         self.climats = sorted(list(set([e.climat for e in self.departements])))
+        self.climats_winter = ['H1','H2','H3']
+        self.climats_summer = ['a','b','c','d']
         
 
 
@@ -194,7 +223,7 @@ def draw_departement_map(dict_dep,figs_folder,cbar_min=0,cbar_max=1.,
 def draw_climat_map(dict_dep,figs_folder,cbar_min=0,cbar_max=1.,
                     automatic_cbar_values=False, cbar_label=None, 
                     map_title=None,save=None, cmap=None,zcl_label=False,
-                    add_city_points=None, add_legend=True):
+                    add_city_points=None, add_legend=True,lw=None):
     
     fig,ax = blank_national_map()
     
@@ -218,7 +247,7 @@ def draw_climat_map(dict_dep,figs_folder,cbar_min=0,cbar_max=1.,
     # print(plotter.color)
     
     plotter.plot(color=plotter.color, ax=ax, transform=ccrs.PlateCarree(),)
-    plotter.boundary.plot(ax=ax, transform=ccrs.PlateCarree(), color='k',lw=0.5)
+    plotter.boundary.plot(ax=ax, transform=ccrs.PlateCarree(), color='k',lw=lw)
     
     if zcl_label:
         for zcl in dict_dep.keys():
@@ -279,6 +308,7 @@ def main():
         # print(dep)
         draw_departement_map({dep:0.5}, figs_folder=figs_folder, save='test_{}'.format(dep.code))
     
+    # zone climatique 8
     if False:
         zcl = Climat('H1a')
         # print(zcl.code)
@@ -291,6 +321,25 @@ def main():
                         add_city_points=['Beauvais'])
         
         # [print(d) for d in zcl.departements]
+        
+    # zones climatiques d'été et d'hiver
+    if False:
+       france = France()
+       
+       climats_winter = [Climat_winter(e) for e in france.climats_winter]
+       draw_climat_map({c:None for c in climats_winter},zcl_label=True, 
+                       figs_folder=figs_folder, save='zcl_winter',
+                       add_legend=False,lw=0.7)
+       
+       climats_summer = [Climat_summer(e) for e in france.climats_summer]
+       draw_climat_map({c:None for c in climats_summer},zcl_label=True, 
+                       figs_folder=figs_folder, save='zcl_summer',
+                       add_legend=False,lw=0.7)
+       
+       climats = [Climat(e) for e in france.climats]
+       draw_climat_map({c:None for c in climats},zcl_label=True, 
+                       figs_folder=figs_folder, save='zcl',
+                       add_legend=False,lw=0.7)
         
     #%% Téléchargement des préfectures pour intégratiuon à département
     if False:
