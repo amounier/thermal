@@ -68,11 +68,15 @@ def plot_timeserie(data,figsize=(5,5),dpi=300,labels=None,figs_folder=None,
     return fig,ax
 
 
+def get_extent():
+    extent = [-5, 9.8, 41.3, 51.3]
+    return extent
+
 
 def blank_national_map():
     fig = plt.figure(figsize=(7,7), dpi=300)
     ax = fig.add_subplot(1, 1, 1, projection=ccrs.Mercator())
-    ax.set_extent([-5, 9.8, 41.3, 51.3])
+    ax.set_extent(get_extent())
     
     ax.add_feature(cfeature.OCEAN, color='lightgrey',zorder=2)
     ax.add_feature(cfeature.COASTLINE,zorder=5)
