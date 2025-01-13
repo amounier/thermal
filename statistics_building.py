@@ -81,36 +81,135 @@ def compute_heater_statistics(dep_code,external_disk,output_folder):
     return
 
 
-def test_DPE_stats(dep_code,external_disk,output_folder,period='1948-1974'):
-    #TODO à completer pour les MFH et AB
-    dep_dpe_id_typologies_dict_name = 'dep{}_dpe_id_typologies_dict'.format(dep_code)
-    dep_dpe_id_typologies_dict = {}
+
+def concatenate_dpe_statistics(dep_code,external_disk):
+    reformat_bdnb_dpe_file = 'dpe_statistics.parquet'
+    data_path = os.path.join('data','BDNB')
     
-    dpe, rel, _ = get_bdnb(dep=dep_code,external_disk=external_disk)
+    dpe, rel, bgc = get_bdnb(dep=dep_code,external_disk=external_disk)
     dpe = dpe[dpe.type_dpe.isin(['dpe arrêté 2021 3cl logement','dpe arrêté 2021 re2020 logement'])]
     
-    variables = ['identifiant_dpe','type_batiment_dpe', 'surface_mur_deperditif', 'periode_construction_dpe']
+    # batiment_groupe_id, ffo_bat_nb_log
     
-    # supp_variables_sec_heater = ['type_energie_chauffage_appoint',
-    #                              'type_generateur_chauffage_appoint']
+    variables = ['identifiant_dpe',
+                 'type_batiment_dpe',
+                 'periode_construction_dpe',
+                 'annee_construction_dpe',
+                 'nombre_niveau_logement',
+                 'surface_habitable_immeuble',
+                 'surface_habitable_logement',
+                 'classe_bilan_dpe',
+                 'classe_emission_ges',
+                 'conso_5_usages_ep_m2',
+                 'conso_5_usages_ef_m2',
+                 'type_installation_chauffage',
+                 'type_energie_chauffage',
+                 'type_generateur_chauffage',
+                 'type_energie_chauffage_appoint',
+                 'type_generateur_chauffage_appoint',
+                 'type_energie_climatisation',
+                 'type_generateur_climatisation',
+                 'type_ventilation',
+                 'surface_vitree_nord',
+                 'surface_vitree_sud',
+                 'surface_vitree_ouest',
+                 'surface_vitree_est',
+                 'traversant',
+                 'uw',
+                 'facteur_solaire_baie_vitree',
+                 'epaisseur_isolation_mur_exterieur_estim',
+                 'materiaux_structure_mur_exterieur',
+                 'epaisseur_structure_mur_exterieur',
+                 'type_isolation_mur_exterieur',
+                 'surface_mur_deperditif',
+                 'u_mur_exterieur',
+                 'l_orientation_mur_exterieur',
+                 'type_isolation_plancher_bas',
+                 'surface_plancher_bas_deperditif',
+                 'u_plancher_bas_final_deperditif',
+                 'surface_plancher_bas_totale',
+                 'type_isolation_plancher_haut',
+                 'type_plancher_haut_deperditif',
+                 'surface_plancher_haut_totale',
+                 'surface_plancher_haut_deperditif',
+                 'u_plancher_haut_deperditif',
+                 'surface_porte',
+                 'u_porte',
+                 ]
     
-    dpe = dpe[variables]
-    dpe = dpe[(dpe.type_batiment_dpe=='appartement')&(dpe.periode_construction_dpe==period)]
-    dpe = dpe.compute()
+    dpe = dpe[variables].compute()
     
-    rel = rel[['batiment_groupe_id', 'identifiant_dpe']].dropna().set_index('identifiant_dpe')['batiment_groupe_id'].compute().to_dict()
+    dpe['mitoyennete'] = [not str(e).startswith('(4') for e in dpe.l_orientation_mur_exterieur]
+    dpe['departement'] = [dep_code]*len(dpe)
     
-    for dpe_id, smd in zip(dpe.identifiant_dpe,dpe.surface_mur_deperditif):
-        dep_dpe_id_typologies_dict[rel.get(dpe_id)] = smd
+    tabula_construction_period_dict = {'avant 1914':[-np.inf,1914],
+                                       '1914-1948':[1914,1948],
+                                       '1948-1967':[1948,1967],
+                                       '1967-1974':[1967,1974],
+                                       '1974-1981':[1974,1981],
+                                       '1981-1989':[1981,1989],
+                                       '1989-1999':[1989,1999],
+                                       '1999-2005':[1999,2005],
+                                       '2005-2012':[2005,2012],
+                                       '2012-2021':[2012,2021],
+                                       'après 2021':[2021,np.inf],}
+    
+    period_construction_list = [0]*len(dpe)
+    for idx,cy in enumerate(dpe.annee_construction_dpe.values):
+        if np.isnan(cy):
+            period_construction_list[idx] = np.nan
+            continue
+        
+        for k,(y0,y1) in tabula_construction_period_dict.items():
+            if cy >= y0 and cy < y1:
+                period_construction_list[idx] = k
+                
+    dpe['periode_construction_tabula'] = period_construction_list
+    # print(dpe.periode_construction_tabula.value_counts())
+    
+    dpe = dpe.reset_index().drop(columns=['index'])
+    
+    if reformat_bdnb_dpe_file in os.listdir(data_path):
+        dpe.to_parquet(os.path.join(data_path,reformat_bdnb_dpe_file), engine='fastparquet', append=True)
+    else:
+        dpe.to_parquet(os.path.join(data_path,reformat_bdnb_dpe_file), engine='fastparquet')
+                    
+    
+    return 
+    
+    
+    
+
+# def test_DPE_stats(dep_code,external_disk,output_folder,period='1948-1974'):
+#     #TODO à completer pour les MFH et AB
+#     dep_dpe_id_typologies_dict_name = 'dep{}_dpe_id_typologies_dict'.format(dep_code)
+#     dep_dpe_id_typologies_dict = {}
+    
+#     dpe, rel, _ = get_bdnb(dep=dep_code,external_disk=external_disk)
+#     dpe = dpe[dpe.type_dpe.isin(['dpe arrêté 2021 3cl logement','dpe arrêté 2021 re2020 logement'])]
+    
+#     variables = ['identifiant_dpe','type_batiment_dpe', 'surface_mur_deperditif', 'periode_construction_dpe']
+    
+#     # supp_variables_sec_heater = ['type_energie_chauffage_appoint',
+#     #                              'type_generateur_chauffage_appoint']
+    
+#     dpe = dpe[variables]
+#     dpe = dpe[(dpe.type_batiment_dpe=='appartement')&(dpe.periode_construction_dpe==period)]
+#     dpe = dpe.compute()
+    
+#     rel = rel[['batiment_groupe_id', 'identifiant_dpe']].dropna().set_index('identifiant_dpe')['batiment_groupe_id'].compute().to_dict()
+    
+#     for dpe_id, smd in zip(dpe.identifiant_dpe,dpe.surface_mur_deperditif):
+#         dep_dpe_id_typologies_dict[rel.get(dpe_id)] = smd
    
-    # enregistrement comme pickle
-    now_ts = datetime.now().strftime("%Y-%m-%dT%H")
-    pickle_file_name = os.path.join(output_folder, dep_dpe_id_typologies_dict_name + period + ".pickle")
-    pickle.dump((dep_dpe_id_typologies_dict), open(pickle_file_name, "wb"))
+#     # enregistrement comme pickle
+#     now_ts = datetime.now().strftime("%Y-%m-%dT%H")
+#     pickle_file_name = os.path.join(output_folder, dep_dpe_id_typologies_dict_name + period + ".pickle")
+#     pickle.dump((dep_dpe_id_typologies_dict), open(pickle_file_name, "wb"))
     
-    # energy_needs_dict_1, energy_needs_dict_2 = pickle.load(open('energy_needs_2024-10-17T04.pickle', 'rb'))
+#     # energy_needs_dict_1, energy_needs_dict_2 = pickle.load(open('energy_needs_2024-10-17T04.pickle', 'rb'))
     
-    return
+#     return
 
 
 #%% ===========================================================================
@@ -605,6 +704,103 @@ def main():
         #               cbar_label='Surface déperditive de murs (m$^2$)',
         #               figsize=10)
         # plt.show()
+        
+        
+        
+    #%% Statistiques DPE par typologies 
+    if True:
+        
+        reformat_bdnb_dpe_file = 'dpe_statistics.parquet'
+        
+        if reformat_bdnb_dpe_file not in os.listdir(os.path.join('data','BDNB')) and external_disk_connection:
+            france = France()
+            for dep in tqdm.tqdm(france.departements):
+                concatenate_dpe_statistics(dep.code, 
+                                           external_disk=external_disk_connection)
+                
+        dpe = pd.read_parquet(os.path.join('data','BDNB',reformat_bdnb_dpe_file))
+        
+        # print(dpe.departement.value_counts())
+        
+        # représentativité et écarts par rapport à la distribution par étiquette
+        if False:
+            # cartes 
+            if True:
+                representativity_path = os.path.join('data','BDNB','representativity.csv')
+                representativity = pd.read_csv(representativity_path)
+                representativity['dep_code'] = [Departement(d).code for d in representativity.departement]
+                
+                departements_dict_maison = {}
+                departements_dict_appart = {}
+                
+                for dep in France().departements:
+                    representativity_dep = representativity[representativity.dep_code==dep.code]
+                    
+                    rep_maison = representativity_dep[representativity_dep.type_batiment_dpe=='maison']
+                    rep_maison = (rep_maison.nb_logements_dpe.values[0]/rep_maison.nb_logements_bdnb.values[0])*100
+                    rep_appart = representativity_dep[representativity_dep.type_batiment_dpe=='appartement']
+                    rep_appart = (rep_appart.nb_logements_dpe.values[0]/rep_appart.nb_logements_bdnb.values[0])*100
+                    
+                    departements_dict_maison[dep] = rep_maison
+                    departements_dict_appart[dep] = rep_appart
+                
+                rep_maison_france = representativity[representativity.type_batiment_dpe=='maison'].nb_logements_dpe.sum()/representativity[representativity.type_batiment_dpe=='maison'].nb_logements_bdnb.sum()
+                rep_appart_france = representativity[representativity.type_batiment_dpe=='appartement'].nb_logements_dpe.sum()/representativity[representativity.type_batiment_dpe=='appartement'].nb_logements_bdnb.sum()
+                
+                draw_departement_map(departements_dict_maison, figs_folder,
+                                     map_title='Single-family (mean : {:.1f}%)'.format(rep_maison_france*100),
+                                     cbar_label='Representativity (%)',
+                                     automatic_cbar_values=True,
+                                     # cbar_min=0,cbar_max=50.,
+                                     save='carte_repr_maison_dpe-BDNB')
+                plt.show()
+                
+                draw_departement_map(departements_dict_appart, figs_folder,
+                                     map_title='Multi-family (mean : {:.1f}%)'.format(rep_appart_france*100),
+                                     cbar_label='Representativity (%)',
+                                     automatic_cbar_values=True,
+                                     # cbar_min=0,cbar_max=50.,
+                                     save='carte_repr_appartement_dpe-BDNB')
+                plt.show()
+            
+            # histogramme etiquette
+            if True:
+                etiquette_colors_dict = {'A':(0, 156, 109),'B':(82, 177, 83),'C':(120, 189, 118),'D':(244, 231, 15),'E':(240, 181, 15),'F':(235, 130, 53),'G':(215, 34, 31)}
+                etiquette_colors_dict = {k: tuple(map(lambda x: x/255, v)) for k,v in etiquette_colors_dict.items()}
+                
+                sdes_eti = pd.read_excel(os.path.join('data','SDES','parc_logements_dpe_2023.xlsx'),sheet_name='Graphique_1',skipfooter=8,skiprows=1)
+                sdes_eti = sdes_eti.rename(columns={'N':'households','%':'percentage'})
+                sdes_eti['Source'] = ['SDES 2023']*len(sdes_eti)
+                
+                counter = dpe.classe_bilan_dpe.value_counts().to_dict()
+                bdnb_dpe = []
+                for e in sdes_eti['Étiquette DPE']:
+                    bdnb_dpe.append(counter.get(e)/sum(list(counter.values()))*100)
+                sdes_eti['percentage_dpe'] = bdnb_dpe
+                sdes_eti['source_dpe'] = ['BDNB DPE']*len(sdes_eti)
+                
+                plotter = pd.concat([sdes_eti[['Étiquette DPE','percentage','Source']],
+                                     sdes_eti[['Étiquette DPE','percentage_dpe','source_dpe']].rename(columns={'percentage_dpe':'percentage','source_dpe':'Source'})])
+                
+                fig,ax = plt.subplots(figsize=(5,5),dpi=300)
+                sns.barplot(plotter,x='Étiquette DPE',y='percentage',hue='Source',
+                            ax=ax,palette='viridis')
+                # sdes_eti[['Étiquette DPE','percentage','percentage_dpe']].plot.bar('Étiquette DPE',ax=ax)
+                # plt.xticks(rotation=90)
+                ax.set_xlabel('EPC label')
+                ax.set_ylabel('Representation percentage (%)')
+                plt.savefig(os.path.join(figs_folder,'DPE_distribution_dpe_france.png'),bbox_inches='tight')
+                plt.show()
+    
+        # Statistiques du pourcentage de typologies en France et par régions climatiques etc
+        dpe['surface_habitable_logement'] = dpe.surface_habitable_logement.clip(upper=300)
+        dpe['surface_habitable_immeuble'] = dpe.surface_habitable_immeuble.clip(upper=7000)
+        
+        # dpe['nombre_logements'] = dpe.surface_habitable_immeuble/dpe.surface_habitable_logement
+        # dpe['nombre_logements'] = dpe['nombre_logements'].clip(upper=200.)
+        
+        # sns.histplot(dpe.surface_habitable_logement)
+    
     
     #%% Lien entre les étiquettes DPE et la surface des logements, lien entre la période de construction et la surface des logements 
     # Regarder les trois éléments les uns les autres
@@ -735,7 +931,7 @@ def main():
             plt.show()
     
     #%% Statistiques des besoins de chauffage DPE par "typologies"
-    if True:
+    if False:
         dpe = pd.read_csv(os.path.join('data','DPE','dpe-v2-logements-existants.csv'))
         dpe['Bch'] = dpe.Besoin_chauffage/dpe.Surface_habitable_logement/1000
         dpe['Bfr'] = np.asarray([e if isinstance(e,float) else  float(e.replace(',','.')) for e in dpe.Besoin_refroidissement])/dpe.Surface_habitable_logement

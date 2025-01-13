@@ -30,6 +30,9 @@ dependencies:
   - geopy
   - shapely
   - cdsapi
+  - fastparquet
+  - pytables
+  - pyarrow
  # - requests_cache
  # - pip:
   #	- retry-requests
