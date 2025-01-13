@@ -143,7 +143,7 @@ def main():
             
         
     #%% TREMI
-    if False:
+    if True:
         tremi = pd.read_csv(os.path.join('data','TREMI','tremi_2020_metropole_opda.csv'), na_values=['_NC_', 'NC', '_NR_'], low_memory=False).dropna(axis=1, how='all')
         tremi = tremi[tremi.treg!=7]
         
@@ -282,9 +282,46 @@ def main():
         print('Pourcentage de rénovation énergétique : {:.1f}%'.format(ratio_insulation*100))
         
         
+        # caractérisation de l'effet de la période de construction sur la réalisation de travaux 
+        # (et en séparant par remplacement chauffage et d'isolation)
+        if True:
+            tremi['Q102'] = pd.Categorical([dict_tremi_Q102_en.get(e,np.nan) for e in tremi['Q102']], list(dict_tremi_Q102_en.values()))
+            tremi_insulation['Q102'] = pd.Categorical([dict_tremi_Q102_en.get(e,np.nan) for e in tremi_insulation['Q102']], list(dict_tremi_Q102_en.values()))
+            for nba in range(1,13):
+                tremi_insulation['Q1_{}'.format(nba)] = pd.Categorical([dict_tremi_Q1_en.get(e,np.nan) for e in tremi_insulation['Q1_{}'.format(nba)]], list(dict_tremi_Q1_en.values()))
+                
+            list_ratio_reno = [0]*len(dict_tremi_Q102_en.keys())
+            for idx,(pi,p) in enumerate(dict_tremi_Q102_en.items()):
+                ratio_reno = tremi_insulation[tremi_insulation.Q102==p].wCal.sum() / tremi[tremi.Q102==p].wCal.sum()
+                list_ratio_reno[idx] = ratio_reno*100
+                
+            # ajout :
+                # dont travaux isolation
+            
+            filter_thermal_insulation = [False]*len(tremi_insulation)
+            for i in tqdm.tqdm(range(len(tremi_insulation))):
+                filter_thermal_insulation[i] = any(['insulation' in str(e) for e in tremi_insulation[['Q1_{}'.format(nba) for nba in range(1,13)]].iloc[i].to_list()])
+            tremi_insulation_insulation = tremi_insulation[np.asarray(filter_thermal_insulation)]
+            
+            list_ratio_insulation = [0]*len(dict_tremi_Q102_en.keys())
+            for idx,(pi,p) in enumerate(dict_tremi_Q102_en.items()):
+                ratio_insu = tremi_insulation_insulation[tremi_insulation_insulation.Q102==p].wCal.sum() / tremi[tremi.Q102==p].wCal.sum()
+                list_ratio_insulation[idx] = ratio_insu*100
+                
+            ratio_insulation_insulation = tremi_insulation_insulation.wCal.sum() / tremi.wCal.sum()
+            
+            fig,ax = plt.subplots(dpi=300,figsize=(10,5))
+            ax.bar(list(dict_tremi_Q102_en.values()),list_ratio_reno,label='Energy efficiency renovation (total = {:.1f}%)'.format(ratio_insulation*100))
+            ax.bar(list(dict_tremi_Q102_en.values()),list_ratio_insulation,label='including thermal insulation (total = {:.1f}%)'.format(ratio_insulation_insulation*100))
+            ax.set_ylim(bottom=0.)
+            ax.legend()
+            ax.set_ylabel('Percentage of respondents (%)')
+            ax.set_xlabel('Construction period')
+            plt.savefig(os.path.join(figs_folder,'tremi_renovation_and_insulation_construction_period.png'), bbox_inches='tight')
+            plt.show()
         
         # caractérisation des motivations de travaux ou non
-        if True:
+        if False:
             pd.options.mode.chained_assignment = None  # default='warn'
             
             # pourcentage de non renovation (application des pondérations)
@@ -454,7 +491,7 @@ def main():
             
         
         # Caractérisation des gestes de rénovations
-        if True:
+        if False:
             tremi_insulation = pickle.load(open(os.path.join(tremi_reno_path,tremi_reno_file), 'rb'))
             pd.options.mode.chained_assignment = None  # default='warn'
             
