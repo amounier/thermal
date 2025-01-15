@@ -141,6 +141,9 @@ class Climat:
         # gestion du climat H3
         if self.codint<100:
             self.codint *= 10
+            
+        # TODO : ville centrale de la zone
+        # (prefecture du departement dont le centroid est le plus proche du centroid du climat)
         
     def __str__(self):
         return self.code
