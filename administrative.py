@@ -17,6 +17,8 @@ import cartopy.crs as ccrs
 from shapely.ops import unary_union
 from geopy.geocoders import Nominatim
 from geopy.exc import GeocoderUnavailable
+from scipy.spatial.distance import euclidean
+import numpy as np
 
 from utils import blank_national_map
 
@@ -56,7 +58,7 @@ list_dep_code = ['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11
 # rajouter une classe France pour les stats nationale par exemple
 # rajouter une classe city pour faire le lien avec les données météo
     
-def get_coordinates(city):
+def get_coordinates(city,max_attempt=10):
     """
     Récupération des coordonnées d'une ville via l'API OSM. 
 
@@ -73,11 +75,104 @@ def get_coordinates(city):
         DESCRIPTION.
 
     """
-    coordinates_dict = {'Paris':(2.320041, 48.85889),
-                        'Marseille':(5.369953, 43.296174),
-                        'Brest':(-4.486009, 48.390528)
-                       }
-    
+
+    coordinates_dict = {"Bourg-en-Bresse":(5.225032, 46.205119),
+                        "Laon":(3.620686, 49.564665),
+                        "Moulins":(3.33317, 46.566053),
+                        "Digne-les-Bains":(6.235143, 44.091814),
+                        "Gap":(6.082064, 44.561203),
+                        "Nice":(7.268391, 43.700936),
+                        "Privas":(4.598673, 44.735271),
+                        "Charleville-Mézières":(4.720694, 49.773571),
+                        "Foix":(1.605381, 42.9639),
+                        "Troyes":(4.074626, 48.297163),
+                        "Carcassonne":(2.349107, 43.213036),
+                        "Rodez":(2.572849, 44.351141),
+                        "Marseille":(5.369953, 43.296174),
+                        "Caen":(-0.363561, 49.18134),
+                        "Aurillac":(2.44331, 44.928544),
+                        "Angoulême":(0.156195, 45.648451),
+                        "La Rochelle":(-1.151595, 46.159732),
+                        "Bourges":(2.399125, 47.081166),
+                        "Tulle":(1.77068, 45.267835),
+                        "Dijon":(5.04147, 47.321581),
+                        "Saint-Brieuc":(-2.760328, 48.514113),
+                        "Guéret":(1.871576, 46.168952),
+                        "Périgueux":(0.718441, 45.190936),
+                        "Besançon":(6.024362, 47.238022),
+                        "Valence":(-0.376335, 39.469707),
+                        "Évreux":(1.151016, 49.02689),
+                        "Chartres":(1.488143, 48.44386),
+                        "Quimper":(-4.102478, 47.996032),
+                        "Ajaccio":(8.737603, 41.926399),
+                        "Bastia":(9.450919, 42.699398),
+                        "Nîmes":(4.360069, 43.837425),
+                        "Toulouse":(1.444247, 43.604462),
+                        "Auch":(0.585051, 43.646356),
+                        "Bordeaux":(-0.580036, 44.841225),
+                        "Montpellier":(3.876734, 43.611242),
+                        "Rennes":(-1.68002, 48.111339),
+                        "Châteauroux":(1.677096, 46.820378),
+                        "Tours":(0.688927, 47.390047),
+                        "Grenoble":(5.735782, 45.18756),
+                        "Lons-le-Saunier":(5.558997, 46.672704),
+                        "Mont-de-Marsan":(-0.500972, 43.891132),
+                        "Blois":(1.333764, 47.587686),
+                        "Saint-Étienne":(4.387306, 45.440147),
+                        "Le Puy-en-Velay":(3.885554, 45.045974),
+                        "Nantes":(-1.554136, 47.218637),
+                        "Orléans":(1.908607, 47.902734),
+                        "Cahors":(1.4365, 44.4495),
+                        "Agen":(0.617611, 44.201583),
+                        "Mende":(3.499106, 44.518023),
+                        "Angers":(-0.551559, 47.473988),
+                        "Saint-Lô":(-1.090664, 49.1157),
+                        "Châlons-en-Champagne":(4.362885, 48.956622),
+                        "Chaumont":(5.139585, 48.111132),
+                        "Laval":(-0.773402, 48.070669),
+                        "Nancy":(6.18341, 48.693722),
+                        "Bar-le-Duc":(5.162381, 48.771267),
+                        "Vannes":(-2.759908, 47.658677),
+                        "Metz":(6.176355, 49.119696),
+                        "Nevers":(3.15772, 46.98766),
+                        "Lille":(3.063528, 50.636565),
+                        "Beauvais":(2.082336, 49.4301),
+                        "Alençon":(0.091137, 48.431206),
+                        "Arras":(2.777221, 50.291048),
+                        "Clermont-Ferrand":(3.081943, 45.777455),
+                        "Pau":(-0.368567, 43.295755),
+                        "Tarbes":(0.078102, 43.232858),
+                        "Perpignan":(2.895312, 42.69853),
+                        "Strasbourg":(7.750713, 48.584614),
+                        "Colmar":(7.357964, 48.077752),
+                        "Lyon":(4.832011, 45.757814),
+                        "Vesoul":(6.154469, 47.61974),
+                        "Mâcon":(4.832227, 46.303668),
+                        "Le Mans":(0.196785, 48.007385),
+                        "Chambéry":(5.920364, 45.566267),
+                        "Annecy":(6.128885, 45.899235),
+                        "Paris":(2.320041, 48.85889),
+                        "Rouen":(1.093966, 49.440459),
+                        "Melun":(2.660817, 48.539927),
+                        "Versailles":(2.126689, 48.80354),
+                        "Niort":(-0.464606, 46.323923),
+                        "Amiens":(2.295695, 49.894171),
+                        "Albi":(2.147899, 43.927755),
+                        "Montauban":(1.354999, 44.017584),
+                        "Toulon":(5.930492, 43.125731),
+                        "Avignon":(4.805901, 43.949249),
+                        "La Roche-sur-Yon":(-1.42697, 46.670543),
+                        "Poitiers":(0.340196, 46.58026),
+                        "Limoges":(1.264485, 45.835424),
+                        "Épinal":(6.450364, 48.174768),
+                        "Auxerre":(3.570579, 47.796129),
+                        "Belfort":(6.862894, 47.63796),
+                        "Évry-Courcouronnes":(2.438182, 48.629966),
+                        "Nanterre":(2.207127, 48.892427),
+                        "Bobigny":(2.445223, 48.906387),
+                        "Créteil":(2.453073, 48.777149),
+                        "Cergy":(2.038874, 49.052753),}
+        
     if city in coordinates_dict.keys():
         longitude, latitude = coordinates_dict[city]
         return longitude, latitude
@@ -88,6 +183,8 @@ def get_coordinates(city):
             location = geolocator.geocode(city)
             longitude, latitude = round(location.longitude,ndigits=6), round(location.latitude, ndigits=6)
         except GeocoderUnavailable:
+            if max_attempt>0:
+                get_coordinates(city,max_attempt=max_attempt-1)
             raise KeyError('No internet connexion, offline availables cities are : {}'.format(', '.join(list(coordinates_dict.keys()))))
     return longitude, latitude
 
@@ -144,9 +241,29 @@ class Climat:
             
         # TODO : ville centrale de la zone
         # (prefecture du departement dont le centroid est le plus proche du centroid du climat)
+        self.center_departement = self.get_center_departement()
+        self.center_prefecture = self.get_center_prefecture()
         
     def __str__(self):
         return self.code
+    
+    def get_center_departement(self):
+        distance_list = [np.nan]*len(self.departements)
+        for i,dep in enumerate(self.departements):
+            distance_list[i] = euclidean(self.geometry.centroid.coords[0], dep.geometry.centroid.coords[0],)
+            
+        center_departement = self.departements[np.argmin(distance_list)]
+        return center_departement
+    
+    def get_center_prefecture(self):
+        distance_list = [np.nan]*len(self.departements)
+        for i,dep in enumerate(self.departements):
+            prefecture = dep.prefecture
+            coords_prefecture = get_coordinates(prefecture)
+            distance_list[i] = euclidean(self.geometry.centroid.coords[0], coords_prefecture)
+            
+        center_prefecture = self.departements[np.argmin(distance_list)].prefecture
+        return center_prefecture
     
     
 class Climat_winter:
@@ -259,11 +376,15 @@ def draw_climat_map(dict_dep,figs_folder,cbar_min=0,cbar_max=1.,
                     bbox=dict(facecolor='k', alpha=0.5))
             
     if add_city_points is not None:
-        for city in add_city_points:
+        for i,city in enumerate(add_city_points):
+            if len(add_city_points)>1:
+                color = None
+            else:
+                color = cmap(0.5)
             city = City(city)
             ax.plot(city.coordinates[0],city.coordinates[1], 
-                    transform=ccrs.PlateCarree(), color='tab:blue',ls='',
-                    marker='o',label=city.name)
+                    transform=ccrs.PlateCarree(), color=color,ls='',
+                    marker='o',label=city.name,mec='k',zorder=5)
         
     
     if not all(plotter.color==(0.0, 0.0, 0.0, 0.0)):
@@ -307,13 +428,14 @@ def main():
     
     #%% Test de cartographie d'un département, d'une région climatique
     if False:
-        dep = Departement('13')
+        zcl = Climat('H1a')
+        dep = zcl.center_departement
         # print(dep)
-        draw_departement_map({dep:0.5}, figs_folder=figs_folder, save='test_{}'.format(dep.code))
+        draw_departement_map({dep:None}, figs_folder=figs_folder, save='dep_{}'.format(dep.code))
     
     # zone climatique 8
-    if False:
-        zcl = Climat('H1a')
+    if True:
+        zcl = Climat('H3')
         # print(zcl.code)
         # print(zcl.codint)
         
@@ -321,7 +443,7 @@ def main():
         
         draw_climat_map({Climat(e):None for e in france.climats},zcl_label=False, 
                         figs_folder=figs_folder, save='zcl_{}'.format(zcl.code),
-                        add_city_points=['Beauvais'])
+                        add_city_points=[Climat(c).center_prefecture for c in france.climats],lw=0.7)
         
         # [print(d) for d in zcl.departements]
         
