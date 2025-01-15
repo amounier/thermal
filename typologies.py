@@ -151,6 +151,7 @@ class Typology():
         # caractéristiques des ventilations et infiltrations
         self.air_infiltration = params.get('{}_air_infiltration'.format(level))
         self.ventilation_efficiency = params.get('{}_ventilation_efficiency'.format(level))
+        self.ventilation_night_over = False
         
         # caractéristiques du toit
         self.roof_color = params.get('{}_roof_color'.format(level))
@@ -158,6 +159,8 @@ class Typology():
         # self.ceiling_U = params.get('{}_ceiling_U'.format(level))
         self.roof_U = params.get('{}_Uph'.format(level))
         self.ceiling_U = params.get('{}_Uph'.format(level))
+        self.ceiling_supplementary_insulation_thickness = 0
+        self.ceiling_supplementary_insulation_material = Material('laine minerale')
         
         self.ceiling_structure_material = Material(params.get('building_ceiling_structure_material'))
         self.ceiling_structure_thickness = params.get('building_ceiling_structure_thickness')
