@@ -36,7 +36,7 @@ GROUND_DENSITY = 2500 # kg/m3
 GROUND_THERMAL_CONDUCTIVITY = 1.5 # W/(m.K)
 
 
-def get_P_heater(Ti, Ti_min, Pmax, method='all_or_nothing'):
+def get_P_heater(Ti, Ti_min, Pmax, method='all_or_nothing', pmax_warning=True):
     """
     Renvoie la puissance des équipemetns de chauffage
 
@@ -71,10 +71,12 @@ def get_P_heater(Ti, Ti_min, Pmax, method='all_or_nothing'):
             P_heater = 0
         else:
             P_heater = (-(Ti-(Ti_min-tolerance))/(2*tolerance)+1)*Pmax
+        if P_heater == Pmax and Pmax != 0:
+            print('caution, pmax')
     return P_heater
 
 
-def get_P_cooler(Ti, Ti_max, Pmax, method='all_or_nothing'):
+def get_P_cooler(Ti, Ti_max, Pmax, method='all_or_nothing', pmax_warning=True):
     """
     Renvoie la puissance des équipements de refroidissement
 
@@ -109,6 +111,8 @@ def get_P_cooler(Ti, Ti_max, Pmax, method='all_or_nothing'):
              P_cooler = 0
          else:
              P_cooler = ((Ti-(Ti_max-tolerance))/(2*tolerance))*Pmax
+         if P_cooler == Pmax and Pmax != 0:
+             print('caution, pmax')
     
     # flux de refroidissement négatif
     P_cooler = - P_cooler
@@ -131,6 +135,8 @@ def get_P_vmeca(Ti,Te,P_heater,P_cooler,typology):
             f_sv = f_sv/(1-typology.ventilation_efficiency)
         if P_cooler > 0:
             f_sv = f_sv * 2
+            
+    # TODO : à completer
             
     P_vmeca = U_air * (Te-Ti)
     return P_vmeca
@@ -876,7 +882,7 @@ def SFH_test_model(typology, behaviour, weather_data, progressbar=False):
     return weather_data
 
 
-def run_thermal_model(typology, behaviour, weather_data, progressbar=False):
+def run_thermal_model(typology, behaviour, weather_data, progressbar=False, pmax_warning=True):
     """
     Modélisation thermique RC
 
@@ -1208,8 +1214,8 @@ def run_thermal_model(typology, behaviour, weather_data, progressbar=False):
         Ts_heater = Ti_setpoint_winter[i-1]
         Ts_cooler = Ti_setpoint_summer[i-1]
         
-        P_heater = get_P_heater(Ti, Ti_min=Ts_heater, Pmax=P_max_heater, method='linear_tolerance')
-        P_cooler = get_P_cooler(Ti, Ti_max=Ts_cooler, Pmax=P_max_cooler, method='linear_tolerance')
+        P_heater = get_P_heater(Ti, Ti_min=Ts_heater, Pmax=P_max_heater, method='linear_tolerance', pmax_warning=pmax_warning)
+        P_cooler = get_P_cooler(Ti, Ti_max=Ts_cooler, Pmax=P_max_cooler, method='linear_tolerance', pmax_warning=pmax_warning)
         
         P_vmeca = get_P_vmeca(Ti,Te,P_heater,P_cooler,typology)
         P_vnat = get_P_vnat(Ti,Te,typology,behaviour)
@@ -1223,8 +1229,8 @@ def run_thermal_model(typology, behaviour, weather_data, progressbar=False):
         
         X[i] = np.dot(F,X[i-1]) + np.dot(G, U[i].T)
     
-    heating_needs[-1] = get_P_heater(X[i,0], Ti_min=Ti_setpoint_winter[i], Pmax=P_max_heater, method='linear_tolerance')
-    cooling_needs[-1] = get_P_cooler(X[i,0], Ti_max=Ti_setpoint_summer[i], Pmax=P_max_cooler, method='linear_tolerance')
+    heating_needs[-1] = get_P_heater(X[i,0], Ti_min=Ti_setpoint_winter[i], Pmax=P_max_heater, method='linear_tolerance', pmax_warning=pmax_warning)
+    cooling_needs[-1] = get_P_cooler(X[i,0], Ti_max=Ti_setpoint_summer[i], Pmax=P_max_cooler, method='linear_tolerance', pmax_warning=pmax_warning)
     
     weather_data['internal_temperature'] = X[:,0]
     
