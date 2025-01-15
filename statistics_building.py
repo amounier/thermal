@@ -929,78 +929,80 @@ def main():
 
             # statistiques sur les valeurs U par typologie
             if True:
-                typo_group = 'AB' # SFH, TH, MFH, AB
-                hue_order = ['FR.N.{}.{:02d}.Gen'.format(typo_group,n) for n in range(1,12)]
-                
-                # sns.histplot(dpe_typology_group, x='dpe_mix_arrete_u_mur_exterieur',
-                #              binwidth=0.05, hue='typology',kde=True,stat='density',
-                #              palette='viridis',hue_order=hue_order, common_norm=False,
-                #              ec=None,legend=False)
-                
-                ls_dict = ['solid','dotted','dashed','dashdot',]
-                cmap = matplotlib.colormaps.get_cmap('viridis')
-                
-                dict_variables = {'dpe_mix_arrete_u_mur_exterieur':{'peak_height':0.15,
-                                                                    'label':'Walls U-value (W.m$^{-2}$.K$^{-1}$)'},
-                                  'dpe_mix_arrete_uw':{'peak_height':0.1,
-                                                       'label':'Windows U-value (W.m$^{-2}$.K$^{-1}$)'},
-                                  'dpe_mix_arrete_u_plancher_bas_final_deperditif':{'peak_height':0.1,
-                                                                                    'label':'Floor U-value (W.m$^{-2}$.K$^{-1}$)'},
-                                  'dpe_mix_arrete_u_plancher_haut_deperditif':{'peak_height':0.1,
-                                                                               'label':'Roof U-value (W.m$^{-2}$.K$^{-1}$)'},}
-                
-                for var in dict_variables.keys():
-                    fig,ax = plt.subplots(figsize=(10,5),dpi=300)
+                for typo_group in ['SFH', 'TH', 'MFH', 'AB']:
+                # typo_group = 'AB' # SFH, TH, MFH, AB
+                    hue_order = ['FR.N.{}.{:02d}.Gen'.format(typo_group,n) for n in range(1,12)]
                     
-                    for i,ty in enumerate(hue_order):
-                        values = dpe[dpe.typology==ty][var].dropna().values
-                        kde_estim = stats.gaussian_kde(values, bw_method='scott')
+                    # sns.histplot(dpe_typology_group, x='dpe_mix_arrete_u_mur_exterieur',
+                    #              binwidth=0.05, hue='typology',kde=True,stat='density',
+                    #              palette='viridis',hue_order=hue_order, common_norm=False,
+                    #              ec=None,legend=False)
+                    
+                    ls_dict = ['solid','dotted','dashed','dashdot',]
+                    cmap = matplotlib.colormaps.get_cmap('viridis')
+                    
+                    dict_variables = {'dpe_mix_arrete_u_mur_exterieur':{'peak_height':0.15,
+                                                                        'label':'Walls U-value (W.m$^{-2}$.K$^{-1}$)'},
+                                      'dpe_mix_arrete_uw':{'peak_height':0.15,
+                                                           'label':'Windows U-value (W.m$^{-2}$.K$^{-1}$)'},
+                                      'dpe_mix_arrete_u_plancher_bas_final_deperditif':{'peak_height':0.15,
+                                                                                        'label':'Floor U-value (W.m$^{-2}$.K$^{-1}$)'},
+                                      'dpe_mix_arrete_u_plancher_haut_deperditif':{'peak_height':0.15,
+                                                                                   'label':'Roof U-value (W.m$^{-2}$.K$^{-1}$)'},}
+                    
+                    for var in dict_variables.keys():
+                        fig,ax = plt.subplots(figsize=(10,5),dpi=300)
                         
-                        X0, X1 = 0,dpe[var].quantile(0.99)
-                        X = np.linspace(X0,X1,300)
-                        Y = kde_estim(X)
-                        
-                        peaks_x,_ = signal.find_peaks(Y, height=dict_variables.get(var).get('peak_height'))
-                        
-                        ax.plot(X,Y, label=ty, color=cmap(i/len(hue_order)), ls=ls_dict[i%4])
-                        ax.plot(X[peaks_x],Y[peaks_x],marker='v',ls='',color=cmap(i/len(hue_order)))
-    
-                    ax.legend(ncol=2)
-                    ax.set_xlim([X0,X1])
-                    ax.set_xlabel(dict_variables.get(var).get('label'))
-                    ax.set_ylabel('Density')
-                    plt.savefig(os.path.join(figs_folder,'bdnb_distribution_{}_{}.png'.format(typo_group,var)), bbox_inches='tight')
-                    plt.show()
+                        for i,ty in enumerate(hue_order):
+                            values = dpe[dpe.typology==ty][var].dropna().values
+                            kde_estim = stats.gaussian_kde(values, bw_method='scott')
+                            
+                            X0, X1 = 0,dpe[var].quantile(0.99)
+                            X = np.linspace(X0,X1*1.5,300)
+                            Y = kde_estim(X)
+                            
+                            peaks_x,_ = signal.find_peaks(Y, height=dict_variables.get(var).get('peak_height'))
+                            
+                            ax.plot(X,Y, label=ty, color=cmap(i/len(hue_order)), ls=ls_dict[i%4])
+                            ax.plot(X[peaks_x],Y[peaks_x],marker='v',ls='',color=cmap(i/len(hue_order)))
+        
+                        ax.legend(ncol=2)
+                        ax.set_xlim([X0,X1])
+                        ax.set_xlabel(dict_variables.get(var).get('label'))
+                        ax.set_ylabel('Density')
+                        plt.savefig(os.path.join(figs_folder,'bdnb_distribution_{}_{}.png'.format(typo_group,var)), bbox_inches='tight')
+                        plt.show()
                     
             if True:
-                typo_group = 'SFH' # SFH, TH, MFH, AB
-                hue_order = ['FR.N.{}.{:02d}.Gen'.format(typo_group,n) for n in range(1,12)]
-                
-                ls_dict = ['solid','dotted','dashed','dashdot',]
-                cmap = matplotlib.colormaps.get_cmap('viridis')
-                
-                dict_variables = {'dpe_mix_arrete_epaisseur_isolation_mur_exterieur_estim':{'label':'Walls insulation thickness (cm)'},}
-                                  # 'dpe_mix_arrete_epaisseur_isolation_mur_exterieur_estim':{'label':'Floor insulation thickness (cm)'},
-                                  # 'dpe_mix_arrete_epaisseur_isolation_mur_exterieur_estim':{'label':'Roof insulation thickness (cm)'}}
-                
-                for var in dict_variables.keys():
-                    fig,ax = plt.subplots(figsize=(10,5),dpi=300)
+                for typo_group in ['SFH', 'TH', 'MFH', 'AB']:
+                # typo_group = 'AB' # SFH, TH, MFH, AB
+                    hue_order = ['FR.N.{}.{:02d}.Gen'.format(typo_group,n) for n in range(1,12)]
                     
-                    for i,ty in enumerate(hue_order):
-                        # sns.histplot(dpe[dpe.typology==ty], x=var,
-                        #              binwidth=1,color=cmap(i/len(hue_order)),
-                        #              ls = ls_dict[i%4],
-                        #              ax=ax,
-                        #              element="poly", fill=False,cumulative=True, 
-                        #              stat="density", common_norm=False,label=ty)
-                        ax.hist(dpe[dpe.typology==ty][var], bins=np.arange(0,50,1), density=True, histtype="step", cumulative=-1,
-                                color=cmap(i/len(hue_order)),ls=ls_dict[i%4],label=ty)
-                    ax.legend(ncol=1)
-                    ax.set_xlim([0,dpe[var].quantile(0.995)])
-                    ax.set_ylabel('Reverse cumulative density')
-                    ax.set_xlabel(dict_variables.get(var).get('label'))
-                    plt.savefig(os.path.join(figs_folder,'bdnb_distribution_{}_{}.png'.format(typo_group,var)), bbox_inches='tight')
-                    plt.show()
+                    ls_dict = ['solid','dotted','dashed','dashdot',]
+                    cmap = matplotlib.colormaps.get_cmap('viridis')
+                    
+                    dict_variables = {'dpe_mix_arrete_epaisseur_isolation_mur_exterieur_estim':{'label':'Walls insulation thickness (cm)'},}
+                                      # 'dpe_mix_arrete_epaisseur_isolation_mur_exterieur_estim':{'label':'Floor insulation thickness (cm)'},
+                                      # 'dpe_mix_arrete_epaisseur_isolation_mur_exterieur_estim':{'label':'Roof insulation thickness (cm)'}}
+                    
+                    for var in dict_variables.keys():
+                        fig,ax = plt.subplots(figsize=(10,5),dpi=300)
+                        
+                        for i,ty in enumerate(hue_order):
+                            # sns.histplot(dpe[dpe.typology==ty], x=var,
+                            #              binwidth=1,color=cmap(i/len(hue_order)),
+                            #              ls = ls_dict[i%4],
+                            #              ax=ax,
+                            #              element="poly", fill=False,cumulative=True, 
+                            #              stat="density", common_norm=False,label=ty)
+                            ax.hist(dpe[dpe.typology==ty][var], bins=np.arange(0,50,1), density=True, histtype="step", cumulative=-1,
+                                    color=cmap(i/len(hue_order)),ls=ls_dict[i%4],label=ty)
+                        ax.legend(ncol=1)
+                        ax.set_xlim([0,dpe[var].quantile(0.995)])
+                        ax.set_ylabel('Reverse cumulative density')
+                        ax.set_xlabel(dict_variables.get(var).get('label'))
+                        plt.savefig(os.path.join(figs_folder,'bdnb_distribution_{}_{}.png'.format(typo_group,var)), bbox_inches='tight')
+                        plt.show()
                 
                 # print(dpe[dpe.group_typology==typo_group].dpe_mix_arrete_epaisseur_isolation_mur_exterieur_estim.value_counts())
                 
