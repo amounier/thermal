@@ -34,6 +34,7 @@ AIR_DENSITY = 1.2 # kg/m3
 GROUND_THERMAL_CAPACITY = 1000 # J/(kg.K)
 GROUND_DENSITY = 2500 # kg/m3
 GROUND_THERMAL_CONDUCTIVITY = 1.5 # W/(m.K)
+# GROUND_THERMAL_CONDUCTIVITY = 2.05 # W/(m.K) # Gerard 2020
 
 
 def get_P_heater(Ti, Ti_min, Pmax, method='all_or_nothing', pmax_warning=True):
@@ -71,7 +72,7 @@ def get_P_heater(Ti, Ti_min, Pmax, method='all_or_nothing', pmax_warning=True):
             P_heater = 0
         else:
             P_heater = (-(Ti-(Ti_min-tolerance))/(2*tolerance)+1)*Pmax
-        if P_heater == Pmax and Pmax != 0:
+        if P_heater == Pmax and Pmax != 0 and pmax_warning:
             print('caution, pmax')
     return P_heater
 
@@ -111,7 +112,7 @@ def get_P_cooler(Ti, Ti_max, Pmax, method='all_or_nothing', pmax_warning=True):
              P_cooler = 0
          else:
              P_cooler = ((Ti-(Ti_max-tolerance))/(2*tolerance))*Pmax
-         if P_cooler == Pmax and Pmax != 0:
+         if P_cooler == Pmax and Pmax != 0 and pmax_warning:
              print('caution, pmax')
     
     # flux de refroidissement négatif
@@ -122,21 +123,21 @@ def get_P_cooler(Ti, Ti_max, Pmax, method='all_or_nothing', pmax_warning=True):
 def get_P_vmeca(Ti,Te,P_heater,P_cooler,typology):
     minimal_ventilation_air_flow = get_ventilation_minimum_air_flow(typology)
     
-    # s'il n'y a pas de ventilation, flux réduit à 0
+    # s'il n'y a pas de ventilation, flux réduit à 0 [ie ventilation naturelle]
     if typology.ventilation_efficiency == 0.0:
         minimal_ventilation_air_flow = 0
         
     U_air = minimal_ventilation_air_flow * AIR_THERMAL_CAPACITY * (1-typology.ventilation_efficiency)
     
     # bypass et surventilation nocturne
-    f_sv = 1
-    if typology.ventilation_efficiency > 0:
-        if P_heater == 0:
-            f_sv = f_sv/(1-typology.ventilation_efficiency)
+    f_over = 1
+    if typology.ventilation_night_over:
+        # if P_heater == 0:
+        #     f_over = f_over/(1-typology.ventilation_efficiency)
         if P_cooler > 0:
-            f_sv = f_sv * 2
+            f_over = 2/(1-typology.ventilation_efficiency)
             
-    # TODO : à completer
+    U_air = U_air * f_over     
             
     P_vmeca = U_air * (Te-Ti)
     return P_vmeca
@@ -309,6 +310,11 @@ def compute_R_w3eh(typology):
     h_ext = h_ext_conv + h_ext_rad
     R_w3eh = 1/(h_ext * typology.w3_surface) # K/W
     return R_w3eh
+
+
+def compute_Ru_supplementary(typology):
+    R_usupp = typology.ceiling_supplementary_insulation_thickness/(typology.ceiling_supplementary_insulation_material.thermal_conductivity * typology.roof_surface)
+    return R_usupp
 
 
 def compute_Rw0i(typology):
@@ -917,7 +923,8 @@ def run_thermal_model(typology, behaviour, weather_data, progressbar=False, pmax
     R_uhroof = R_uih
     
     R_ucr = 1/(typology.ceiling_U * typology.roof_surface)# + 1/(typology.roof_U * typology.roof_surface))
-    
+    R_usupp = compute_Ru_supplementary(typology)
+    R_ucr = R_ucr + R_usupp
     # retrait des resistances thermiques superficielles aux données TABULA
     if typology.converted_attic:
         R_ucr = R_ucr - R_uih - R_ueh
@@ -2507,7 +2514,7 @@ def main():
         # period = [1990,2000]
         # period = [2020,2020]
         period = [1990,2020]
-        # period = [2005,2005]
+        period = [2005,2005]
         
         # Checkpoint weather data
         weather_data_checkfile = ".weather_data_{}_{}_{}_".format(city,period[0],period[1]) + today + ".pickle"
@@ -2669,7 +2676,7 @@ def main():
                         
                         tmp_checkfile = ".heating_needs_{}_{}_{}_{}_".format(city,period[0],period[1],building_type) + today + ".pickle"
                         if tmp_checkfile not in os.listdir():
-                            simulation = run_thermal_model(typo, conventionnel, weather_data)
+                            simulation = run_thermal_model(typo, conventionnel, weather_data, pmax_warning=False)
                             simulation = aggregate_resolution(simulation, resolution='h')
                             
                             heating_cooling_modelling = aggregate_resolution(simulation[['heating_needs','cooling_needs']], resolution='YE',agg_method='sum')
