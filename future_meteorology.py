@@ -49,7 +49,7 @@ def delta_daily_temperature(zcl_codint,nmod,ref_period=[2010,2020]):
     return data_delta_t
 
 
-def get_projected_weather_data(city,zcl_codint,nmod,rcp,future_period,principal_orientation,ref_year=2020):
+def get_projected_weather_data(city,zcl_codint,nmod,rcp,future_period,ref_year=2020):
     future_period_list = list(range(future_period[0],future_period[1]+1))
     dt = delta_daily_temperature(zcl_codint, nmod)
     col = 'proj_temperature_{}_mod{}_rcp{}'.format(zcl_codint,nmod,rcp)
@@ -66,7 +66,7 @@ def get_projected_weather_data(city,zcl_codint,nmod,rcp,future_period,principal_
     new_index = [pd.to_datetime('{}-{}-{}'.format(change_year_dict.get(y),m,d),errors='coerce') for y,m,d in zip(dt.index.year,dt.index.month,dt.index.day)]
     dt.index = new_index
 
-    weather_data = get_historical_weather_data(city,ref_period,principal_orientation)
+    weather_data = get_historical_weather_data(city,ref_period)
     weather_data = weather_data.rename(columns={'temperature_2m':'ref_temperature_2m'})
     weather_data['temperature_2m'] = [np.nan]*len(weather_data)
     

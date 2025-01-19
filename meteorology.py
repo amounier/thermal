@@ -16,13 +16,16 @@ import numpy as np
 from scipy.integrate import odeint
 from pysolar.solar import get_altitude, get_altitude_fast, get_azimuth, get_azimuth_fast
 import tqdm
+import seaborn as sns
+import pickle
+from sklearn.metrics import root_mean_squared_error
 
 # Pour ne pas utiliser numpy dans la gestion des dates de Pysolar (moins efficace est plus à jour)
 import pysolar
 pysolar.use_math()
 
 from utils import plot_timeserie
-from administrative import get_coordinates
+from administrative import get_coordinates, France, Climat
 
 import warnings
 
@@ -319,7 +322,19 @@ def get_historical_weather_data(city, period, display_units=False):
         print(meteo_units)
         
     return data
-    
+
+
+def aggregate_resolution(data, resolution='h', agg_method='mean'):
+    agg_data = data.groupby(pd.Grouper(freq=resolution)).agg(func=agg_method)
+    return agg_data
+
+
+def refine_resolution(data, resolution):
+    upsampled = data.resample(resolution)
+    interpolated = upsampled.interpolate(method='linear')
+    return interpolated
+
+
 
 #%% ===========================================================================
 # Script principal
@@ -584,7 +599,7 @@ def main():
                 
                 
     #%% Caractérisation et étude du flux solaire par orientation
-    if True:
+    if False:
         variables = ['direct_radiation_instant','diffuse_radiation_instant','direct_normal_irradiance_instant']
         city = 'Marseille'
         year = 2022
@@ -780,7 +795,7 @@ def main():
         period = [2010,2020]
         principal_orientation = 'S'
         
-        weather_data = get_historical_weather_data(city,period,principal_orientation,display_units=False)
+        weather_data = get_historical_weather_data(city,period,display_units=False)
         
         plot_timeserie(weather_data[['temperature_2m']], figsize=(15,5),figs_folder = figs_folder, show=True,ylabel='External temperature (°C)',labels=['{}'.format(city)],
                        save_fig='external_temperature_{}_{}-{}'.format(city,period[0],period[1]))
@@ -794,6 +809,261 @@ def main():
     if False:
         # TODO à faire
         pass
+    
+    
+    #%% Caractérisation de la désagréggation horaire à partir des données journalières 
+    if True:
+        test = Climat('H1a')
+        test = Climat('H3')
+        # test = Climat('H2b')
+        city = test.center_prefecture
+        coordinates = get_coordinates(city)
+        period = [2000,2020]
+        
+        # Checkpoint weather data
+        weather_data_checkfile = ".weather_data_{}_{}_{}_".format(city,period[0],period[1]) + today + ".pickle"
+        if weather_data_checkfile not in os.listdir():
+            weather_data = get_historical_weather_data(city, period, display_units=False)
+            pickle.dump(weather_data, open(weather_data_checkfile, "wb"))
+        else:
+            weather_data = pickle.load(open(weather_data_checkfile, 'rb'))
+        
+        
+        # cas de la température 
+        if True:
+            weather_data = weather_data[['temperature_2m','sun_altitude']]
+            
+            weather_day = aggregate_resolution(weather_data[['temperature_2m']], resolution='D', agg_method='min').rename(columns={'temperature_2m':'temperature_2m_daily_min'})
+            weather_day['temperature_2m_daily_mean'] = aggregate_resolution(weather_data[['temperature_2m']], resolution='D', agg_method='mean').values
+            weather_day['temperature_2m_daily_max'] = aggregate_resolution(weather_data[['temperature_2m']], resolution='D', agg_method='max').values
+            weather_day['hour_sunrise'] = weather_data.index[weather_data.sun_altitude.lt(0)&weather_data.sun_altitude.shift(-1).ge(0)].hour.values
+            
+            if True:
+                # hour_max_temp = [np.nan]*len(weather_day)
+                # hour_min_temp = [np.nan]*len(weather_day)
+                
+                # for idx,day in tqdm.tqdm(enumerate(weather_day.index),total=len(weather_day)):
+                #     d, month, year = day.day, day.month, day.year
+                #     weather_data_day = weather_data[(weather_data.index.day==d)&(weather_data.index.month==month)&(weather_data.index.year==year)]
+                #     hour_max_temp[idx] = weather_data_day.temperature_2m.idxmax().hour
+                #     hour_min_temp[idx] = weather_data_day.temperature_2m.idxmin().hour
+                
+                # weather_day['hour_max_temp'] = hour_max_temp
+                # weather_day['hour_min_temp'] = hour_min_temp
+                
+                
+                # weather_day['hour_min_sunrise_diff'] = weather_day['hour_min_temp'] - weather_day['hour_sunrise'] 
+                
+                # fig,ax = plt.subplots(dpi=300,figsize=(5,5))
+                # sns.histplot(weather_day,x='hour_max_temp',ax=ax,kde=True,binwidth=1,binrange=[-10.5,23.5],stat='density')
+                # plt.show()
+                
+                # fig,ax = plt.subplots(dpi=300,figsize=(5,5))
+                # sns.histplot(weather_day,x='hour_min_temp',ax=ax,kde=True,binwidth=1,binrange=[-10.5,23.5],stat='density')
+                # sns.histplot(weather_day,x='hour_min_sunrise_diff',ax=ax,kde=True,binwidth=1,binrange=[-10.5,23.5],stat='density')
+                # plt.show()
+            
+            
+                hour_min_rel_sunrise = 0
+                hour_max = 15
+                
+                weather_data_modelled = pd.DataFrame(index=weather_day.index.to_list() + [pd.to_datetime('{}-01-01'.format(period[1]+1))]).resample('h').mean()
+                weather_data_modelled = weather_data_modelled.drop(weather_data_modelled.iloc[-1].name)
+                
+                dates = weather_data_modelled.copy().index
+                dates = dates.tz_localize(tz='CET',ambiguous='NaT',nonexistent='NaT')
+                dates = dates.to_pydatetime()
+                altitude = [get_altitude_fast(coordinates[1],coordinates[0],t) if t is not pd.NaT else np.nan for t in dates]
+                weather_data_modelled['sun_altitude'] = altitude
+                weather_data_modelled['sunrise'] = weather_data_modelled.sun_altitude.lt(0)&weather_data_modelled.sun_altitude.shift(-1).ge(0)
+                
+                weather_data_modelled['temperature'] = [np.nan]*len(weather_data_modelled)
+                
+                mask_max = weather_data_modelled.index.hour == hour_max
+                weather_data_modelled.loc[mask_max,'temperature'] = weather_day.temperature_2m_daily_max.values
+                
+                mask_min = weather_data_modelled.sunrise.shift(hour_min_rel_sunrise).infer_objects(copy=False).fillna(False)
+                weather_data_modelled.loc[mask_min,'temperature'] = weather_day.temperature_2m_daily_min.values
+                
+                weather_data_modelled = weather_data_modelled[['temperature']]
+                
+                temperature_sin14R1 = [np.nan]*len(weather_data_modelled)
+                prev_T, prev_t, next_T, next_t = [np.nan]*4
+                flag = False
+                
+                def get_previous_temperature(t, data=weather_data_modelled):
+                    try:
+                        d = weather_data_modelled[weather_data_modelled.index<t].dropna().iloc[-1]
+                        t = d.name
+                        T = d.temperature
+                        return t, T
+                    except IndexError:
+                        return np.nan, np.nan
+                    
+                
+                def get_next_temperature(t, data=weather_data_modelled):
+                    try:
+                        d = weather_data_modelled[weather_data_modelled.index>t].dropna().iloc[0]
+                        t = d.name
+                        T = d.temperature
+                        return t, T
+                    except IndexError:
+                        return np.nan, np.nan
+                
+                def compute_temperature_sin14R1(t,prev_T,prev_t,next_T,next_t):
+                    T = (next_T + prev_T)/2 - ((next_T-prev_T)/2 * np.cos(np.pi*(t-prev_t)/(next_t-prev_t)))
+                    return T
+                
+                    
+                for idx,t in tqdm.tqdm(enumerate(weather_data_modelled.index),total=len(weather_data_modelled)):
+                    T = weather_data_modelled.loc[t].values[0]
+                    if flag:
+                        prev_t, prev_T = get_previous_temperature(t, weather_data_modelled)
+                        next_t, next_T = get_next_temperature(t, weather_data_modelled)
+                        flag = False
+                    if not pd.isnull(T):
+                        flag = True
+                        temperature_sin14R1[idx] = T
+                    else:
+                        if pd.isnull(prev_t) or pd.isnull(next_t):
+                            continue
+                        temperature_sin14R1[idx] = compute_temperature_sin14R1(t,prev_T,prev_t,next_T,next_t)
+                    
+                weather_data_modelled['temperature_sin14R1'] = temperature_sin14R1
+                
+                
+                D_val = [np.nan]*len(weather_day)
+                for idx,day in tqdm.tqdm(enumerate(weather_day.index),total=len(weather_day)):
+                    y,m,d = day.year, day.month, day.day
+                    daily_T = weather_data_modelled[(weather_data_modelled.index.year==y)&(weather_data_modelled.index.month==m)&(weather_data_modelled.index.day==d)].temperature_sin14R1
+                    daily_T = daily_T.clip(lower=weather_day.loc[day].temperature_2m_daily_min, upper=weather_day.loc[day].temperature_2m_daily_max)
+                    mean_t_sin = daily_T.mean()
+                    D_val[idx] = weather_day.loc[day].temperature_2m_daily_mean - mean_t_sin
+                    
+                weather_day['D_val'] = D_val
+                weather_day['lambda_val'] = (hour_max-(weather_day.hour_sunrise-hour_min_rel_sunrise))/2 - ((12*weather_day.D_val*np.pi)/(weather_day.temperature_2m_daily_max-weather_day.temperature_2m_daily_min))
+                weather_day['lambda_val'] = weather_day['lambda_val'].clip(lower=weather_day.hour_sunrise-hour_min_rel_sunrise)
+                
+                # sns.histplot(weather_day,x='lambda_val')
+                
+                # diff_temperature = [np.nan]*len(weather_data_modelled)
+                
+                # dmean, dmin, dmax = [np.nan]*3
+                # prev_day = weather_data_modelled.index[0].day
+                # for idx,t in tqdm.tqdm(enumerate(weather_data_modelled.index),total=len(weather_data_modelled)):
+                #     day = t.day
+                #     if pd.isnull(dmean) or day!=prev_day:
+                #         y,m,d = t.year, t.month, t.day
+                #         ddd = pd.to_datetime('{}-{}-{}'.format(y,m,d))
+                #         diff = weather_day.loc[ddd].D_val
+                #     diff_temperature[idx] = diff
+                
+                # weather_data_modelled['temperature_sin14R1'] = weather_data_modelled['temperature_sin14R1'] - diff
+                    # temperature_Qsin[idx] = 
+                    
+                        
+                        
+                
+                
+                fig,ax = plot_timeserie(weather_data[['temperature_2m']], figsize=(10,5),color='k',
+                                        figs_folder = figs_folder, xlim=[pd.to_datetime('2010-01-15'), pd.to_datetime('2010-01-31')],
+                                        show=False,ylabel='External temperature (°C)',labels=['data'],)
+                ax.set_title(city)
+                plot_timeserie(weather_data_modelled[['temperature_sin14R1']], figsize=(15,5),labels=['modelled'],color='tab:blue',
+                                        figs_folder = figs_folder, xlim=[pd.to_datetime('2010-01-15'), pd.to_datetime('2010-01-31')],
+                                        show=True,ylabel='External temperature (°C)',figax=(fig,ax),
+                                        save_fig='external_temperature_{}_{}-{}_jan'.format(city,period[0],period[1]))
+                
+                fig,ax = plot_timeserie(weather_data[['temperature_2m']], figsize=(10,5),color='k',
+                                        figs_folder = figs_folder, xlim=[pd.to_datetime('2010-07-15'), pd.to_datetime('2010-07-31')],
+                                        show=False,ylabel='External temperature (°C)',labels=['data'],)
+                ax.set_title(city)
+                plot_timeserie(weather_data_modelled[['temperature_sin14R1']], figsize=(15,5),labels=['modelled'],color='tab:blue',
+                                        figs_folder = figs_folder, xlim=[pd.to_datetime('2010-07-15'), pd.to_datetime('2010-07-31')],
+                                        show=True,ylabel='External temperature (°C)',figax=(fig,ax),
+                                        save_fig='external_temperature_{}_{}-{}_jul'.format(city,period[0],period[1]))
+                
+                weather_data_modelled['temperature'] = weather_data.temperature_2m
+                weather_data_modelled['diff_temperature'] = weather_data_modelled.temperature - weather_data_modelled.temperature_sin14R1
+                
+                weather_rmse = weather_data_modelled[['temperature','temperature_sin14R1']].dropna()
+                rmse = root_mean_squared_error(weather_rmse.temperature, weather_rmse.temperature_sin14R1)
+                
+                fig,ax = plot_timeserie(weather_data_modelled[['diff_temperature']], figsize=(10,5),
+                                        figs_folder = figs_folder,
+                                        show=False,ylabel='Temperature difference (°C)',labels=['{} (RMSE = {:.2f}°C)'.format(city,rmse)],)
+                # ax.plot([weather_data_modelled.index[0],weather_data_modelled.index[-1]],[weather_data_modelled.diff_temperature.mean()]*2,color='k')
+                ylim = max(np.abs(ax.get_ylim()))
+                ax.set_ylim([ylim,-ylim])
+                plt.savefig(os.path.join(figs_folder,'difference_temperature_{}_{}-{}'.format(city,period[0],period[1])), bbox_inches='tight')
+                plt.show()
+                
+                fig,ax = plt.subplots(figsize=(5,5),dpi=300)
+                sns.histplot(weather_data_modelled,x='diff_temperature',stat='density',binwidth=0.1)
+                ylims = ax.get_ylim()
+                ax.plot([weather_data_modelled.diff_temperature.mean()]*2,[*ylims],label='Mean = {:.2f}°C'.format(weather_data_modelled.diff_temperature.mean()),color='k')
+                ax.set_xlim([-5,5])
+                ax.legend()
+                ax.set_ylim(ylims)
+                ax.set_xlabel('Temperature difference (°C)')
+                plt.show()
+            
+            
+            if False:
+                # interpolation cste
+                if True:
+                    weather_day = pd.DataFrame(index=weather_data.index).join(weather_day)
+                    for idx in range(len(weather_day)):
+                        row = weather_day.iloc[idx].values
+                        if not pd.isnull(row[0]):
+                            nonan_row = row
+                        else:
+                            weather_day.iloc[idx] = nonan_row
+                    
+                    weather_data = weather_data.join(weather_day)
+                    
+                # interpolation quadratic
+                if False:
+                    weather_day = pd.DataFrame(index=weather_data.index).join(weather_day)
+                    weather_day = weather_day.interpolate(method='quadratic')
+                    
+                    weather_data = weather_data.join(weather_day)
+                    
+                
+                if True:
+                    # TODO : à refaire avec des boxplot ou des fill between
+                    for month in range(1,13):
+                        weather_data_month = weather_data[(weather_data.index.month==month)].copy()
+                        # weather_data_month['diff_temperature'] = weather_data_month.temperature_2m - weather_data_month.temperature_2m_daily_mean
+                        weather_data_month['diff_temperature'] = (weather_data_month.temperature_2m - weather_data_month.temperature_2m_daily_mean)/(weather_data_month.temperature_2m_daily_max-weather_data_month.temperature_2m_daily_min)
+                        # weather_data_month['diff_temperature'] = (weather_data_month.temperature_2m)/(weather_data_month.temperature_2m_daily_max-weather_data_month.temperature_2m_daily_min)
+                        
+                        fig,ax = plt.subplots(dpi=300,figsize=(5,5))
+                        for year in range(period[0],period[1]+1):
+                            for day in range(1,32):
+                                to_plot = weather_data_month[(weather_data_month.index.day==day)&(weather_data_month.index.year==year)]
+                                
+                                if day == 1 and year == period[0]:
+                                    label=to_plot.index[0].strftime('%B')
+                                else:
+                                    label=None
+                                    
+                                ax.plot(to_plot['diff_temperature'].values,color='k',alpha=0.1,label=label)
+                                try:
+                                    sun_rise = min([h for h in range(0,24) if to_plot.sun_altitude.values[h]>0])
+                                    sun_set = max([h for h in range(0,24) if to_plot.sun_altitude.values[h]>0])
+                                    ax.plot([sun_rise]*2,[-1,1])
+                                    ax.plot([sun_set]*2,[-1,1])
+                                    ax.plot([15]*2,[-1,1])
+                                except IndexError:
+                                    pass
+                                
+                        ax.legend()
+                        ax.set_ylim([-1,1])
+                        plt.show()
+            
+
+            
             
     tac = time.time()
     print('Done in {:.2f}s.'.format(tac-tic))
