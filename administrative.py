@@ -376,15 +376,27 @@ def draw_climat_map(dict_dep,figs_folder,cbar_min=0,cbar_max=1.,
                     bbox=dict(facecolor='k', alpha=0.5))
             
     if add_city_points is not None:
-        for i,city in enumerate(add_city_points):
-            if len(add_city_points)>1:
-                color = None
-            else:
-                color = cmap(0.5)
-            city = City(city)
-            ax.plot(city.coordinates[0],city.coordinates[1], 
-                    transform=ccrs.PlateCarree(), color=color,ls='',
-                    marker='o',label=city.name,mec='k',zorder=5)
+        if len(add_city_points) == len(dict_dep.keys()):
+            for i,city in enumerate(add_city_points):
+                if len(add_city_points)>1:
+                    color = None
+                else:
+                    color = cmap(0.5)
+                city = City(city)
+                zcl = list(dict_dep.keys())[i]
+                ax.plot(city.coordinates[0],city.coordinates[1], 
+                        transform=ccrs.PlateCarree(), color=color,ls='',
+                        marker='o',label='{} - {}'.format(city.name,zcl.code),mec='k',zorder=5)
+        else:
+            for i,city in enumerate(add_city_points):
+                if len(add_city_points)>1:
+                    color = None
+                else:
+                    color = cmap(0.5)
+                city = City(city)
+                ax.plot(city.coordinates[0],city.coordinates[1], 
+                        transform=ccrs.PlateCarree(), color=color,ls='',
+                        marker='o',label=city.name,mec='k',zorder=5)
         
     
     if not all(plotter.color==(0.0, 0.0, 0.0, 0.0)):
@@ -398,7 +410,7 @@ def draw_climat_map(dict_dep,figs_folder,cbar_min=0,cbar_max=1.,
         _ = plt.colorbar(mappable, cax=cbar_ax, label=cbar_label_var, extend=cbar_extend, extendfrac=0.02)
     
     if add_legend:
-        ax.legend()
+        ax.legend(ncol=3,loc='lower center')
         
     ax.set_title(map_title)
     if save is not None:
@@ -442,13 +454,13 @@ def main():
         france = France()
         
         draw_climat_map({Climat(e):None for e in france.climats},zcl_label=False, 
-                        figs_folder=figs_folder, save='zcl_{}'.format(zcl.code),
+                        figs_folder=figs_folder, save='zcl',
                         add_city_points=[Climat(c).center_prefecture for c in france.climats],lw=0.7)
         
         # [print(d) for d in zcl.departements]
         
     # zones climatiques d'été et d'hiver
-    if False:
+    if True:
        france = France()
        
        climats_winter = [Climat_winter(e) for e in france.climats_winter]
@@ -461,10 +473,10 @@ def main():
                        figs_folder=figs_folder, save='zcl_summer',
                        add_legend=False,lw=0.7)
        
-       climats = [Climat(e) for e in france.climats]
-       draw_climat_map({c:None for c in climats},zcl_label=True, 
-                       figs_folder=figs_folder, save='zcl',
-                       add_legend=False,lw=0.7)
+       # climats = [Climat(e) for e in france.climats]
+       # draw_climat_map({c:None for c in climats},zcl_label=True, 
+       #                 figs_folder=figs_folder, save='zcl',
+       #                 add_legend=False,lw=0.7)
         
     #%% Téléchargement des préfectures pour intégratiuon à département
     if False:
