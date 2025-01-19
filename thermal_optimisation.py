@@ -15,6 +15,7 @@ import tqdm
 import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.metrics import r2_score
+import multiprocessing
 
 from meteorology import get_historical_weather_data
 from thermal_model import (refine_resolution, 
@@ -22,17 +23,19 @@ from thermal_model import (refine_resolution,
                            run_thermal_model, 
                            plot_timeserie)
 from behaviour import Behaviour
-from administrative import Climat
+from administrative import Climat, France
 from typologies import Typology
 from future_meteorology import get_projected_weather_data
 
 
 
 def compute_energy_gains(component,typo_code,zcl,output_path,
-                         behaviour='conventionnel',
-                         period=[2000,2020],plot=True,nb_intervals=10):
+                         behaviour='conventionnel',parrallel_compute=False,
+                         period=[2000,2020],plot=True,nb_intervals=10,show=False,
+                         progressbar=False):
     
     city = zcl.center_prefecture
+    typo = Typology(typo_code)
     
     # weather data
     weather_data_checkfile = ".weather_data_{}_{}_{}".format(city,period[0],period[1]) + ".pickle"
@@ -45,32 +48,79 @@ def compute_energy_gains(component,typo_code,zcl,output_path,
     
     if behaviour == 'conventionnel':
         behaviour = Behaviour('conventionnel_th-bce_2020')
-
-    dict_all_components = {'floor':{'var_space':np.linspace(0, 0.4, nb_intervals),
-                                'var_label':'Supplementary floor insulation thickness from initial (m)',
-                                'var_saver':'{}_{}_{}_{}_{}-{}'.format(component,typo_code,zcl.code,behaviour.name,period[0],period[1])
-                                },
-                       }
+    
+    
+    dict_all_components = {'floor':{'var_space':np.logspace(np.log10(0+0.05),np.log10(0.4+0.05),num=nb_intervals)-0.05,
+                                    'var_label':'Supplementary floor insulation thickness (m)',
+                                    'var_saver':'{}_{}_{}_{}_{}-{}'.format(component,typo_code,zcl.code,behaviour.name,period[0],period[1])
+                                    },
+                           'walls':{'var_space':np.logspace(np.log10(0+0.05),np.log10(0.4+0.05),num=nb_intervals)-0.05,
+                                    'var_label':'Supplementary walls insulation thickness (m)',
+                                    'var_saver':'{}_{}_{}_{}_{}-{}'.format(component,typo_code,zcl.code,behaviour.name,period[0],period[1])
+                                    },
+                           'roof':{'var_space':np.logspace(np.log10(0+0.05),np.log10(0.4+0.05),num=nb_intervals)-0.05,
+                                   'var_label':'Supplementary roof insulation thickness (m)',
+                                   'var_saver':'{}_{}_{}_{}_{}-{}'.format(component,typo_code,zcl.code,behaviour.name,period[0],period[1])
+                                    },
+                           'albedo':{'var_space':['light','medium','dark','black'],
+                                     'var_label':'External surface color',
+                                     'var_saver':'{}_{}_{}_{}_{}-{}'.format(component,typo_code,zcl.code,behaviour.name,period[0],period[1])
+                                     },
+                           'ventilation':{'var_space':np.linspace(0, 0.5, nb_intervals),
+                                          'var_label':'Ventilation efficiency',
+                                          'var_saver':'{}_{}_{}_{}_{}-{}'.format(component,typo_code,zcl.code,behaviour.name,period[0],period[1])
+                                          },
+                           }
+    
+    dict_plot_top_value = {'SFH':250,
+                           'TH':250,
+                           'MFH':250,
+                           'AB':250}
+    
     dict_components = dict_all_components.get(component)
     
     var_space = dict_components.get('var_space')
     
     Bch_list = [0]*len(var_space)
     Bfr_list = [0]*len(var_space)
-    for idx,var_value in tqdm.tqdm(enumerate(var_space),total=len(var_space)):
-        typo = Typology(typo_code)
+    
+    if '{}.pickle'.format(dict_components.get('var_saver')) not in os.listdir(output_path):
+        if progressbar:
+            iterator = tqdm.tqdm(enumerate(var_space),total=len(var_space),desc=component)
+        else:
+            iterator = enumerate(var_space)
+            
+        for idx,var_value in iterator:
+            typo = Typology(typo_code)
+            
+            if component == 'floor':
+                typo.floor_insulation_thickness = typo.floor_insulation_thickness + var_value
+            if component == 'walls':
+                typo.w0_insulation_thickness = typo.w0_insulation_thickness + var_value
+                typo.w1_insulation_thickness = typo.w0_insulation_thickness + var_value
+                typo.w2_insulation_thickness = typo.w0_insulation_thickness + var_value
+                typo.w3_insulation_thickness = typo.w0_insulation_thickness + var_value
+            if component == 'roof':
+                typo.ceiling_supplementary_insulation_thickness = var_value
+            if component == 'albedo':
+                typo.roof_color = var_value
+                typo.w0_color = var_value
+                typo.w1_color = var_value
+                typo.w3_color = var_value
+                typo.w2_color = var_value
+            if component == 'ventilation':
+                typo.ventilation_efficiency = var_value
+                
+            simulation = run_thermal_model(typo, behaviour, weather_data, pmax_warning=False)
+            simulation = aggregate_resolution(simulation, resolution='h')
+            simulation = aggregate_resolution(simulation[['heating_needs','cooling_needs']], resolution='YE',agg_method='sum')
+            Bfr_list[idx] = simulation.cooling_needs.to_list()
+            Bch_list[idx] = simulation.heating_needs.to_list()
         
-        if component == 'floor':
-            typo.floor_insulation_thickness = typo.floor_insulation_thickness + var_value
+        
+        pickle.dump((Bch_list,Bfr_list), open(os.path.join(os.path.join(output_path),'{}.pickle'.format(dict_components.get('var_saver'))), "wb"))
     
-        simulation = run_thermal_model(typo, behaviour, weather_data, pmax_warning=False)
-        simulation = aggregate_resolution(simulation, resolution='h')
-        simulation = aggregate_resolution(simulation[['heating_needs','cooling_needs']], resolution='YE',agg_method='sum')
-        Bfr_list[idx] = simulation.cooling_needs.to_list()
-        Bch_list[idx] = simulation.heating_needs.to_list()
-    
-    
-    pickle.dump((Bch_list,Bfr_list), open(os.path.join(os.path.join(output_path,'figs'),'{}.pickle'.format(dict_components.get('var_saver'))), "wb"))
+    Bch_list,Bfr_list = pickle.load(open(os.path.join(os.path.join(output_path),'{}.pickle'.format(dict_components.get('var_saver'))), 'rb'))
     
     Bch_list = np.asarray(Bch_list)/(1e3 * typo.surface)
     Bfr_list = np.asarray(Bfr_list)/(1e3 * typo.surface)
@@ -86,22 +136,33 @@ def compute_energy_gains(component,typo_code,zcl,output_path,
         Btot_std = Btot_list.std(axis=1)
         
         fig,ax = plt.subplots(figsize=(5,5),dpi=300)
-        ax.plot(var_space, Bch_mean,color='tab:red', label='Heating needs')
-        ax.fill_between(var_space, Bch_mean+Bch_std, Bch_mean-Bch_std, color='tab:red', alpha=0.3)
+        # ax.plot(var_space, Bch_mean,color='tab:red', label='Heating needs')
+        # ax.fill_between(var_space, Bch_mean+Bch_std, Bch_mean-Bch_std, color='tab:red', alpha=0.3)
+        ax.errorbar(var_space, Bch_mean,yerr=Bch_std,
+                    color='tab:red', label='Heating needs',
+                    ls=':',marker='o',mec='w',capsize=3)
         
-        ax.plot(var_space, Bfr_mean, color='tab:blue', label='Cooling needs')
-        ax.fill_between(var_space, Bfr_mean+Bfr_std, Bfr_mean-Bfr_std, color='tab:blue', alpha=0.3)
+        # ax.plot(var_space, Bfr_mean, color='tab:blue', label='Cooling needs')
+        # ax.fill_between(var_space, Bfr_mean+Bfr_std, Bfr_mean-Bfr_std, color='tab:blue', alpha=0.3)
+        ax.errorbar(var_space, Bfr_mean,yerr=Bfr_std,
+                    color='tab:blue', label='Cooling needs',
+                    ls=':',marker='o',mec='w',capsize=3)
         
-        ax.plot(var_space, Btot_mean, color='k', label='Total needs')
-        ax.fill_between(var_space, Btot_mean+Btot_std, Btot_mean-Btot_std, color='k', alpha=0.3)
+        # ax.plot(var_space, Btot_mean, color='k', label='Total needs')
+        # ax.fill_between(var_space, Btot_mean+Btot_std, Btot_mean-Btot_std, color='k', alpha=0.3)
+        ax.errorbar(var_space, Btot_mean,yerr=Btot_std,
+                    color='k', label='Total needs',
+                    ls=':',marker='o',mec='w',capsize=3)
         
-        ax.set_ylim(bottom=0.)
+        ax.set_ylim(bottom=0.,top=dict_plot_top_value.get(typo.type))
         ax.set_xlabel(dict_components.get('var_label'))
         ax.set_ylabel('Energy needs (kWh.yr$^{-1}$.m$^{-2}$)')
-        ax.set_title(typo.code)
+        ax.set_title('{} - {}'.format(typo.code,zcl.code))
         ax.legend()
         plt.savefig(os.path.join(output_path,'figs','{}.png'.format(dict_components.get('var_saver'))),bbox_inches='tight')
-        plt.show()
+        if show: 
+            plt.show()
+        plt.close()
     
     return 
 
@@ -223,13 +284,10 @@ def main():
             
             
             
-        # Évolution relatifs des besoins en chaud et froid selon les épaisseurs d'isolants 
+        # Évolution relatifs des besoins en chaud et froid selon les épaisseurs d'isolants (comparaiosn litt)
         if False:
             
             # Localisation
-            # city = 'Beauvais'
-            # city = 'Brest'
-            # city = 'Nancy' #(2e ville la plus froide de France)
             city = 'Aalborg' # pour la comparaison avec Pomianowski
             
             # Période de calcul
@@ -251,7 +309,7 @@ def main():
             # conventionnel.heating_rules = {i:[19.9]*24 for i in range(1,8)}
             # conventionnel.cooling_rules = {i:[22.6]*24 for i in range(1,8)}
             
-            typo_name = 'FR.N.SFH.03.Gen'
+            # typo_name = 'FR.N.SFH.03.Gen'
             typo_name = 'FR.N.MFH.03.Gen'
             typo = Typology(typo_name)
             
@@ -306,43 +364,72 @@ def main():
             plt.show()
             
             
-        # Évolution des besoins en chaud et froid selon les épaisseurs d'isolants 
+        # Évolution des monogestes
         if True:
             # Localisation
             zcl = Climat('H1a')
+            zcl = Climat('H3')
             typo_code = 'FR.N.SFH.01.Gen'
-            component = 'floor'
             
-            compute_energy_gains(component,typo_code,zcl,
-                                 output_path=os.path.join(output, folder),
-                                 behaviour='conventionnel',
-                                 period=[2000,2020],
-                                 plot=True)
-                                 
-            
-            
-            # typo_name = 'FR.N.SFH.03.Gen'
-            # typo_name = 'FR.N.SFH.06.Gen'
-            # typo = Typology(typo_name)
-            
-            # efficiency_list = np.linspace(0.0001, 0.5, 30)
-            # Bch_list = np.asarray([0]*len(efficiency_list))
-            # Bfr_list = np.asarray([0]*len(efficiency_list))
-            # for idx,eff in tqdm.tqdm(enumerate(efficiency_list),total=len(efficiency_list)):
+            # premier test
+            if False:
+                # compute_energy_gains('roof',typo_code,zcl,
+                #                      output_path=os.path.join(output, folder),
+                #                      behaviour='conventionnel',
+                #                      period=[2000,2020],
+                #                      plot=True,show=True,
+                #                      progressbar=True)
                 
-            #     typo.ventilation_efficiency = eff
+                # compute_energy_gains('walls',typo_code,zcl,
+                #                      output_path=os.path.join(output, folder),
+                #                      behaviour='conventionnel',
+                #                      period=[2000,2020],
+                #                      plot=True,show=True,
+                #                      progressbar=True)
+                
+                # compute_energy_gains('floor',typo_code,zcl,
+                #                      output_path=os.path.join(output, folder),
+                #                      behaviour='conventionnel',
+                #                      period=[2000,2020],
+                #                      plot=True,show=True,
+                #                      progressbar=True)
+                
+                # compute_energy_gains('albedo',typo_code,zcl,
+                #                      output_path=os.path.join(output, folder),
+                #                      behaviour='conventionnel',
+                #                      period=[2000,2020],
+                #                      plot=True,show=True,
+                #                      progressbar=True)
+                
+                compute_energy_gains('ventilation',typo_code,zcl,
+                                     output_path=os.path.join(output, folder),
+                                     behaviour='conventionnel',
+                                     period=[2000,2020],
+                                     plot=True,show=True,
+                                     progressbar=True)
             
-            #     simulation = run_thermal_model(typo, conventionnel, weather_data, pmax_warning=False)
-            #     simulation = aggregate_resolution(simulation, resolution='h')
-            #     simulation = aggregate_resolution(simulation[['heating_needs','cooling_needs']], resolution='YE',agg_method='sum')
-            #     Bfr_list[idx] = simulation.cooling_needs.mean()
-            #     Bch_list[idx] = simulation.heating_needs.mean()
-            
-            # fig,ax = plt.subplots(figsize=(5,5),dpi=300)
-            # ax.plot(efficiency_list, Bfr_list, color='tab:blue', label='Bfr')
-            # ax.plot(efficiency_list, Bch_list, color='tab:red', label='Bch')
-            # ax.plot(efficiency_list, Bfr_list+Bch_list, color='k', label='B')
-            # plt.show()
+            # test de parallelisation
+            if True:
+                zc_list = ['H1b','H2c','H3']
+                typo_list = ['FR.N.SFH.01.Gen',
+                             'FR.N.TH.01.Gen',
+                             'FR.N.MFH.01.Gen',
+                             'FR.N.AB.03.Gen']
+                
+                # TODO faire shading
+                components = ['roof','walls','floor','albedo']#,'ventilation']#,'shading']
+                
+                nb_cpu = multiprocessing.cpu_count()
+                pool = multiprocessing.Pool(nb_cpu)
+                
+                run_list = []
+                for zc in zc_list:
+                    for typo in typo_list:
+                        for comp in components:
+                            run_list.append((comp,typo,Climat(zc),os.path.join(output, folder)))
+                        
+                pool.starmap(compute_energy_gains, run_list)
+                                 
     
         # Effets de l'albedo de la maison 
         if False:
