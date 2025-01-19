@@ -943,7 +943,7 @@ def main():
                     plt.show()
                     
                 # stats en nombre de logements 
-                if False:
+                if True:
                     draw_departement_map(departements_dict_maison_logements, figs_folder,
                                          map_title='Single-family (mean : {:.1f}%)'.format(rep_maison_france_log*100),
                                          cbar_label='Representativity (%)',

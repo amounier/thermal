@@ -127,7 +127,7 @@ def main():
     
     
     #%% Caractérisation des zones climatiques et de leur pertinence par rapport aux données météo
-    if False:
+    if True:
         france = France()
         
         temperature_DJF = xr.open_dataset(os.path.join('data','CORDEX','CORDEX Europe - Mean temperature (T) deg C - 1981-2010 - December to February (49 models)','map.nc'))
@@ -177,7 +177,7 @@ def main():
         # data_departements = gpd.GeoDataFrame(data_departements, geometry=data_departements.geometry)
         data_departements['zcl'] = [dep.climat for dep in data_departements.departement]
         
-        if False:
+        if True:
             fig,ax = plt.subplots(figsize=(5,5),dpi=300)
             hue_order = sorted(list(set(data_departements['zcl'])))
             sns.scatterplot(data=data_departements, ax=ax,hue_order=hue_order,
@@ -188,7 +188,7 @@ def main():
             ax.legend(ncols=4)
             plt.show()
             
-        if False:
+        if True:
             def scatter_hist(data, ax, ax_histx, ax_histy, **kwargs):
                 hue_order = sorted(list(set(data_departements['zcl'])))
                 ax_histx.tick_params(axis="x", labelbottom=False)
