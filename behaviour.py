@@ -18,6 +18,8 @@ class Behaviour():
     def __init__(self,name):
         self.name = name
         self.cst_internal_gains = None
+        self.nocturnal_ventilation = False
+        self.closing_shutters = False
         
         if self.name == 'conventionnel_th-bce_2020':
             self.heating_rules = {1:[19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 16, 16, 16, 16, 16, 16, 16, 16, 19, 19, 19, 19, 19, 19],
