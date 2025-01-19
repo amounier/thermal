@@ -26,6 +26,86 @@ from administrative import Climat
 from typologies import Typology
 from future_meteorology import get_projected_weather_data
 
+
+
+def compute_energy_gains(component,typo_code,zcl,output_path,
+                         behaviour='conventionnel',
+                         period=[2000,2020],plot=True,nb_intervals=10):
+    
+    city = zcl.center_prefecture
+    
+    # weather data
+    weather_data_checkfile = ".weather_data_{}_{}_{}".format(city,period[0],period[1]) + ".pickle"
+    if weather_data_checkfile not in os.listdir():
+        weather_data = get_historical_weather_data(city,period)
+        weather_data = refine_resolution(weather_data, resolution='600s')
+        pickle.dump(weather_data, open(weather_data_checkfile, "wb"))
+    else:
+        weather_data = pickle.load(open(weather_data_checkfile, 'rb'))
+    
+    if behaviour == 'conventionnel':
+        behaviour = Behaviour('conventionnel_th-bce_2020')
+
+    dict_all_components = {'floor':{'var_space':np.linspace(0, 0.4, nb_intervals),
+                                'var_label':'Supplementary floor insulation thickness from initial (m)',
+                                'var_saver':'{}_{}_{}_{}_{}-{}'.format(component,typo_code,zcl.code,behaviour.name,period[0],period[1])
+                                },
+                       }
+    dict_components = dict_all_components.get(component)
+    
+    var_space = dict_components.get('var_space')
+    
+    Bch_list = [0]*len(var_space)
+    Bfr_list = [0]*len(var_space)
+    for idx,var_value in tqdm.tqdm(enumerate(var_space),total=len(var_space)):
+        typo = Typology(typo_code)
+        
+        if component == 'floor':
+            typo.floor_insulation_thickness = typo.floor_insulation_thickness + var_value
+    
+        simulation = run_thermal_model(typo, behaviour, weather_data, pmax_warning=False)
+        simulation = aggregate_resolution(simulation, resolution='h')
+        simulation = aggregate_resolution(simulation[['heating_needs','cooling_needs']], resolution='YE',agg_method='sum')
+        Bfr_list[idx] = simulation.cooling_needs.to_list()
+        Bch_list[idx] = simulation.heating_needs.to_list()
+    
+    
+    pickle.dump((Bch_list,Bfr_list), open(os.path.join(os.path.join(output_path,'figs'),'{}.pickle'.format(dict_components.get('var_saver'))), "wb"))
+    
+    Bch_list = np.asarray(Bch_list)/(1e3 * typo.surface)
+    Bfr_list = np.asarray(Bfr_list)/(1e3 * typo.surface)
+    Btot_list = Bch_list + Bfr_list
+    
+    
+    if plot:
+        Bch_mean = Bch_list.mean(axis=1)
+        Bfr_mean = Bfr_list.mean(axis=1)
+        Btot_mean = Btot_list.mean(axis=1)
+        Bch_std = Bch_list.std(axis=1)
+        Bfr_std = Bfr_list.std(axis=1)
+        Btot_std = Btot_list.std(axis=1)
+        
+        fig,ax = plt.subplots(figsize=(5,5),dpi=300)
+        ax.plot(var_space, Bch_mean,color='tab:red', label='Heating needs')
+        ax.fill_between(var_space, Bch_mean+Bch_std, Bch_mean-Bch_std, color='tab:red', alpha=0.3)
+        
+        ax.plot(var_space, Bfr_mean, color='tab:blue', label='Cooling needs')
+        ax.fill_between(var_space, Bfr_mean+Bfr_std, Bfr_mean-Bfr_std, color='tab:blue', alpha=0.3)
+        
+        ax.plot(var_space, Btot_mean, color='k', label='Total needs')
+        ax.fill_between(var_space, Btot_mean+Btot_std, Btot_mean-Btot_std, color='k', alpha=0.3)
+        
+        ax.set_ylim(bottom=0.)
+        ax.set_xlabel(dict_components.get('var_label'))
+        ax.set_ylabel('Energy needs (kWh.yr$^{-1}$.m$^{-2}$)')
+        ax.set_title(typo.code)
+        ax.legend()
+        plt.savefig(os.path.join(output_path,'figs','{}.png'.format(dict_components.get('var_saver'))),bbox_inches='tight')
+        plt.show()
+    
+    return 
+
+
 #%% ===========================================================================
 # script principal
 # =============================================================================
@@ -229,69 +309,40 @@ def main():
         # Évolution des besoins en chaud et froid selon les épaisseurs d'isolants 
         if True:
             # Localisation
-            zcl = 'H1a'
+            zcl = Climat('H1a')
+            typo_code = 'FR.N.SFH.01.Gen'
+            component = 'floor'
             
-            # Période de calcul
-            period = [2000,2020]
+            compute_energy_gains(component,typo_code,zcl,
+                                 output_path=os.path.join(output, folder),
+                                 behaviour='conventionnel',
+                                 period=[2000,2020],
+                                 plot=True)
+                                 
             
-            # Checkpoint weather data
-            weather_data_checkfile = ".weather_data_{}_{}_{}_".format(city,period[0],period[1]) + today + ".pickle"
-            if weather_data_checkfile not in os.listdir():
-                weather_data = get_historical_weather_data(city,period)
-                weather_data = refine_resolution(weather_data, resolution='600s')
-                pickle.dump(weather_data, open(weather_data_checkfile, "wb"))
-            else:
-                weather_data = pickle.load(open(weather_data_checkfile, 'rb'))
+            
+            # typo_name = 'FR.N.SFH.03.Gen'
+            # typo_name = 'FR.N.SFH.06.Gen'
+            # typo = Typology(typo_name)
+            
+            # efficiency_list = np.linspace(0.0001, 0.5, 30)
+            # Bch_list = np.asarray([0]*len(efficiency_list))
+            # Bfr_list = np.asarray([0]*len(efficiency_list))
+            # for idx,eff in tqdm.tqdm(enumerate(efficiency_list),total=len(efficiency_list)):
                 
-            # Définition des habitudes
-            conventionnel = Behaviour('conventionnel_th-bce_2020')
+            #     typo.ventilation_efficiency = eff
             
+            #     simulation = run_thermal_model(typo, conventionnel, weather_data, pmax_warning=False)
+            #     simulation = aggregate_resolution(simulation, resolution='h')
+            #     simulation = aggregate_resolution(simulation[['heating_needs','cooling_needs']], resolution='YE',agg_method='sum')
+            #     Bfr_list[idx] = simulation.cooling_needs.mean()
+            #     Bch_list[idx] = simulation.heating_needs.mean()
             
-            typo_name = 'FR.N.SFH.03.Gen'
-            typo_name = 'FR.N.SFH.06.Gen'
-            typo = Typology(typo_name)
-            
-            thickness_list = np.linspace(0, 0.5, 30)
-            Bch_list = np.asarray([0]*len(thickness_list))
-            Bfr_list = np.asarray([0]*len(thickness_list))
-            for idx,thickness in tqdm.tqdm(enumerate(thickness_list),total=len(thickness_list)):
-                
-                typo.floor_insulation_thickness = thickness
-            
-                simulation = run_thermal_model(typo, conventionnel, weather_data, pmax_warning=False)
-                simulation = aggregate_resolution(simulation, resolution='h')
-                simulation = aggregate_resolution(simulation[['heating_needs','cooling_needs']], resolution='YE',agg_method='sum')
-                Bfr_list[idx] = simulation.cooling_needs.mean()
-                Bch_list[idx] = simulation.heating_needs.mean()
-            
-            fig,ax = plt.subplots(figsize=(5,5),dpi=300)
-            ax.plot(thickness_list, Bfr_list, color='tab:blue', label='Bfr')
-            ax.plot(thickness_list, Bch_list, color='tab:red', label='Bch')
-            ax.plot(thickness_list, Bfr_list+Bch_list, color='k', label='B')
-            plt.show()
-            
-            typo_name = 'FR.N.SFH.03.Gen'
-            typo_name = 'FR.N.SFH.06.Gen'
-            typo = Typology(typo_name)
-            
-            efficiency_list = np.linspace(0.0001, 0.5, 30)
-            Bch_list = np.asarray([0]*len(efficiency_list))
-            Bfr_list = np.asarray([0]*len(efficiency_list))
-            for idx,eff in tqdm.tqdm(enumerate(efficiency_list),total=len(efficiency_list)):
-                
-                typo.ventilation_efficiency = eff
-            
-                simulation = run_thermal_model(typo, conventionnel, weather_data, pmax_warning=False)
-                simulation = aggregate_resolution(simulation, resolution='h')
-                simulation = aggregate_resolution(simulation[['heating_needs','cooling_needs']], resolution='YE',agg_method='sum')
-                Bfr_list[idx] = simulation.cooling_needs.mean()
-                Bch_list[idx] = simulation.heating_needs.mean()
-            
-            fig,ax = plt.subplots(figsize=(5,5),dpi=300)
-            ax.plot(efficiency_list, Bfr_list, color='tab:blue', label='Bfr')
-            ax.plot(efficiency_list, Bch_list, color='tab:red', label='Bch')
-            ax.plot(efficiency_list, Bfr_list+Bch_list, color='k', label='B')
-            plt.show()
+            # fig,ax = plt.subplots(figsize=(5,5),dpi=300)
+            # ax.plot(efficiency_list, Bfr_list, color='tab:blue', label='Bfr')
+            # ax.plot(efficiency_list, Bch_list, color='tab:red', label='Bch')
+            # ax.plot(efficiency_list, Bfr_list+Bch_list, color='k', label='B')
+            # plt.show()
     
         # Effets de l'albedo de la maison 
         if False:
