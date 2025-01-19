@@ -19,6 +19,7 @@ import seaborn as sns
 from scipy import stats
 from scipy import signal
 import matplotlib
+import dask
 
 rd.seed(0)
 
@@ -51,6 +52,57 @@ def compute_dpe_representativity(dep_code,external_disk,output_folder):
                                           'departement':[dep_code, dep_code]})
     
     dep_stats.to_csv(os.path.join(output_folder, dep_stats_name),index=False)
+    return
+
+
+def compute_dpe_representativity2(dep_code,external_disk,output_folder=None):
+    # TODO à recoder
+    if output_folder is None:
+        output_folder = os.path.join('data','BDNB','dep_repr')
+        
+    dep_stats_name = 'dep{}_representativity2.csv'.format(dep_code)
+    
+    _, _, bgc = get_bdnb(dep=dep_code,external_disk=external_disk)
+    bgc = bgc[['ffo_bat_nb_log','ffo_bat_annee_construction','dpe_mix_arrete_identifiant_dpe']]
+    bgc = bgc[bgc.ffo_bat_nb_log>=1].compute()
+    
+    tabula_construction_period_dict = {'avant 1914':[-np.inf,1914],
+                                       '1914-1948':[1914,1948],
+                                       '1948-1967':[1948,1967],
+                                       '1967-1974':[1967,1974],
+                                       '1974-1981':[1974,1981],
+                                       '1981-1989':[1981,1989],
+                                       '1989-1999':[1989,1999],
+                                       '1999-2005':[1999,2005],
+                                       '2005-2012':[2005,2012],
+                                       '2012-2021':[2012,2021],
+                                       'après 2021':[2021,np.inf],}
+    
+    years_borders = sorted(list(set([x for xx in list(tabula_construction_period_dict.values()) for x in xx])))
+    categories = list(tabula_construction_period_dict.keys())
+    period_construction_list = pd.cut(bgc.ffo_bat_annee_construction, years_borders,labels=categories,)
+    bgc['ffo_periode_construction_tabula'] = period_construction_list
+    
+    tabula_building_type_dict = {'SFH':[0,1],
+                                 'MFH':[1,10],
+                                 'AB':[10,np.inf],}
+    
+    nb_log_borders = sorted(list(set([x for xx in list(tabula_building_type_dict.values()) for x in xx])))
+    categories_bt = list(tabula_building_type_dict.keys())
+    period_bt_list = pd.cut(bgc.ffo_bat_nb_log, nb_log_borders,labels=categories_bt,)
+    bgc['ffo_type_batiment'] = period_bt_list
+    bgc['ffo_batiments'] = [1]*len(bgc)
+    
+    dpe = bgc[bgc.dpe_mix_arrete_identifiant_dpe.notnull()]
+    
+    bgc_grouped = bgc.groupby(by=['ffo_type_batiment','ffo_periode_construction_tabula'],observed=True)[['ffo_batiments','ffo_bat_nb_log']].sum()
+    dpe_grouped = dpe.groupby(by=['ffo_type_batiment','ffo_periode_construction_tabula'],observed=True)[['ffo_batiments','ffo_bat_nb_log']].sum()
+    
+    bgc_grouped = bgc_grouped.join(dpe_grouped,lsuffix='_bgc',rsuffix='_dpe')
+    bgc_grouped['departement'] = [dep_code]*len(bgc_grouped)
+    bgc_grouped = bgc_grouped.reset_index()
+    
+    bgc_grouped.to_csv(os.path.join(output_folder, dep_stats_name),index=False)
     return
 
 
@@ -158,6 +210,9 @@ def concatenate_dpe_statistics(dep_code,external_disk):
                  ]
     
     bgc = bgc[variables]
+    bgc = bgc[bgc.ffo_bat_nb_log>=1]
+    # bgc = bgc.compute()
+    
     bgc = bgc[bgc.dpe_mix_arrete_identifiant_dpe.notnull()]
     bgc = bgc.compute()
     
@@ -740,60 +795,183 @@ def main():
                 concatenate_dpe_statistics(dep.code, 
                                            external_disk=external_disk_connection)
                 
-        dpe = pd.read_parquet(os.path.join('data','BDNB',reformat_bdnb_dpe_file))
-        
-        mask = dpe["dpe_mix_arrete_surface_habitable_logement"] > 1e3
-        dpe.loc[mask, 'dpe_mix_arrete_surface_habitable_logement'] = np.nan
-        
-        mask = dpe["dpe_mix_arrete_epaisseur_isolation_mur_exterieur_estim"] > 50
-        dpe.loc[mask, 'dpe_mix_arrete_epaisseur_isolation_mur_exterieur_estim'] = np.nan
-        
-        dpe = dpe.fillna(value=np.nan)
         
         # représentativité et écarts par rapport à la distribution par étiquette
         if True:
             # cartes 
             if True:
                 # TODO : representativity à recalculer
-                representativity_path = os.path.join('data','BDNB','representativity.csv')
+                
+                if 'representativity2' not in os.listdir(os.path.join('data','BDNB')) and external_disk_connection:
+                    for dep in tqdm.tqdm(France().departements):
+                        compute_dpe_representativity2(dep.code,
+                                                      external_disk=external_disk_connection,
+                                                      output_folder=None)
+                
+                representativity_path = os.path.join('data','BDNB','representativity2.csv')
                 representativity = pd.read_csv(representativity_path)
                 representativity['dep_code'] = [Departement(d).code for d in representativity.departement]
                 
-                departements_dict_maison = {}
-                departements_dict_appart = {}
+                dict_tabula_period = {'avant 1914':1,
+                                      '1914-1948':2,
+                                      '1948-1967':3,
+                                      '1967-1974':4,
+                                      '1974-1981':5,
+                                      '1981-1989':6,
+                                      '1989-1999':7,
+                                      '1999-2005':8,
+                                      '2005-2012':9,
+                                      '2012-2021':10,
+                                      'après 2021':11,}
+                
+                # representativity['tabula'] = ['FR.N.{}.{:02d}.Gen'.format(bt,dict_tabula_period.get(p)).replace('SFH','SFH+TH') for bt,p in zip(representativity.ffo_type_batiment,representativity.ffo_periode_construction_tabula)]
+                
+                # heatmap
+                if True:
+                    typology_category_list = ['SFH','TH','MFH','AB']
+                    tabula_period_list = list(dict_tabula_period.keys())
+                        
+                    matrix_typo_repartition_logements_bgc = np.zeros((len(typology_category_list),len(tabula_period_list)))
+                    matrix_typo_repartition_batiments_bgc = np.zeros((len(typology_category_list),len(tabula_period_list)))
+                    
+                    for i,cpt in enumerate(tabula_period_list):
+                        for j,typ in enumerate(typology_category_list):
+                            # if typ == 'TH':
+                                # typ = 'SFH'
+                            # typo_comp = 'FR.N.{}.{:02d}.Gen'.format(typ,dict_tabula_period.get(cpt))
+                            data_cpt_typ = representativity[(representativity.ffo_type_batiment==typ)&(representativity.ffo_periode_construction_tabula==cpt)]
+                            count_logements = data_cpt_typ.ffo_bat_nb_log_bgc.sum()
+                            count_batiments = data_cpt_typ.ffo_batiments_bgc.sum()
+                            matrix_typo_repartition_logements_bgc[j,i] = count_logements
+                            matrix_typo_repartition_batiments_bgc[j,i] = count_batiments
+                            
+                    matrix_typo_repartition_logements_bgc = matrix_typo_repartition_logements_bgc/matrix_typo_repartition_logements_bgc.sum().sum()*100
+                    matrix_typo_repartition_batiments_bgc = matrix_typo_repartition_batiments_bgc/matrix_typo_repartition_batiments_bgc.sum().sum()*100
+                    
+                    try:
+                        matrix_typo_repartition_logements,_ = pickle.load(open('.bdnb_dpe_matrix_typo_rep.pickle', 'rb'))
+                        ratio_SFH_TH = matrix_typo_repartition_logements[0,:]/(matrix_typo_repartition_logements[0,:]+matrix_typo_repartition_logements[1,:])
+                        
+                        matrix_typo_repartition_logements_bgc2 = matrix_typo_repartition_logements_bgc.copy()
+                        matrix_typo_repartition_logements_bgc2[0,:] = matrix_typo_repartition_logements_bgc[0,:]*ratio_SFH_TH
+                        matrix_typo_repartition_logements_bgc2[1,:] = matrix_typo_repartition_logements_bgc[0,:]*(1-ratio_SFH_TH)
+                        matrix_typo_repartition_logements_bgc = matrix_typo_repartition_logements_bgc2
+                        
+                        matrix_typo_repartition_batiments_bgc2 = matrix_typo_repartition_batiments_bgc.copy()
+                        matrix_typo_repartition_batiments_bgc2[0,:] = matrix_typo_repartition_batiments_bgc[0,:]*ratio_SFH_TH
+                        matrix_typo_repartition_batiments_bgc2[1,:] = matrix_typo_repartition_batiments_bgc[0,:]*(1-ratio_SFH_TH)
+                        matrix_typo_repartition_batiments_bgc = matrix_typo_repartition_batiments_bgc2
+                    except FileNotFoundError:
+                        pass
+                    
+                    df_typo_repartition_logements_bgc = pd.DataFrame(data=matrix_typo_repartition_logements_bgc,
+                                                                 index=typology_category_list,
+                                                                 columns=[e.replace('avant','before').replace('après','after') for e in tabula_period_list])
+                    
+                    df_typo_repartition_batiments_bgc = pd.DataFrame(data=matrix_typo_repartition_batiments_bgc,
+                                                                 index=typology_category_list,
+                                                                 columns=[e.replace('avant','before').replace('après','after') for e in tabula_period_list])
+                    
+                    dict_sum_repartition_logements = df_typo_repartition_logements_bgc.sum(axis=1).to_dict()
+                    dict_sum_repartition_batiments = df_typo_repartition_batiments_bgc.sum(axis=1).to_dict()
+                    
+                    fig,ax = plt.subplots(figsize=(5*(len(dict_tabula_period.keys())/4),5), dpi=300)
+                    sns.heatmap(df_typo_repartition_logements_bgc, annot=True, fmt=".1f",cmap='viridis',cbar=False)
+                    for j,typ in enumerate(typology_category_list):
+                        ax.text(len(tabula_period_list)+0.5,j+0.5,'{:.1f}%'.format(dict_sum_repartition_logements.get(typ)),
+                                ha='right',va='center')
+                    ax.set_title('Distribution of households')
+                    plt.savefig(os.path.join(figs_folder,'bgc_distribution_tabula_households_ponderated.png'), bbox_inches='tight')
+                    plt.show()
+                    
+                    fig,ax = plt.subplots(figsize=(5*(len(dict_tabula_period.keys())/4),5), dpi=300)
+                    sns.heatmap(df_typo_repartition_batiments_bgc, annot=True, fmt=".1f",cmap='viridis',cbar=False)
+                    for j,typ in enumerate(typology_category_list):
+                        ax.text(len(tabula_period_list)+0.5,j+0.5,'{:.1f}%'.format(dict_sum_repartition_batiments.get(typ)),
+                                ha='right',va='center')
+                    ax.set_title('Distribution of buildings (%)')
+                    plt.savefig(os.path.join(figs_folder,'bgc_distribution_tabula_buildings_ponderated.png'), bbox_inches='tight')
+                    plt.show()
+                    
+                departements_dict_maison_logements = {}
+                departements_dict_appart_logements = {}
+                
+                departements_dict_maison_bati = {}
+                departements_dict_appart_bati = {}
                 
                 for dep in France().departements:
                     representativity_dep = representativity[representativity.dep_code==dep.code]
                     
-                    rep_maison = representativity_dep[representativity_dep.type_batiment_dpe=='maison']
-                    rep_maison = (rep_maison.nb_logements_dpe.values[0]/rep_maison.nb_logements_bdnb.values[0])*100
-                    rep_appart = representativity_dep[representativity_dep.type_batiment_dpe=='appartement']
-                    rep_appart = (rep_appart.nb_logements_dpe.values[0]/rep_appart.nb_logements_bdnb.values[0])*100
+                    nb_bgc_maison, nb_log_bgc_maison, nb_dpe_maison, nb_log_dpe_maison = tuple(representativity_dep[representativity_dep.ffo_type_batiment=='SFH'][['ffo_batiments_bgc','ffo_bat_nb_log_bgc','ffo_batiments_dpe','ffo_bat_nb_log_dpe']].sum())
+                    nb_bgc_appart, nb_log_bgc_appart, nb_dpe_appart, nb_log_dpe_appart = tuple(representativity_dep[representativity_dep.ffo_type_batiment.isin(['AB','MFH'])][['ffo_batiments_bgc','ffo_bat_nb_log_bgc','ffo_batiments_dpe','ffo_bat_nb_log_dpe']].sum())
                     
-                    departements_dict_maison[dep] = rep_maison
-                    departements_dict_appart[dep] = rep_appart
+                    rep_maison = nb_dpe_maison/nb_bgc_maison
+                    rep_maison_log = nb_log_dpe_maison/nb_log_bgc_maison
+                    rep_appart = nb_dpe_appart/nb_bgc_appart
+                    rep_appart_log = nb_log_dpe_appart/nb_log_bgc_appart
+                    
+                    departements_dict_maison_bati[dep] = rep_maison
+                    departements_dict_appart_bati[dep] = rep_appart
+                    
+                    departements_dict_maison_logements[dep] = rep_maison_log
+                    departements_dict_appart_logements[dep] = rep_appart_log
                 
-                rep_maison_france = representativity[representativity.type_batiment_dpe=='maison'].nb_logements_dpe.sum()/representativity[representativity.type_batiment_dpe=='maison'].nb_logements_bdnb.sum()
-                rep_appart_france = representativity[representativity.type_batiment_dpe=='appartement'].nb_logements_dpe.sum()/representativity[representativity.type_batiment_dpe=='appartement'].nb_logements_bdnb.sum()
+                rep_maison_france = representativity[representativity.ffo_type_batiment.isin(['SFH'])][['ffo_batiments_bgc','ffo_bat_nb_log_bgc','ffo_batiments_dpe','ffo_bat_nb_log_dpe']].sum()
+                rep_maison_france_bati = rep_maison_france.ffo_batiments_dpe/rep_maison_france.ffo_batiments_bgc
+                rep_maison_france_log = rep_maison_france.ffo_bat_nb_log_dpe/rep_maison_france.ffo_bat_nb_log_bgc
                 
-                draw_departement_map(departements_dict_maison, figs_folder,
-                                     map_title='Single-family (mean : {:.1f}%)'.format(rep_maison_france*100),
-                                     cbar_label='Representativity (%)',
-                                     automatic_cbar_values=True,
-                                     # cbar_min=0,cbar_max=50.,
-                                     save='carte_repr_maison_dpe-BDNB')
-                plt.show()
+                rep_appart_france = representativity[representativity.ffo_type_batiment.isin(['AB','MFH'])][['ffo_batiments_bgc','ffo_bat_nb_log_bgc','ffo_batiments_dpe','ffo_bat_nb_log_dpe']].sum()
+                rep_appart_france_bati = rep_appart_france.ffo_batiments_dpe/rep_appart_france.ffo_batiments_bgc
+                rep_appart_france_log = rep_appart_france.ffo_bat_nb_log_dpe/rep_appart_france.ffo_bat_nb_log_bgc
                 
-                draw_departement_map(departements_dict_appart, figs_folder,
-                                     map_title='Multi-family (mean : {:.1f}%)'.format(rep_appart_france*100),
-                                     cbar_label='Representativity (%)',
-                                     automatic_cbar_values=True,
-                                     # cbar_min=0,cbar_max=50.,
-                                     save='carte_repr_appartement_dpe-BDNB')
-                plt.show()
+                # stats en nombre de batiments 
+                if False:
+                    draw_departement_map(departements_dict_maison_bati, figs_folder,
+                                         map_title='Single-family (mean : {:.1f}%)'.format(rep_maison_france_bati*100),
+                                         cbar_label='Representativity (%)',
+                                         automatic_cbar_values=False,
+                                         cbar_min=0,cbar_max=1.,
+                                         save='carte_repr_maison_dpe_bati-BDNB')
+                    plt.show()
+                    
+                    draw_departement_map(departements_dict_appart_bati, figs_folder,
+                                         map_title='Multi-family (mean : {:.1f}%)'.format(rep_appart_france_bati*100),
+                                         cbar_label='Representativity (%)',
+                                         automatic_cbar_values=False,
+                                         cbar_min=0,cbar_max=1.,
+                                         save='carte_repr_appartement_dpe_bati-BDNB')
+                    plt.show()
+                    
+                # stats en nombre de logements 
+                if False:
+                    draw_departement_map(departements_dict_maison_logements, figs_folder,
+                                         map_title='Single-family (mean : {:.1f}%)'.format(rep_maison_france_log*100),
+                                         cbar_label='Representativity (%)',
+                                         automatic_cbar_values=False,
+                                         cbar_min=0,cbar_max=1.,
+                                         save='carte_repr_maison_dpe_nblog-BDNB')
+                    plt.show()
+                    
+                    draw_departement_map(departements_dict_appart_logements, figs_folder,
+                                         map_title='Multi-family (mean : {:.1f}%)'.format(rep_appart_france_log*100),
+                                         cbar_label='Representativity (%)',
+                                         automatic_cbar_values=False,
+                                         cbar_min=0,cbar_max=1.,
+                                         save='carte_repr_appartement_dpe_nblog-BDNB')
+                    plt.show()
             
             # histogramme etiquette
-            if True:
+            if False:
+                dpe = pd.read_parquet(os.path.join('data','BDNB',reformat_bdnb_dpe_file))
+                
+                mask = dpe["dpe_mix_arrete_surface_habitable_logement"] > 1e3
+                dpe.loc[mask, 'dpe_mix_arrete_surface_habitable_logement'] = np.nan
+                
+                mask = dpe["dpe_mix_arrete_epaisseur_isolation_mur_exterieur_estim"] > 50
+                dpe.loc[mask, 'dpe_mix_arrete_epaisseur_isolation_mur_exterieur_estim'] = np.nan
+                
+                dpe = dpe.fillna(value=np.nan)
+                
                 etiquette_colors_dict = {'A':(0, 156, 109),'B':(82, 177, 83),'C':(120, 189, 118),'D':(244, 231, 15),'E':(240, 181, 15),'F':(235, 130, 53),'G':(215, 34, 31)}
                 etiquette_colors_dict = {k: tuple(map(lambda x: x/255, v)) for k,v in etiquette_colors_dict.items()}
                 
@@ -828,7 +1006,17 @@ def main():
                 
         # Statistiques des typologies en France
         # TODO à refaire avec les données complètes
-        if True:
+        # TODO : à reprendre avec les stats de représentativité 
+        if False:
+            dpe = pd.read_parquet(os.path.join('data','BDNB',reformat_bdnb_dpe_file))
+            
+            mask = dpe["dpe_mix_arrete_surface_habitable_logement"] > 1e3
+            dpe.loc[mask, 'dpe_mix_arrete_surface_habitable_logement'] = np.nan
+            
+            mask = dpe["dpe_mix_arrete_epaisseur_isolation_mur_exterieur_estim"] > 50
+            dpe.loc[mask, 'dpe_mix_arrete_epaisseur_isolation_mur_exterieur_estim'] = np.nan
+            
+            dpe = dpe.fillna(value=np.nan)
             
             dpe['periode_construction_tabula'] = dpe.periode_construction_tabula.replace({'avant 1914':'before 1914',
                                                                                           'après 2021':'after 2021'})
@@ -897,13 +1085,19 @@ def main():
                 matrix_typo_repartition_logements = matrix_typo_repartition_logements/matrix_typo_repartition_logements.sum().sum()*100
                 matrix_typo_repartition_batiments = matrix_typo_repartition_batiments/matrix_typo_repartition_batiments.sum().sum()*100
                 
+                pickle.dump((matrix_typo_repartition_logements,matrix_typo_repartition_batiments), open('.bdnb_dpe_matrix_typo_rep.pickle', "wb"))
+                
                 df_typo_repartition_logements = pd.DataFrame(data=matrix_typo_repartition_logements,
                                                              index=typology_category_list,
                                                              columns=tabula_period_list)
                 
+                df_typo_repartition_logements_bgc
+                
                 df_typo_repartition_batiments = pd.DataFrame(data=matrix_typo_repartition_batiments,
                                                              index=typology_category_list,
                                                              columns=tabula_period_list)
+                
+                df_typo_repartition_batiments_bgc
                 
                 dict_sum_repartition_logements = df_typo_repartition_logements.sum(axis=1).to_dict()
                 dict_sum_repartition_batiments = df_typo_repartition_batiments.sum(axis=1).to_dict()
@@ -928,7 +1122,7 @@ def main():
 
 
             # statistiques sur les valeurs U par typologie
-            if True:
+            if False:
                 for typo_group in ['SFH', 'TH', 'MFH', 'AB']:
                 # typo_group = 'AB' # SFH, TH, MFH, AB
                     hue_order = ['FR.N.{}.{:02d}.Gen'.format(typo_group,n) for n in range(1,12)]
@@ -973,7 +1167,7 @@ def main():
                         plt.savefig(os.path.join(figs_folder,'bdnb_distribution_{}_{}.png'.format(typo_group,var)), bbox_inches='tight')
                         plt.show()
                     
-            if True:
+            if False:
                 for typo_group in ['SFH', 'TH', 'MFH', 'AB']:
                 # typo_group = 'AB' # SFH, TH, MFH, AB
                     hue_order = ['FR.N.{}.{:02d}.Gen'.format(typo_group,n) for n in range(1,12)]
