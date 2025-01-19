@@ -72,8 +72,8 @@ def main():
                 
             # Définition des habitudes
             conventionnel = Behaviour('conventionnel_th-bce_2020')
-            conventionnel.heating_rules = {i:[19]*24 for i in range(1,8)}
-            conventionnel.cooling_rules = {i:[26]*24 for i in range(1,8)}
+            # conventionnel.heating_rules = {i:[19]*24 for i in range(1,8)}
+            # conventionnel.cooling_rules = {i:[26]*24 for i in range(1,8)}
             
             typo_name = 'FR.N.SFH.03.Gen'
             typo = Typology(typo_name)
@@ -81,14 +81,18 @@ def main():
             # print(typo.modelled_Upb)
             
             t1 = time.time()
-            simulation = run_thermal_model(typo, conventionnel, weather_data)
+            simulation = run_thermal_model(typo, conventionnel, weather_data, pmax_warning=False)
             simulation = aggregate_resolution(simulation, resolution='h')
-            simulation = aggregate_resolution(simulation[['heating_needs','cooling_needs']], resolution='YE',agg_method='sum')
-            initial_Bch = simulation.heating_needs.values[0]
-            initial_Bfr = simulation.cooling_needs.values[0]
+            simulation_year = aggregate_resolution(simulation[['heating_needs','cooling_needs']], resolution='YE',agg_method='sum')
+            initial_Bch = simulation_year.heating_needs.values[0]
+            initial_Bfr = simulation_year.cooling_needs.values[0]
             t2 = time.time()
             print('{} an(s) de simulation : {:.2f}s.'.format(len(list(range(*period)))+1,t2-t1))
-        
+            
+            # plot_timeserie(simulation[['heating_needs','cooling_needs']],figsize=(15,5),ylabel='Energy needs (Wh)',
+            #                figs_folder=figs_folder,show=True)
+            
+            
         
         # Besoins et températures de consignes
         # TODO faire varier les météos et les périodes de construction
@@ -223,14 +227,12 @@ def main():
             
             
         # Évolution des besoins en chaud et froid selon les épaisseurs d'isolants 
-        if False:
+        if True:
             # Localisation
-            city = 'Beauvais'
-            city = 'Nice'
+            zcl = 'H1a'
             
             # Période de calcul
-            period = [2010,2010]
-            period = [2003,2003]
+            period = [2000,2020]
             
             # Checkpoint weather data
             weather_data_checkfile = ".weather_data_{}_{}_{}_".format(city,period[0],period[1]) + today + ".pickle"
@@ -340,9 +342,9 @@ def main():
                 Bch_list[idx] = simulation.heating_needs.mean()
             
             Btot_list = Bfr_list + Bch_list
-            Btot_list = Btot_list/Btot_list[0]
-            Bfr_list = Bfr_list/Bfr_list[0]
-            Bch_list = Bch_list/Bch_list[0]
+            # Btot_list = Btot_list/Btot_list[0]
+            # Bfr_list = Bfr_list/Bfr_list[0]
+            # Bch_list = Bch_list/Bch_list[0]
     
                 
             fig,ax = plt.subplots(figsize=(5,5),dpi=300)
@@ -352,6 +354,131 @@ def main():
             plt.show()
         
         
+        # Effets de deux dates et 2 localisation
+        if False:
+            ls_list = ['solid','dotted','dashed','dashdot',]
+            
+            climate_zones = ['H1a','H3']
+            
+            years = [2090,2010] # chaud et froid
+            
+            for _,zcl in enumerate(climate_zones):
+                city = Climat(zcl).center_prefecture
+                
+                fig,ax = plt.subplots(figsize=(5,5),dpi=300)
+                
+                for i,year in enumerate(years):
+
+                    period = [year]*2
+            
+                    weather_data_checkfile = ".weather_data_{}_{}_{}_".format(city,period[0],period[1]) + today + ".pickle"
+                    if weather_data_checkfile not in os.listdir():
+                        if year < 2024:
+                            weather_data = get_historical_weather_data(city,period)
+                        else:
+                            weather_data = get_projected_weather_data(city,Climat(zcl).codint,nmod=0,rcp=85,future_period=period)
+                        weather_data = refine_resolution(weather_data, resolution='600s')
+                        pickle.dump(weather_data, open(weather_data_checkfile, "wb"))
+                    else:
+                        weather_data = pickle.load(open(weather_data_checkfile, 'rb'))
+                        
+                    agg_weather = aggregate_resolution(weather_data,'D',agg_method='mean')[['temperature_2m']]
+                    
+                    ax.plot(agg_weather.values, label='{} {}'.format(city,year),color=['tab:red','tab:blue'][i])
+                    ax.plot([0,len(agg_weather.values)], [agg_weather.mean()]*2,ls=':',color=['tab:red','tab:blue'][i])
+                ax.legend()
+                plt.show()
+            
+            for _,zcl in enumerate(climate_zones):
+                city = Climat(zcl).center_prefecture
+                # if city == 'Beauvais':
+                #     continue
+                fig,ax = plt.subplots(figsize=(5,5),dpi=300)
+                
+                for i,year in enumerate(years):
+
+                    period = [year]*2
+            
+                    weather_data_checkfile = ".weather_data_{}_{}_{}_".format(city,period[0],period[1]) + today + ".pickle"
+                    if weather_data_checkfile not in os.listdir():
+                        weather_data = get_historical_weather_data(city,period)
+                        weather_data = refine_resolution(weather_data, resolution='600s')
+                        pickle.dump(weather_data, open(weather_data_checkfile, "wb"))
+                    else:
+                        weather_data = pickle.load(open(weather_data_checkfile, 'rb'))
+            
+                    # Définition des habitudes
+                    conventionnel = Behaviour('conventionnel_th-bce_2020')
+            
+                    typo_name = 'FR.N.SFH.03.Gen'
+                    # typo_name = 'FR.N.SFH.06.Gen'
+                    # typo_name = 'FR.N.SFH.09.Gen'
+                    typo = Typology(typo_name)
+                    
+                    thickness_list = np.linspace(0, 0.4, 30)
+                    
+                    Bch_checkfile = ".Bch_{}_{}_{}_{}_".format(typo_name,city,period[0],period[1]) + today + ".pickle"
+                    Bfr_checkfile = ".Bfr_{}_{}_{}_{}_".format(typo_name,city,period[0],period[1]) + today + ".pickle"
+                    
+                    if Bch_checkfile not in os.listdir():
+                        Bch_list = np.asarray([0]*len(thickness_list))
+                        Bfr_list = np.asarray([0]*len(thickness_list))
+                        
+                    for idx,thickness in tqdm.tqdm(enumerate(thickness_list),total=len(thickness_list)):
+                        
+                        if Bch_checkfile not in os.listdir():
+                            # print('oui')
+                            
+                            typo.w0_insulation_thickness = thickness
+                            typo.w1_insulation_thickness = thickness
+                            typo.w2_insulation_thickness = thickness
+                            typo.w3_insulation_thickness = thickness
+                        
+                            simulation = run_thermal_model(typo, conventionnel, weather_data, pmax_warning=False)
+                            simulation = aggregate_resolution(simulation, resolution='h')
+                            simulation = aggregate_resolution(simulation[['heating_needs','cooling_needs']], resolution='YE',agg_method='sum')
+                            Bfr_list[idx] = simulation.cooling_needs.mean()
+                            Bch_list[idx] = simulation.heating_needs.mean()
+                            
+                    if Bch_checkfile not in os.listdir():   
+                        pickle.dump(Bch_list, open(Bch_checkfile, "wb"))
+                        pickle.dump(Bfr_list, open(Bfr_checkfile, "wb"))
+                            
+                    Bch_list = pickle.load(open(Bch_checkfile, 'rb'))
+                    Bfr_list = pickle.load(open(Bfr_checkfile, 'rb'))
+                    
+                    Bch_list = Bch_list/typo.surface
+                    Bfr_list = Bfr_list/typo.surface
+                    
+                    Btot_list = Bfr_list + Bch_list
+                    
+                    
+                    
+                    # relatif 
+                    # Btot_list = Btot_list/Btot_list[0]
+                    # Bfr_list = Bfr_list/Bfr_list[0]
+                    # Bch_list = Bch_list/Bch_list[0]
+                    
+                    # difference
+                    # Btot_list = Btot_list-Btot_list[0]
+                    # Bfr_list = Bfr_list-Bfr_list[0]
+                    # Bch_list = Bch_list-Bch_list[0]
+                    
+    
+                    ax.plot(thickness_list, Bfr_list, label='Bfr ({} {})'.format(city,year), color='tab:blue', ls=ls_list[i%4])
+                    ax.plot(thickness_list, Bch_list, label='Bch ({} {})'.format(city,year), color='tab:red', ls=ls_list[i%4])
+                    ax.plot(thickness_list, Btot_list, label='B ({} {})'.format(city,year), color='k', ls=ls_list[i%4])
+                        
+                ax.legend()
+                # ax.set_ylim(bottom=0.,top=3.5)
+                # ax.set_ylim(bottom=0.,top=2.5e7)
+                # ax.set_ylim(bottom=0.,top=2.5e7)
+                # ax.set_ylim(bottom=0.)
+                # ax.plot([thickness_list[0],thickness_list[-1]],[1]*2,color='k',zorder=-1)
+                ax.set_xlim([thickness_list[0],thickness_list[-1]])
+                ax.set_title(typo_name)
+                plt.show()
+            
         
         # Graphes de variables conjointes 
         if False:
@@ -428,8 +555,9 @@ def main():
                         np.meshgrid(thickness_list,thickness_list2)[1], 
                         Bch_list+Bfr_list)
             plt.show()
-                    
-        
+    
+    
+    
     
     tac = time.time()
     print("Done in {:.2f}s".format(tac-tic))
