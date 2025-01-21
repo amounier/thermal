@@ -599,7 +599,7 @@ def main():
                 
                 
     #%% Caractérisation et étude du flux solaire par orientation
-    if False:
+    if True:
         variables = ['direct_radiation_instant','diffuse_radiation_instant','direct_normal_irradiance_instant']
         city = 'Marseille'
         year = 2022
@@ -637,7 +637,7 @@ def main():
                                xlim=[pd.to_datetime('{}-01-01'.format(year)), pd.to_datetime('{}-12-31'.format(year))],save_fig='verif_solar_{}_{}'.format(city,year))
             
             # graphe polaire du parcours du soleil dans l'année
-            if True:
+            if False:
                 fig,ax = plt.subplots(dpi=300,figsize=(5,5),subplot_kw={'projection': 'polar'})
 
                 ax.set_theta_zero_location("N")
@@ -670,7 +670,7 @@ def main():
                 plt.show()
                 
             # graphe polaire du parcours du soleil dans l'année (comparaison entre villes)
-            if False:
+            if True:
                 variables = ['direct_radiation_instant','diffuse_radiation_instant','direct_normal_irradiance_instant']
                 year = 2022
                 
@@ -812,7 +812,7 @@ def main():
     
     
     #%% Caractérisation de la désagréggation horaire à partir des données journalières 
-    if True:
+    if False:
         test = Climat('H1a')
         test = Climat('H3')
         # test = Climat('H2b')

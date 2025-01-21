@@ -80,6 +80,7 @@ class Typology():
 
         """
         self.code = code
+        self.insulation_level = level
         
         params = open_tabula_typologies().loc[self.code].to_dict()
         # self.desc = params.get('building_name')
@@ -150,11 +151,24 @@ class Typology():
         
         # caractéristiques des ventilations et infiltrations
         self.air_infiltration = params.get('{}_air_infiltration'.format(level))
-        self.ventilation = params.get('{}_ventilation'.format(level))
-        # TODO : à completer 
-        ventilation_eff_dict = {}
-        self.ventilation_efficiency = params.get('{}_ventilation_efficiency'.format(level))
-        self.ventilation_night_over = False
+         
+        ventilation_translator_dict = {'natural':'natural', 
+                                       'SF indiv':'Individual MV',
+                                       'SF collective':'Collective MV',
+                                       'SF hygro B indiv':'Individual DCV',
+                                       'SF hygro B collective':'Collective DCV',
+                                       'DF indiv':'Individual HRV',
+                                       'DF collective':'Collective HRV'}
+        
+        self.ventilation = ventilation_translator_dict.get(params.get('{}_ventilation'.format(level)))
+        self.ventilation_efficiency = self.get_ventilation_efficiency()
+        
+        
+        ventilation_night_over_list = ['Individual HRV','Collective HRV']
+        if self.ventilation in ventilation_night_over_list:
+            self.ventilation_night_over = True
+        else:
+            self.ventilation_night_over = False
         
         # caractéristiques du toit
         self.roof_color = params.get('{}_roof_color'.format(level))
@@ -280,6 +294,17 @@ class Typology():
         horizontal_distance = np.mean(distance)
         floor_ground_distance = np.sqrt(horizontal_distance**2 + self.floor_ground_depth**2)
         return floor_ground_distance
+    
+    def get_ventilation_efficiency(self):
+        ventilation_efficiency_dict = {'natural':0,
+                                       'Individual MV':0,
+                                       'Collective MV':0.1,
+                                       'Individual DCV':0.2,
+                                       'Collective DCV':0.3,
+                                       'Individual HRV':0.7,
+                                       'Collective HRV':0.8}
+        
+        return ventilation_efficiency_dict.get(self.ventilation)
     
 
 # Peut-etre à bouger dans un nouveau fichier identification (ou pas, à voir)

@@ -120,30 +120,19 @@ def get_P_cooler(Ti, Ti_max, Pmax, method='all_or_nothing', pmax_warning=True):
     return P_cooler
 
 
-def get_P_vmeca(Ti,Te,P_heater,P_cooler,typology):
+def get_P_vmeca(Ti,Te,Tch_cons,Tfr_cons,typology):
     minimal_ventilation_air_flow = get_ventilation_minimum_air_flow(typology)
     
     # s'il n'y a pas de ventilation (efficacite nulle), flux réduit à 0 [ie ventilation naturelle]
     # TODO à retirer ?
-    if typology.ventilation_efficiency == 0.0:
-        minimal_ventilation_air_flow = 0
+    # if typology.ventilation_efficiency == 0.0:
+    #     minimal_ventilation_air_flow = 0
         
     U_air = minimal_ventilation_air_flow * AIR_THERMAL_CAPACITY * (1-typology.ventilation_efficiency)
-    
-    # bypass et surventilation nocturne
-    #     la tempe ́ rature exte ́ rieure est infe ́ rieure a` la tempe ́ rature
-    # inte ́ rieure ;
-    # – la tempe ́ rature exte ́ rieure est supe ́ rieure a` une tempe ́ rature de
-    # consigne ;
-    # – la tempe ́ rature inte ́ rieure est supe ́ rieure a` une tempe ́ rature de
-    # consigne.
 
     f_over = 1
-    if typology.ventilation_night_over:
-        # if P_heater == 0:
-        #     f_over = f_over/(1-typology.ventilation_efficiency)
-        if P_cooler > 0:
-            f_over = 2/(1-typology.ventilation_efficiency)
+    if typology.ventilation_night_over and Te < Ti and Ti > Tfr_cons:
+        f_over = 2/(1-typology.ventilation_efficiency)
             
     U_air = U_air * f_over     
             
@@ -1282,7 +1271,7 @@ def run_thermal_model(typology, behaviour, weather_data, progressbar=False, pmax
         P_heater = get_P_heater(Ti, Ti_min=Ts_heater, Pmax=P_max_heater, method='linear_tolerance', pmax_warning=pmax_warning)
         P_cooler = get_P_cooler(Ti, Ti_max=Ts_cooler, Pmax=P_max_cooler, method='linear_tolerance', pmax_warning=pmax_warning)
         
-        P_vmeca = get_P_vmeca(Ti,Te,P_heater,P_cooler,typology)
+        P_vmeca = get_P_vmeca(Ti,Te,Ts_heater,Ts_cooler,typology)
         P_vnat = get_P_vnat(Ti,Te,typology,behaviour)
         
         heating_needs[i-1] = P_heater
@@ -1370,12 +1359,12 @@ def main():
         
         
         # Définition de la typologie
-        typo_name = 'FR.N.SFH.01.Test'
+        typo_name = 'FR.N.SFH.01.Gen'
         typo = Typology(typo_name)
         
         typo.roof_U = 0.36
         
-        no_insulation = True
+        no_insulation = False
         
         if no_insulation:
             typo.w0_insulation_thickness = 0
@@ -1462,8 +1451,8 @@ def main():
         fig,ax = plt.subplots(dpi=300,figsize=(5,5))
         ax.plot(resolution_list, heating_needs_list,color='tab:red',label='Heating',marker='o')
         ax.plot(resolution_list, cooling_needs_list,color='tab:blue',label='Cooling',marker='o')
-        ax.set_ylabel('Annual energy needs (kWh.m$^{-2}$.yr$^{-1}$)')
-        # ax.set_ylim(bottom=0.)
+        ax.set_ylabel('Annual energy needs (ratio)')
+        ax.set_ylim([0.99,1.01])
         ax.legend()
         ax.set_xlabel('Temporal resolution time step (s)')
         plt.savefig(os.path.join(figs_folder,'{}.png'.format('resolution_effect_energy_needs_{}_{}'.format(city,period[0]))),bbox_inches='tight')
@@ -1472,8 +1461,8 @@ def main():
         fig,ax = plt.subplots(dpi=300,figsize=(5,5))
         ax.plot(resolution_list, power_max_heating,color='tab:red',label='Heating',marker='o')
         ax.plot(resolution_list, power_max_cooling,color='tab:blue',label='Cooling',marker='o')
-        ax.set_ylabel('Maximal power needs (Wh)')
-        # ax.set_ylim(bottom=0.)
+        ax.set_ylabel('Maximal power needs (ratio)')
+        ax.set_ylim([0.99,1.01])
         ax.legend()
         ax.set_xlabel('Temporal resolution time step (s)')
         plt.savefig(os.path.join(figs_folder,'{}.png'.format('resolution_effect_max_power_{}_{}'.format(city,period[0]))),bbox_inches='tight')
@@ -2565,14 +2554,14 @@ def main():
                 plt.show()
     
     #%% Comparaisons des typologies TABULA
-    if True:
+    if False:
         # Génération du fichier météo
         city = 'Beauvais'
         # period = [2010,2020]
         # period = [1990,2000]
         # period = [2020,2020]
         period = [2000,2020]
-        period = [2005,2005]
+        # period = [2005,2005]
         
         # Checkpoint weather data
         weather_data_checkfile = ".weather_data_{}_{}_{}_".format(city,period[0],period[1]) + today + ".pickle"
@@ -2646,7 +2635,7 @@ def main():
             period_len_list = list(range(1,31))
             speed_list = []
             
-            tmp_checkfile = ".speed_test_{}_".format(city) + today + ".pickle"
+            tmp_checkfile = ".speed_test_{}_".format(city) + ".pickle"
             if tmp_checkfile not in os.listdir():
                 for y in tqdm.tqdm(period_len_list):
                     period_test = [1990,1990+y-1]
@@ -2686,6 +2675,7 @@ def main():
             a,b = np.polyfit(X,Y,deg=1)
             Y_hat = a*X+b
             r2 = r2_score(Y, Y_hat)
+            
             ax.plot(X,Y_hat,color='k',label='linear fit (R$^2$={:.2f}, {:.2f} s'.format(r2,a)+'.yr$^{-1}$)')
             ax.legend()
             plt.savefig(os.path.join(figs_folder,'{}.png'.format('computation_speed')),bbox_inches='tight')
@@ -2694,7 +2684,7 @@ def main():
         
         
         # Comparaison entre typologies (consommations et U-values)
-        if True:
+        if False:
             
             for building_type in ['SFH','TH','MFH','AB']:
             # for building_type in ['SFH']:
@@ -2717,6 +2707,7 @@ def main():
                     for level in ['initial','standard','advanced']:
                         typo = Typology(code,level)
                         
+                        # print(code, typo.ventilation, typo.ventilation_efficiency)
                         
                         # "Facteur de réduction de température nocturne pour des locaux partiellement chauffés"
                         nocturnal_hours = list(range(7)) + [22,23]
@@ -2800,58 +2791,58 @@ def main():
             
 
                 # graphe pour les valeurs U
-                
-                element_GENMOD_dict = {'Umur':Umur_GENMOD,
-                                       'Uph':Uph_GENMOD,
-                                       'Upb':Upb_GENMOD,
-                                       'Uw':Uw_GENMOD}
-                element_TABULA_dict = {'Umur':Umur_TABULA,
-                                       'Uph':Uph_TABULA,
-                                       'Upb':Upb_TABULA,
-                                       'Uw':Uw_TABULA}
-                element_label_dict = {'Umur':'Walls U-value (W.m$^{-2}$.K$^{-1}$)',
-                                      'Uph':'Roof U-value (W.m$^{-2}$.K$^{-1}$)',
-                                      'Upb':'Floor U-value (W.m$^{-2}$.K$^{-1}$)',
-                                      'Uw':'Windows U-value (W.m$^{-2}$.K$^{-1}$)'}
-                
-                
-                for element in ['Umur', 'Uph', 'Upb', 'Uw']:
-                # for element in []:
-                    fig,ax = plt.subplots(figsize=(10,5),dpi=300)
-                    for i in range(1,11):
-                        code = 'FR.N.{}.{:02d}.Gen'.format(building_type,i)
-                        element_GENMOD = element_GENMOD_dict.get(element)
-                        element_TABULA = element_TABULA_dict.get(element)
-                        
-                        # print(element_GENMOD)
-                        
-                        j = i*7
-                        X_tabula = [j,j+2,j+4]
-                        Y_tabula = [element_TABULA.get(('FR.N.{}.{:02d}.Gen'.format(building_type,i),e)) for e in ['initial','standard','advanced']]
-                        X_model = [x+0.2 for x in X_tabula]
-                        Y_model = [element_GENMOD.get(('FR.N.{}.{:02d}.Gen'.format(building_type,i),e)) for e in ['initial','standard','advanced']]
-                        
-                        if i == 1:
-                            ax.plot(X_tabula, Y_tabula, color='tab:blue',ls=':',marker='o',label='TABULA')
-                            ax.plot(X_model, Y_model, label='Model',color='tab:orange',ls=':',marker='o')
-                        else:
-                            ax.plot(X_tabula,Y_tabula,color='tab:blue',ls=':',marker='o')
-                            ax.plot(X_model,Y_model,color='tab:orange',ls=':',marker='o')
-                            
-                        # for k,level in enumerate(['initial','standard','advanced']):
-                        #     print(Umur_GENMOD[(code,level)])
-                        #     if i==1 and k==1:
-                        #         ax.plot(X[k], [Umur_GENMOD[(code,level)]], label='Model',color='tab:orange')
-                        #     else:
-                        #         ax.plot(X[k], [Umur_GENMOD[(code,level)]],color='tab:orange')
-                            
-                            
-                    ax.set_ylim(bottom=0.)
-                    ax.set_ylabel(element_label_dict.get(element))
-                    ax.legend()
-                    ax.set_xticks([(i*7)+2 for i in range(1,11)],['{}.{:02d}'.format(building_type,i) for i in range(1,11)])
+                if True:
+                    element_GENMOD_dict = {'Umur':Umur_GENMOD,
+                                           'Uph':Uph_GENMOD,
+                                           'Upb':Upb_GENMOD,
+                                           'Uw':Uw_GENMOD}
+                    element_TABULA_dict = {'Umur':Umur_TABULA,
+                                           'Uph':Uph_TABULA,
+                                           'Upb':Upb_TABULA,
+                                           'Uw':Uw_TABULA}
+                    element_label_dict = {'Umur':'Walls U-value (W.m$^{-2}$.K$^{-1}$)',
+                                          'Uph':'Roof U-value (W.m$^{-2}$.K$^{-1}$)',
+                                          'Upb':'Floor U-value (W.m$^{-2}$.K$^{-1}$)',
+                                          'Uw':'Windows U-value (W.m$^{-2}$.K$^{-1}$)'}
                     
-                    plt.savefig(os.path.join(figs_folder,'{}.png'.format('{}_TABULA_{}'.format(building_type,element))),bbox_inches='tight')
+                    
+                    for element in ['Umur', 'Uph', 'Upb', 'Uw']:
+                    # for element in []:
+                        fig,ax = plt.subplots(figsize=(10,5),dpi=300)
+                        for i in range(1,11):
+                            code = 'FR.N.{}.{:02d}.Gen'.format(building_type,i)
+                            element_GENMOD = element_GENMOD_dict.get(element)
+                            element_TABULA = element_TABULA_dict.get(element)
+                            
+                            # print(element_GENMOD)
+                            
+                            j = i*7
+                            X_tabula = [j,j+2,j+4]
+                            Y_tabula = [element_TABULA.get(('FR.N.{}.{:02d}.Gen'.format(building_type,i),e)) for e in ['initial','standard','advanced']]
+                            X_model = [x+0.2 for x in X_tabula]
+                            Y_model = [element_GENMOD.get(('FR.N.{}.{:02d}.Gen'.format(building_type,i),e)) for e in ['initial','standard','advanced']]
+                            
+                            if i == 1:
+                                ax.plot(X_tabula, Y_tabula, color='tab:blue',ls=':',marker='o',label='TABULA')
+                                ax.plot(X_model, Y_model, label='Model',color='tab:orange',ls=':',marker='o')
+                            else:
+                                ax.plot(X_tabula,Y_tabula,color='tab:blue',ls=':',marker='o')
+                                ax.plot(X_model,Y_model,color='tab:orange',ls=':',marker='o')
+                                
+                            # for k,level in enumerate(['initial','standard','advanced']):
+                            #     print(Umur_GENMOD[(code,level)])
+                            #     if i==1 and k==1:
+                            #         ax.plot(X[k], [Umur_GENMOD[(code,level)]], label='Model',color='tab:orange')
+                            #     else:
+                            #         ax.plot(X[k], [Umur_GENMOD[(code,level)]],color='tab:orange')
+                                
+                                
+                        ax.set_ylim(bottom=0.)
+                        ax.set_ylabel(element_label_dict.get(element))
+                        ax.legend()
+                        ax.set_xticks([(i*7)+2 for i in range(1,11)],['{}.{:02d}'.format(building_type,i) for i in range(1,11)])
+                        
+                        plt.savefig(os.path.join(figs_folder,'{}.png'.format('{}_TABULA_{}'.format(building_type,element))),bbox_inches='tight')
 
 
             
