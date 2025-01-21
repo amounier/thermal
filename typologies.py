@@ -150,6 +150,9 @@ class Typology():
         
         # caractéristiques des ventilations et infiltrations
         self.air_infiltration = params.get('{}_air_infiltration'.format(level))
+        self.ventilation = params.get('{}_ventilation'.format(level))
+        # TODO : à completer 
+        ventilation_eff_dict = {}
         self.ventilation_efficiency = params.get('{}_ventilation_efficiency'.format(level))
         self.ventilation_night_over = False
         
@@ -173,6 +176,10 @@ class Typology():
         self.w3_windows_surface = params.get('building_wall3_windows_surface')+0.001
         self.windows_U = params.get('{}_windows_U'.format(level))
         self.windows_Ug = params.get('{}_windows_Ug'.format(level))
+        
+        self.windows_height = 1.5 #m
+        self.solar_shader_height = 0.3 #m
+        self.solar_shader_length = 0. #m
         
         # caractérisation de la porte
         self.door_U = params.get('{}_door_U'.format(level))
