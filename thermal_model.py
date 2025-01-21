@@ -123,13 +123,21 @@ def get_P_cooler(Ti, Ti_max, Pmax, method='all_or_nothing', pmax_warning=True):
 def get_P_vmeca(Ti,Te,P_heater,P_cooler,typology):
     minimal_ventilation_air_flow = get_ventilation_minimum_air_flow(typology)
     
-    # s'il n'y a pas de ventilation, flux réduit à 0 [ie ventilation naturelle]
+    # s'il n'y a pas de ventilation (efficacite nulle), flux réduit à 0 [ie ventilation naturelle]
+    # TODO à retirer ?
     if typology.ventilation_efficiency == 0.0:
         minimal_ventilation_air_flow = 0
         
     U_air = minimal_ventilation_air_flow * AIR_THERMAL_CAPACITY * (1-typology.ventilation_efficiency)
     
     # bypass et surventilation nocturne
+    #     la tempe ́ rature exte ́ rieure est infe ́ rieure a` la tempe ́ rature
+    # inte ́ rieure ;
+    # – la tempe ́ rature exte ́ rieure est supe ́ rieure a` une tempe ́ rature de
+    # consigne ;
+    # – la tempe ́ rature inte ́ rieure est supe ́ rieure a` une tempe ́ rature de
+    # consigne.
+
     f_over = 1
     if typology.ventilation_night_over:
         # if P_heater == 0:
@@ -635,9 +643,54 @@ def get_solar_transmission_factor(typology,weather_data,wall):
     return solar_factor
 
 
-def get_elements_masking(typology,weather_data,wall):
-    # TODO : masquage des éléments architecturaux 
-    return 1
+def get_elements_masking(typology,weather_data,wall,plot=False,output=None):
+    
+    h = typology.solar_shader_length * np.tan(np.deg2rad(weather_data.sun_altitude)) - typology.solar_shader_height
+    h[h>typology.windows_height] = typology.windows_height
+    h[h<0] = 0
+    
+    f_direct = 1-h/typology.windows_height
+    f_diffuse = 1-np.atan(typology.solar_shader_length/(typology.solar_shader_height+typology.windows_height/2))/(np.pi/2)
+    
+    if plot:
+        cmap = plt.colormaps.get_cmap('viridis')
+        line_styles = ['-',':','--','-.']
+        
+        typo_plot = Typology('FR.N.SFH.01.Gen')
+        
+        altitude = np.linspace(20,70,6)
+        # solar_shader_length = np.asarray([0,0.2,0.5,1,1.5,2])
+        solar_shader_length = np.linspace(0,2,100)
+        
+        fig,ax = plt.subplots(figsize=(5,5),dpi=300)
+        for idx,alt in enumerate(altitude):
+            h = solar_shader_length * np.tan(np.deg2rad(alt)) - typo_plot.solar_shader_height
+            h[h>typo_plot.windows_height] = typo_plot.windows_height
+            h[h<0] = 0
+            f_direct = 1-h/typo_plot.windows_height
+            
+            ax.plot(solar_shader_length,f_direct,label='{}°'.format(alt),
+                    color=cmap(idx/len(altitude)), ls=line_styles[idx%4])
+        ax.legend(title='Sun altitude')
+        ax.set_ylabel('Direct solar factor')
+        ax.set_xlabel('Solar shader length (m)')
+        ax.set_ylim(bottom=0.)
+        plt.savefig(os.path.join(output,'direct_solar_factor_masking.png'),bbox_inches='tight')
+        plt.show()
+        
+        fig,ax = plt.subplots(figsize=(5,5),dpi=300)
+
+        f_diffus = 1-np.atan(solar_shader_length/(typo_plot.solar_shader_height+typo_plot.windows_height/2))/(np.pi/2)
+            
+        ax.plot(solar_shader_length,f_diffus,
+                color=cmap(0.5))
+        # ax.legend()
+        ax.set_ylabel('Diffuse solar factor')
+        ax.set_xlabel('Solar shader length (m)')
+        ax.set_ylim(bottom=0.)
+        plt.savefig(os.path.join(output,'diffuse_solar_factor_masking.png'),bbox_inches='tight')
+        plt.show()
+    return f_direct, f_diffuse
 
 
 def get_environment_masking(typology,weather_data,wall,minimal_altitude=10):
@@ -657,7 +710,7 @@ def compute_internal_Phi(typology, weather_data, wall):
     solar_factor = get_solar_transmission_factor(typology,weather_data,wall)
     
     solar_env_mask = get_environment_masking(typology,weather_data,wall)
-    solar_elem_mask = get_elements_masking(typology,weather_data,wall)
+    solar_elem_mask, solar_elem_diffuse_mask = get_elements_masking(typology,weather_data,wall)
     
     # orientation de la paroi
     if wall == 'roof':
@@ -677,7 +730,7 @@ def compute_internal_Phi(typology, weather_data, wall):
     diffuse_sun_radiation = weather_data['diffuse_sun_radiation_{}'.format(orientation)].values
     
     # solar masks
-    Phi_si = direct_sun_radiation * solar_factor * solar_env_mask * solar_elem_mask * surface * Ug + diffuse_sun_radiation * surface * Ug
+    Phi_si = direct_sun_radiation * solar_factor * solar_env_mask * solar_elem_mask * surface * Ug + diffuse_sun_radiation * surface * Ug * solar_env_mask * solar_elem_diffuse_mask
     return Phi_si
 
 
@@ -979,7 +1032,12 @@ def run_thermal_model(typology, behaviour, weather_data, progressbar=False, pmax
     Ti_setpoint_winter, Ti_setpoint_summer = behaviour.get_set_point_temperature(weather_data)
     P_max_heater = typology.heater_maximum_power
     P_max_cooler = typology.cooler_maximum_power
-    internal_thermal_gains = behaviour.get_internal_gains(typology.surface,weather_data)
+    
+    if typology.type in ['MFH','AB']:
+        common_area_factor = 0.9 # cd 2.8 https://www.legifrance.gouv.fr/download/pdf/circ?id=34719
+    else:
+        common_area_factor = 1
+    internal_thermal_gains = behaviour.get_internal_gains(typology.surface*common_area_factor,weather_data)
     
     # calcul des valeurs U des quatres composantes
     if typology.converted_attic:
@@ -2513,7 +2571,7 @@ def main():
         # period = [2010,2020]
         # period = [1990,2000]
         # period = [2020,2020]
-        period = [1990,2020]
+        period = [2000,2020]
         period = [2005,2005]
         
         # Checkpoint weather data
@@ -2539,6 +2597,12 @@ def main():
                            xlim=[pd.to_datetime('{}-01-01'.format(period[0])), pd.to_datetime('{}-12-31'.format(period[1]))],
                            figs_folder=figs_folder, save_fig='temperature_{}_{}_{}'.format(city,period[0],period[1]))
         
+        # graphes des masquages 
+        if False:
+            get_elements_masking(Typology('FR.N.SFH.01.Gen'), weather_data, wall=0, plot=True,output=figs_folder)
+            
+            
+            
         # Définition des habitudes
         conventionnel = Behaviour('conventionnel_th-bce_2020')
         conventionnel.heating_rules = {i:[19]*24 for i in range(1,8)}

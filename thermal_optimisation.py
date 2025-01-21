@@ -70,7 +70,12 @@ def compute_energy_gains(component,typo_code,zcl,output_path,
                                           'var_label':'Ventilation efficiency',
                                           'var_saver':'{}_{}_{}_{}_{}-{}'.format(component,typo_code,zcl.code,behaviour.name,period[0],period[1])
                                           },
+                           'shading':{'var_space':np.linspace(0, 2, nb_intervals),
+                                      'var_label':'Solar shader length (m)',
+                                      'var_saver':'{}_{}_{}_{}_{}-{}'.format(component,typo_code,zcl.code,behaviour.name,period[0],period[1])
+                                          },
                            }
+    
     
     dict_plot_top_value = {'SFH':250,
                            'TH':250,
@@ -110,6 +115,8 @@ def compute_energy_gains(component,typo_code,zcl,output_path,
                 typo.w2_color = var_value
             if component == 'ventilation':
                 typo.ventilation_efficiency = var_value
+            if component == 'shading':
+                typo.solar_shader_length = var_value
                 
             simulation = run_thermal_model(typo, behaviour, weather_data, pmax_warning=False)
             simulation = aggregate_resolution(simulation, resolution='h')
@@ -368,11 +375,11 @@ def main():
         if True:
             # Localisation
             zcl = Climat('H1a')
-            zcl = Climat('H3')
+            # zcl = Climat('H3')
             typo_code = 'FR.N.SFH.01.Gen'
             
             # premier test
-            if False:
+            if True:
                 # compute_energy_gains('roof',typo_code,zcl,
                 #                      output_path=os.path.join(output, folder),
                 #                      behaviour='conventionnel',
@@ -401,7 +408,14 @@ def main():
                 #                      plot=True,show=True,
                 #                      progressbar=True)
                 
-                compute_energy_gains('ventilation',typo_code,zcl,
+                # compute_energy_gains('ventilation',typo_code,zcl,
+                #                      output_path=os.path.join(output, folder),
+                #                      behaviour='conventionnel',
+                #                      period=[2000,2020],
+                #                      plot=True,show=True,
+                #                      progressbar=True)
+                
+                compute_energy_gains('shading',typo_code,zcl,
                                      output_path=os.path.join(output, folder),
                                      behaviour='conventionnel',
                                      period=[2000,2020],
@@ -409,7 +423,7 @@ def main():
                                      progressbar=True)
             
             # test de parallelisation
-            if True:
+            if False:
                 zc_list = ['H1b','H2c','H3']
                 typo_list = ['FR.N.SFH.01.Gen',
                              'FR.N.TH.01.Gen',
