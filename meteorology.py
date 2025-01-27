@@ -19,8 +19,9 @@ import tqdm
 import seaborn as sns
 import pickle
 from sklearn.metrics import root_mean_squared_error
+from scipy.optimize import curve_fit
 
-# Pour ne pas utiliser numpy dans la gestion des dates de Pysolar (moins efficace est plus à jour)
+# Pour ne pas utiliser numpy dans la gestion des dates de Pysolar (moins efficace et plus à jour)
 import pysolar
 pysolar.use_math()
 
@@ -599,7 +600,7 @@ def main():
                 
                 
     #%% Caractérisation et étude du flux solaire par orientation
-    if True:
+    if False:
         variables = ['direct_radiation_instant','diffuse_radiation_instant','direct_normal_irradiance_instant']
         city = 'Marseille'
         year = 2022
@@ -615,7 +616,7 @@ def main():
                                xlim=[pd.to_datetime('{}-01-01'.format(year)), pd.to_datetime('{}-12-31'.format(year))],save_fig='{}_{}_{}'.format(c,city,year))
         
         # Étude de l'azimuth et de l'élévation
-        if True:
+        if False:
             warnings.simplefilter("ignore")
     
             dates = data.copy().index
@@ -812,12 +813,15 @@ def main():
     
     
     #%% Caractérisation de la désagréggation horaire à partir des données journalières 
-    if False:
+    if True:
         test = Climat('H1a')
         test = Climat('H3')
         # test = Climat('H2b')
+        # test = Climat('H1b')
         city = test.center_prefecture
         coordinates = get_coordinates(city)
+        period = [2020,2020]
+        period = [2000,2000]
         period = [2000,2020]
         
         # Checkpoint weather data
@@ -828,40 +832,47 @@ def main():
         else:
             weather_data = pickle.load(open(weather_data_checkfile, 'rb'))
         
+        print(weather_data.columns)
         
         # cas de la température 
-        if True:
+        if False:
             weather_data = weather_data[['temperature_2m','sun_altitude']]
             
             weather_day = aggregate_resolution(weather_data[['temperature_2m']], resolution='D', agg_method='min').rename(columns={'temperature_2m':'temperature_2m_daily_min'})
-            weather_day['temperature_2m_daily_mean'] = aggregate_resolution(weather_data[['temperature_2m']], resolution='D', agg_method='mean').values
+            # weather_day['temperature_2m_daily_mean'] = aggregate_resolution(weather_data[['temperature_2m']], resolution='D', agg_method='mean').values
             weather_day['temperature_2m_daily_max'] = aggregate_resolution(weather_data[['temperature_2m']], resolution='D', agg_method='max').values
             weather_day['hour_sunrise'] = weather_data.index[weather_data.sun_altitude.lt(0)&weather_data.sun_altitude.shift(-1).ge(0)].hour.values
             
             if True:
-                # hour_max_temp = [np.nan]*len(weather_day)
-                # hour_min_temp = [np.nan]*len(weather_day)
                 
-                # for idx,day in tqdm.tqdm(enumerate(weather_day.index),total=len(weather_day)):
-                #     d, month, year = day.day, day.month, day.year
-                #     weather_data_day = weather_data[(weather_data.index.day==d)&(weather_data.index.month==month)&(weather_data.index.year==year)]
-                #     hour_max_temp[idx] = weather_data_day.temperature_2m.idxmax().hour
-                #     hour_min_temp[idx] = weather_data_day.temperature_2m.idxmin().hour
-                
-                # weather_day['hour_max_temp'] = hour_max_temp
-                # weather_day['hour_min_temp'] = hour_min_temp
-                
-                
-                # weather_day['hour_min_sunrise_diff'] = weather_day['hour_min_temp'] - weather_day['hour_sunrise'] 
-                
-                # fig,ax = plt.subplots(dpi=300,figsize=(5,5))
-                # sns.histplot(weather_day,x='hour_max_temp',ax=ax,kde=True,binwidth=1,binrange=[-10.5,23.5],stat='density')
-                # plt.show()
-                
-                # fig,ax = plt.subplots(dpi=300,figsize=(5,5))
-                # sns.histplot(weather_day,x='hour_min_temp',ax=ax,kde=True,binwidth=1,binrange=[-10.5,23.5],stat='density')
-                # sns.histplot(weather_day,x='hour_min_sunrise_diff',ax=ax,kde=True,binwidth=1,binrange=[-10.5,23.5],stat='density')
-                # plt.show()
+                # graphe des mins et max journaliers 
+                if True:
+                    hour_max_temp = [np.nan]*len(weather_day)
+                    hour_min_temp = [np.nan]*len(weather_day)
+                    
+                    for idx,day in tqdm.tqdm(enumerate(weather_day.index),total=len(weather_day)):
+                        d, month, year = day.day, day.month, day.year
+                        weather_data_day = weather_data[(weather_data.index.day==d)&(weather_data.index.month==month)&(weather_data.index.year==year)]
+                        hour_max_temp[idx] = weather_data_day.temperature_2m.idxmax().hour
+                        hour_min_temp[idx] = weather_data_day.temperature_2m.idxmin().hour
+                    
+                    weather_day['hour_max_temp'] = hour_max_temp
+                    weather_day['hour_min_temp'] = hour_min_temp
+                    
+                    
+                    weather_day['hour_min_sunrise_diff'] = weather_day['hour_min_temp'] - weather_day['hour_sunrise'] 
+                    
+                    fig,ax = plt.subplots(dpi=300,figsize=(5,5))
+                    sns.histplot(weather_day,x='hour_max_temp',ax=ax,kde=True,binwidth=1,binrange=[-10.5,23.5],stat='density')
+                    ax.set_xlabel('Day hour of maximal temperature')
+                    ax.set_xlim([0,24])
+                    plt.show()
+                    
+                    fig,ax = plt.subplots(dpi=300,figsize=(5,5))
+                    # sns.histplot(weather_day,x='hour_min_temp',ax=ax,kde=True,binwidth=1,binrange=[-10.5,23.5],stat='density')
+                    sns.histplot(weather_day,x='hour_min_sunrise_diff',ax=ax,kde=True,binwidth=1,binrange=[-10.5,23.5],stat='density')
+                    ax.set_xlabel('Difference between hour of minimal temperature\nand sun rise hour (h)')
+                    plt.show()
             
             
                 hour_min_rel_sunrise = 0
@@ -932,17 +943,17 @@ def main():
                 weather_data_modelled['temperature_sin14R1'] = temperature_sin14R1
                 
                 
-                D_val = [np.nan]*len(weather_day)
-                for idx,day in tqdm.tqdm(enumerate(weather_day.index),total=len(weather_day)):
-                    y,m,d = day.year, day.month, day.day
-                    daily_T = weather_data_modelled[(weather_data_modelled.index.year==y)&(weather_data_modelled.index.month==m)&(weather_data_modelled.index.day==d)].temperature_sin14R1
-                    daily_T = daily_T.clip(lower=weather_day.loc[day].temperature_2m_daily_min, upper=weather_day.loc[day].temperature_2m_daily_max)
-                    mean_t_sin = daily_T.mean()
-                    D_val[idx] = weather_day.loc[day].temperature_2m_daily_mean - mean_t_sin
+                # D_val = [np.nan]*len(weather_day)
+                # for idx,day in tqdm.tqdm(enumerate(weather_day.index),total=len(weather_day)):
+                #     y,m,d = day.year, day.month, day.day
+                #     daily_T = weather_data_modelled[(weather_data_modelled.index.year==y)&(weather_data_modelled.index.month==m)&(weather_data_modelled.index.day==d)].temperature_sin14R1
+                #     daily_T = daily_T.clip(lower=weather_day.loc[day].temperature_2m_daily_min, upper=weather_day.loc[day].temperature_2m_daily_max)
+                #     mean_t_sin = daily_T.mean()
+                #     D_val[idx] = weather_day.loc[day].temperature_2m_daily_mean - mean_t_sin
                     
-                weather_day['D_val'] = D_val
-                weather_day['lambda_val'] = (hour_max-(weather_day.hour_sunrise-hour_min_rel_sunrise))/2 - ((12*weather_day.D_val*np.pi)/(weather_day.temperature_2m_daily_max-weather_day.temperature_2m_daily_min))
-                weather_day['lambda_val'] = weather_day['lambda_val'].clip(lower=weather_day.hour_sunrise-hour_min_rel_sunrise)
+                # weather_day['D_val'] = D_val
+                # weather_day['lambda_val'] = (hour_max-(weather_day.hour_sunrise-hour_min_rel_sunrise))/2 - ((12*weather_day.D_val*np.pi)/(weather_day.temperature_2m_daily_max-weather_day.temperature_2m_daily_min))
+                # weather_day['lambda_val'] = weather_day['lambda_val'].clip(lower=weather_day.hour_sunrise-hour_min_rel_sunrise)
                 
                 # sns.histplot(weather_day,x='lambda_val')
                 
@@ -989,12 +1000,13 @@ def main():
                 weather_rmse = weather_data_modelled[['temperature','temperature_sin14R1']].dropna()
                 rmse = root_mean_squared_error(weather_rmse.temperature, weather_rmse.temperature_sin14R1)
                 
-                fig,ax = plot_timeserie(weather_data_modelled[['diff_temperature']], figsize=(10,5),
+                
+                fig,ax = plot_timeserie(aggregate_resolution(weather_data_modelled[['diff_temperature']], resolution='ME', agg_method='mean'), figsize=(5,5),
                                         figs_folder = figs_folder,
                                         show=False,ylabel='Temperature difference (°C)',labels=['{} (RMSE = {:.2f}°C)'.format(city,rmse)],)
                 # ax.plot([weather_data_modelled.index[0],weather_data_modelled.index[-1]],[weather_data_modelled.diff_temperature.mean()]*2,color='k')
                 ylim = max(np.abs(ax.get_ylim()))
-                ax.set_ylim([ylim,-ylim])
+                ax.set_ylim([-ylim,ylim])
                 plt.savefig(os.path.join(figs_folder,'difference_temperature_{}_{}-{}'.format(city,period[0],period[1])), bbox_inches='tight')
                 plt.show()
                 
@@ -1006,6 +1018,22 @@ def main():
                 ax.legend()
                 ax.set_ylim(ylims)
                 ax.set_xlabel('Temperature difference (°C)')
+                plt.savefig(os.path.join(figs_folder,'difference_temperature_hist_{}_{}-{}'.format(city,period[0],period[1])), bbox_inches='tight')
+                plt.show()
+                
+                fig,ax = plt.subplots(figsize=(5,5),dpi=300)
+                ax.plot(weather_data_modelled['temperature'],
+                        weather_data_modelled['temperature_sin14R1'],
+                        ls='',marker='.',alpha=0.05,)
+                plt.axis('equal')
+                ylims = ax.get_ylim()
+                ax.plot([*ylims],[*ylims],color='k',)
+                ax.set_xlabel('Temperature (°C)')
+                ax.set_ylabel('Modelled temperature (°C)')
+                # ax.set_xlabel('Temperature difference (°C)')
+                ax.set_ylim(*ylims)
+                ax.set_xlim(*ylims)
+                plt.savefig(os.path.join(figs_folder,'difference_temperature_versus_{}_{}-{}'.format(city,period[0],period[1])), bbox_inches='tight')
                 plt.show()
             
             
@@ -1030,7 +1058,7 @@ def main():
                     weather_data = weather_data.join(weather_day)
                     
                 
-                if True:
+                if False:
                     # TODO : à refaire avec des boxplot ou des fill between
                     for month in range(1,13):
                         weather_data_month = weather_data[(weather_data.index.month==month)].copy()
@@ -1063,7 +1091,179 @@ def main():
                         plt.show()
             
 
+        # cas des flux solaires 
+        if False:
             
+            # premier tests :
+            if False:
+                # graphe à faire pour la période [1990,2020]
+                
+                # weather_data_thermal = weather_data[['direct_sun_radiation_H']]
+                
+                solar_vars = ['shortwave_radiation_instant','direct_radiation_instant','diffuse_radiation_instant','cloud_cover','temperature_2m']
+                weather_data = get_meteo_data(city,period,solar_vars)
+                
+                # weather_data['sum'] = weather_data.direct_radiation_instant + weather_data.diffuse_radiation_instant
+                
+                weather_data['ratio_direct'] = weather_data.direct_radiation_instant / (weather_data.direct_radiation_instant + weather_data.diffuse_radiation_instant)
+                # plot_timeserie(weather_data[['direct_normal_irradiance_instant']],figsize=(15,5),
+                #                xlim=[pd.to_datetime('2020-01-15'), pd.to_datetime('2020-01-31')])
+                
+                # plot_timeserie(weather_data[['direct_normal_irradiance_instant']],figsize=(15,5),
+                #                xlim=[pd.to_datetime('2020-07-15'), pd.to_datetime('2020-07-31')])
+                
+                weather_day = aggregate_resolution(weather_data, resolution='D', agg_method='mean')
+                # weather_day_thermal = aggregate_resolution(weather_data_thermal, resolution='D', agg_method='mean')
+                print(weather_day.shortwave_radiation_instant.sum())
+                
+                plot_timeserie(weather_day[['shortwave_radiation_instant','direct_radiation_instant','diffuse_radiation_instant']],figsize=(15,5),show=True,
+                               xlim=[pd.to_datetime('2001-01-01'), pd.to_datetime('2001-12-31')])
+                
+                plot_timeserie(aggregate_resolution(weather_day[['ratio_direct']], resolution='ME', agg_method='mean'),figsize=(10,5),show=True,
+                               xlim=[pd.to_datetime('2001-01-01'), pd.to_datetime('2001-12-31')])
+                
+                
+                # plot_timeserie(weather_day[['shortwave_radiation_instant','direct_radiation_instant','diffuse_radiation_instant']],figsize=(15,5),show=True,
+                #                xlim=[pd.to_datetime('2000-01-01'), pd.to_datetime('2020-12-31')])
+                
+                # plot_timeserie(weather_day[['ratio_direct']],figsize=(10,5),show=True,
+                #                xlim=[pd.to_datetime('2000-01-01'), pd.to_datetime('2020-12-31')])
+                
+                # fig,ax = plt.subplots(figsize=(5,5),dpi=300)
+                # # sns.histplot(data=weather_day,x='shortwave_radiation_instant',y='ratio_direct',
+                # #              ax=ax)
+                # g = sns.jointplot(data=weather_day,x='shortwave_radiation_instant',y='ratio_direct',
+                #                   ax=ax,kind="hist",ratio=3)
+                # g.refline(y=0.73)
+                # ax.plot(weather_day.shortwave_radiation_instant, weather_day.ratio_direct,marker='.',alpha=0.05,ls='')
+                # plt.show()
+                
+                # fig,ax = plt.subplots(figsize=(5,5),dpi=300)
+                # ax.plot(weather_day.temperature_2m, weather_day.ratio_direct,marker='.',alpha=0.05,ls='')
+                # plt.show()
+                pass
+            
+            # séparation simplifiée des flux directs et diffus 
+            if True:
+                # ratio_direct = 0.73
+                
+                def func(x,r):
+                    direct = x*r
+                    # sum_direct = direct.sum()
+                    return direct
+                
+                solar_vars = ['shortwave_radiation_instant','direct_radiation_instant','diffuse_radiation_instant']
+                weather_data = get_meteo_data(city,period,solar_vars)
+                
+                weather_day = aggregate_resolution(weather_data, resolution='D', agg_method='mean')
+                
+                # weather_day = weather_day.rolling(10, center=True, min_periods=1).mean()
+                # ratio_direct = (weather_day.direct_radiation_instant/weather_day.shortwave_radiation_instant).mean()
+                
+                popt, pcov = curve_fit(func, weather_day.shortwave_radiation_instant, weather_day.direct_radiation_instant)
+                
+                
+                ratio_direct = popt[0]
+                # ratio_direct = 0.79
+                
+                print(popt)
+                
+                weather_day['mod_direct_radiation_instant'] = weather_day.shortwave_radiation_instant*ratio_direct
+                weather_day['mod_diffuse_radiation_instant'] = weather_day.shortwave_radiation_instant*(1-ratio_direct)
+                
+                weather_day['direct_difference'] = weather_day.mod_direct_radiation_instant - weather_day.direct_radiation_instant
+                weather_day['diffuse_difference'] = weather_day.diffuse_radiation_instant - weather_day.mod_diffuse_radiation_instant
+                
+                diffuse_rmse = weather_day[['diffuse_radiation_instant','mod_diffuse_radiation_instant']].dropna()
+                diffuse_rmse = root_mean_squared_error(diffuse_rmse.diffuse_radiation_instant, diffuse_rmse.mod_diffuse_radiation_instant)
+                direct_rmse = weather_day[['direct_radiation_instant','mod_direct_radiation_instant']].dropna()
+                direct_rmse = root_mean_squared_error(direct_rmse.direct_radiation_instant, direct_rmse.mod_direct_radiation_instant)
+                
+                print('direct rmse', direct_rmse)
+                print('diffuse rmse', diffuse_rmse)
+                
+                plot_timeserie(weather_day[['shortwave_radiation_instant']],figsize=(15,5),show=True,
+                               xlim=[pd.to_datetime('2000-01-01'), pd.to_datetime('2000-12-31')])
+                
+                # fig,ax = plt.subplots(figsize=(5,5),dpi=300)
+                # sns.histplot(data=weather_day,x='direct_difference',ax=ax)
+                # ylims= ax.get_ylim()
+                # ax.plot([weather_day.direct_difference.mean()]*2,[*ylims],label='Mean = {:.2f}'.format(weather_day.direct_difference.mean()),color='k')
+                # ax.legend()
+                # plt.show()
+                
+                # fig,ax = plt.subplots(figsize=(5,5),dpi=300)
+                # sns.histplot(data=weather_day,x='diffuse_difference',ax=ax)
+                # plt.show()
+                
+            
+            # variations infrajournalieres
+            if False:
+                solar_vars = ['shortwave_radiation_instant','direct_radiation_instant','diffuse_radiation_instant']
+                weather_data = get_meteo_data(city,period,solar_vars)
+                # weather_data = weather_data.tz_localize(tz='Europe/Berlin',ambiguous='NaT',nonexistent='NaT')
+                
+                dates = weather_data.copy().index
+                dates = dates.tz_localize(tz='UTC',ambiguous='NaT',nonexistent='NaT')
+                dates = dates.to_pydatetime()
+                altitude = [get_altitude_fast(coordinates[1],coordinates[0],t) if t is not pd.NaT else np.nan for t in dates]
+                weather_data['sun_altitude'] = altitude
+                weather_data['sun_altitude'] = weather_data['sun_altitude'].shift(1)
+                
+                weather_data['solar_model'] = np.cos(np.deg2rad(90-weather_data.sun_altitude))
+                weather_data['solar_model'] = weather_data['solar_model'].clip(lower=0.)
+                # weather_data['solar_model'] = weather_data['solar_model']/weather_data['solar_model'].max()
+                
+                weather_day = aggregate_resolution(weather_data, resolution='D', agg_method='mean')
+                weather_day = weather_day.rename(columns={c:'{}_daily_mean'.format(c) for c in weather_day.columns})
+                
+                
+                weather_day = pd.DataFrame(index=weather_data.index).join(weather_day)
+                for idx in range(len(weather_day)):
+                    row = weather_day.iloc[idx].values
+                    if not pd.isnull(row[0]):
+                        nonan_row = row
+                    else:
+                        weather_day.iloc[idx] = nonan_row
+                
+                weather_data = weather_data.join(weather_day)
+                
+                
+                
+                for month in range(1,13):
+                    weather_data_month = weather_data[(weather_data.index.month==month)].copy()
+                    weather_data_month['solar'] = weather_data_month.shortwave_radiation_instant/weather_data_month.shortwave_radiation_instant_daily_mean
+                    weather_data_month['solar_mod'] = weather_data_month.solar_model/weather_data_month.solar_model_daily_mean*1.09
+                    
+                    
+                    # weather_data_month['solar'] = weather_data_month.shortwave_radiation_instant
+                    # weather_data_month['solar_mod'] = weather_data_month.solar_model/weather_data_month.solar_model_daily_mean * weather_data_month.shortwave_radiation_instant_daily_mean
+                    
+                    
+                    fig,ax = plt.subplots(dpi=300,figsize=(5,5))
+                    for year in range(period[0],period[1]+1):
+                        for day in range(1,32):
+                            to_plot = weather_data_month[(weather_data_month.index.day==day)&(weather_data_month.index.year==year)]
+                            
+                            if day == 1 and year == period[0]:
+                                label=to_plot.index[0].strftime('%B')
+                            else:
+                                label=None
+                                
+                            ax.plot(to_plot['solar'].values,color='k',alpha=0.1,label=label)
+                            ax.plot(to_plot['solar_mod'].values,color='tab:blue',alpha=0.1)
+                            # try:
+                            #     sun_rise = min([h for h in range(0,24) if to_plot.sun_altitude.values[h]>0])
+                            #     sun_set = max([h for h in range(0,24) if to_plot.sun_altitude.values[h]>0])
+                            #     ax.plot([sun_rise-1]*2,[0,3])
+                            #     ax.plot([sun_set]*2,[0,3])
+                            #     # ax.plot([15]*2,[-1,1])
+                            # except IndexError:
+                            #     pass
+                            
+                    ax.legend()
+                    ax.set_ylim([0,6])
+                    plt.show()
             
     tac = time.time()
     print('Done in {:.2f}s.'.format(tac-tic))

@@ -12,10 +12,25 @@ from datetime import date
 import pandas as pd
 import tqdm
 import numpy as np
+import subprocess
+import xarray as xr
+import matplotlib.pyplot as plt
+import pyproj
+import cartopy.crs as ccrs
+import matplotlib
+import geopandas as gpd
+from shapely.geometry import mapping
+import cmocean
+from pysolar.solar import get_altitude, get_altitude_fast, get_azimuth, get_azimuth_fast
+import multiprocessing
 
-
-from meteorology import get_historical_weather_data
-from administrative import Climat
+from meteorology import (get_historical_weather_data, 
+                         aggregate_resolution, 
+                         get_direct_solar_irradiance_projection_ratio,
+                         get_diffuse_solar_irradiance_projection_ratio)
+from administrative import Climat, get_coordinates, France, City
+from climate_zone_characterisation import map_xarray
+from utils import blank_national_map, get_extent
 
 
 def open_zcl_daily_temperature():
@@ -49,7 +64,7 @@ def delta_daily_temperature(zcl_codint,nmod,ref_period=[2010,2020]):
     return data_delta_t
 
 
-def get_projected_weather_data(city,zcl_codint,nmod,rcp,future_period,ref_year=2020):
+def get_projected_weather_data_old(city,zcl_codint,nmod,rcp,future_period,ref_year=2020):
     future_period_list = list(range(future_period[0],future_period[1]+1))
     dt = delta_daily_temperature(zcl_codint, nmod)
     col = 'proj_temperature_{}_mod{}_rcp{}'.format(zcl_codint,nmod,rcp)
@@ -85,6 +100,156 @@ def get_projected_weather_data(city,zcl_codint,nmod,rcp,future_period,ref_year=2
     
     return weather_data
 
+
+
+def compute_projected_weather_data(zcl_code,nmod):
+    
+    zcl = Climat(zcl_code)
+    city = City(zcl.center_prefecture)
+    coordinates = city.coordinates
+    
+    path = os.path.join('data','Explore2','daily')
+    
+    daily_data = pd.read_csv(os.path.join(path,'tas_mod{}_{}.csv'.format(nmod,zcl_code))).rename(columns={'Unnamed: 0':'date'}).set_index('date')
+    for cv in ['tasmin','tasmax','rsds']:
+        daily_data = daily_data.join(pd.read_csv(os.path.join(path,'{}_mod{}_{}.csv'.format(cv,nmod,zcl_code))).rename(columns={'Unnamed: 0':'date'}).set_index('date'))
+    daily_data.index = pd.to_datetime(daily_data.index)
+    
+    if '{}_mod{}.parquet'.format(zcl_code,nmod) not in os.listdir(os.path.join('data','Explore2','hourly')):
+        
+        hourly_data = pd.DataFrame(index=pd.date_range(daily_data.index[0],'{}-01-01'.format(daily_data.index[-1].year+1),freq='h'))
+        hourly_data = hourly_data.drop(hourly_data.iloc[-1].name)
+        
+        dates = hourly_data.copy().index
+        dates = dates.tz_localize(tz='CET',ambiguous='NaT',nonexistent='NaT')
+        dates = dates.to_pydatetime()
+        altitude = [get_altitude_fast(coordinates[1],coordinates[0],t) if t is not pd.NaT else np.nan for t in tqdm.tqdm(dates, desc='altitude')]
+        azimuth = [float(get_azimuth_fast(coordinates[1],coordinates[0],t)) if t is not pd.NaT else np.nan for t in tqdm.tqdm(dates, desc='azimuth')]
+        
+        hourly_data['sun_azimuth'] = azimuth
+        hourly_data['sun_altitude'] = altitude
+        hourly_data['sunrise'] = hourly_data.sun_altitude.lt(0) & hourly_data.sun_altitude.shift(-1).ge(0)
+        
+        daily_data['hour_sunrise'] = hourly_data.index[hourly_data['sunrise']].hour.values[:len(daily_data)]
+        
+        # construction des données de temperature
+        hourly_data['temp'] = [np.nan]*len(hourly_data)
+        
+        hour_min_rel_sunrise = 0
+        hour_max = 15
+        
+        mask_max = hourly_data.index.hour == hour_max
+        hourly_data.loc[mask_max,'temp'] = list(daily_data.tasmax.values) + [np.nan]*(len(hourly_data.loc[mask_max,'temp'])-len(daily_data))
+        
+        mask_min = hourly_data.sunrise.shift(hour_min_rel_sunrise).infer_objects(copy=False).fillna(False)
+        hourly_data.loc[mask_min,'temp'] = list(daily_data.tasmin.values) + [np.nan]*(len(hourly_data.loc[mask_min,'temp'])-len(daily_data))
+        
+        # weather_data_modelled = weather_data_modelled[['temperature']]
+        
+        temperature_sin14R1 = [np.nan]*len(hourly_data)
+        prev_T, prev_t, next_T, next_t = [np.nan]*4
+        flag = False
+        
+        def get_previous_temperature(t, data=hourly_data):
+            try:
+                d = hourly_data[hourly_data.index<t].dropna().iloc[-1]
+                t = d.name
+                T = d.temp
+                return t, T
+            except IndexError:
+                return np.nan, np.nan
+            
+        
+        def get_next_temperature(t, data=hourly_data):
+            try:
+                d = hourly_data[hourly_data.index>t].dropna().iloc[0]
+                t = d.name
+                T = d.temp
+                return t, T
+            except IndexError:
+                return np.nan, np.nan
+        
+        def compute_temperature_sin14R1(t,prev_T,prev_t,next_T,next_t):
+            T = (next_T + prev_T)/2 - ((next_T-prev_T)/2 * np.cos(np.pi*(t-prev_t)/(next_t-prev_t)))
+            return T
+        
+            
+        for idx,t in tqdm.tqdm(enumerate(hourly_data.index),total=len(hourly_data), desc='temperature'):
+            T = hourly_data.loc[t].temp
+            if flag:
+                prev_t, prev_T = get_previous_temperature(t, hourly_data)
+                next_t, next_T = get_next_temperature(t, hourly_data)
+                flag = False
+            if not pd.isnull(T):
+                flag = True
+                temperature_sin14R1[idx] = T
+            else:
+                if pd.isnull(prev_t) or pd.isnull(next_t):
+                    continue
+                temperature_sin14R1[idx] = compute_temperature_sin14R1(t,prev_T,prev_t,next_T,next_t)
+            
+        hourly_data['temperature_2m'] = temperature_sin14R1
+        
+        hourly_data.to_parquet(os.path.join('data','Explore2','hourly','{}_mod{}.parquet'.format(zcl_code,nmod)))
+        
+        hourly_data['rsds'] = np.cos(np.deg2rad(90-hourly_data.sun_altitude))
+        hourly_data['rsds'] = hourly_data['rsds'].clip(lower=0.)
+        
+        daily_data['rsds_model'] = aggregate_resolution(hourly_data[['rsds']],resolution='D', agg_method='mean')
+        daily_data['rsds_factor'] = daily_data.rsds/daily_data.rsds_model*1.09
+        rsds_factor = np.asarray([[e]*24 for e in daily_data['rsds_factor']]).flatten()
+        rsds_factor = list(rsds_factor) + [np.nan]*(len(hourly_data)-len(rsds_factor))
+        
+        hourly_data['rsds'] = hourly_data['rsds']*np.asarray(rsds_factor)
+        
+        direct_ratio = 0.749
+        hourly_data['rsds_direct'] = hourly_data['rsds']*direct_ratio
+        hourly_data['diffuse_radiation_instant'] = hourly_data['rsds']*(1-direct_ratio)
+        
+        normal_ratio = np.sin(np.deg2rad(np.maximum(hourly_data['sun_altitude'],0)))
+        hourly_data['direct_normal_irradiance_instant'] = hourly_data['rsds_direct']/normal_ratio
+        
+        orientations = ['N','NE','E','SE','S','SW','W','NW','H']
+        
+        for ori in orientations:
+            col_coef_dri = 'coefficient_direct_{}_irradiance'.format(ori)
+            col_coef_dif = 'coefficient_diffuse_{}_irradiance'.format(ori)
+            col_dri = 'direct_sun_radiation_{}'.format(ori)
+            col_dif = 'diffuse_sun_radiation_{}'.format(ori)
+            
+            hourly_data[col_coef_dri] = get_direct_solar_irradiance_projection_ratio(ori, hourly_data.sun_azimuth, hourly_data.sun_altitude)
+            hourly_data[col_coef_dif] = get_diffuse_solar_irradiance_projection_ratio(ori)
+            hourly_data[col_dri] = hourly_data.direct_normal_irradiance_instant * hourly_data[col_coef_dri]
+            hourly_data[col_dif] = hourly_data.diffuse_radiation_instant * hourly_data[col_coef_dif]
+        
+        hourly_data = hourly_data[['temperature_2m', 'diffuse_radiation_instant',
+                                   'direct_normal_irradiance_instant', 'sun_altitude', 'sun_azimuth',
+                                   'direct_sun_radiation_N', 'diffuse_sun_radiation_N',
+                                   'direct_sun_radiation_NE', 'diffuse_sun_radiation_NE',
+                                   'direct_sun_radiation_E', 'diffuse_sun_radiation_E',
+                                   'direct_sun_radiation_SE', 'diffuse_sun_radiation_SE',
+                                   'direct_sun_radiation_S', 'diffuse_sun_radiation_S',
+                                   'direct_sun_radiation_SW', 'diffuse_sun_radiation_SW',
+                                   'direct_sun_radiation_W', 'diffuse_sun_radiation_W',
+                                   'direct_sun_radiation_NW', 'diffuse_sun_radiation_NW',
+                                   'direct_sun_radiation_H', 'diffuse_sun_radiation_H']]
+        
+        
+        hourly_data.to_parquet(os.path.join('data','Explore2','hourly','{}_mod{}.parquet'.format(zcl_code,nmod)))
+    
+    hourly_data = pd.read_parquet(os.path.join('data','Explore2','hourly','{}_mod{}.parquet'.format(zcl_code,nmod)))
+    hourly_data = hourly_data.fillna(0.)
+    return hourly_data
+
+
+def get_projected_weather_data(zcl_code,period,nmod=3):
+    hourly = compute_projected_weather_data(zcl_code, nmod=nmod)
+    hourly = hourly[hourly.index.year.isin(list(range(period[0],period[1]+1)))]
+    
+    return hourly
+                               
+                               
+
 #%% ===========================================================================
 # script principal
 # =============================================================================
@@ -104,7 +269,8 @@ def main():
         os.mkdir(os.path.join(output,folder))
     if 'figs' not in os.listdir(os.path.join(output, folder)):
         os.mkdir(figs_folder)
-        
+    
+    external_disk_connection = 'MPBE' in os.listdir('/media/amounier/')
         
     #%% Téléchargement des données CORDEX sur CDS (ne marche pas)
     if False:
@@ -130,15 +296,16 @@ def main():
         
         client = cdsapi.Client()
         client.retrieve(dataset, request).download()
-        
+    
+    
     #%% Utilisation des projections de températures par zone climatique
-    if True:
+    if False:
         zcl = Climat('H1a')
         nmod = 1
         data = delta_daily_temperature(zcl.codint,nmod)
         data.plot()
         
-        data = get_projected_weather_data(city='Paris',
+        data = get_projected_weather_data_old(city='Paris',
                                           zcl_codint=Climat('H1a').codint,
                                           nmod=0,
                                           rcp=85,
@@ -150,6 +317,685 @@ def main():
         for t in ['ref_temperature_2m','temperature_2m']:
             print(data[t].mean())
         # print(data)
+        
+    
+    #%% Gestion des données Explore2
+    if False and external_disk_connection:
+    
+        data_folder = '/media/amounier/MPBE/heavy_data/Explore2'
+        
+        # telechargement sur le site de la DRIAS
+        if False:
+            with open(os.path.join('data','Explore2','download_links.txt')) as f:
+                dl_links = f.read().splitlines()
+            
+            for url in dl_links:
+                subprocess.run('wget -P {} {}'.format(data_folder,url),shell=True)
+        
+        
+        # association des projections et modelisations historiques (temperature)
+        if True:
+            zcl = Climat('H3')
+            city = zcl.center_prefecture
+            coords = get_coordinates(city)
+            
+            tas_Explore2_hist = '/media/amounier/MPBE/heavy_data/Explore2/tasAdjust_France_CNRM-CERFACS-CNRM-CM5_historical_r1i1p1_CNRM-ALADIN63_v2_LSCE-IPSL-CDFt-L-1V-0L-1976-2005_day_19510101-20051231.nc'
+            tas_Explore2_proj = '/media/amounier/MPBE/heavy_data/Explore2/tasAdjust_France_CNRM-CERFACS-CNRM-CM5_rcp85_r1i1p1_CNRM-ALADIN63_v2_LSCE-IPSL-CDFt-L-1V-0L-1976-2005_day_20060101-21001231.nc'
+            
+            tas_array_hist = xr.open_dataset(tas_Explore2_hist).tasAdjust - 273.15
+            tas_array_proj = xr.open_dataset(tas_Explore2_proj).tasAdjust - 273.15
+            
+            tas_array_hist.rio.write_crs('epsg:27572', inplace=True)
+            tas_array_proj.rio.write_crs('epsg:27572', inplace=True)
+            
+            geom = pd.Series(France().geometry).apply(mapping)
+            tas_array_hist = tas_array_hist.rio.clip(geom, 'epsg:4326', drop=False)
+            tas_array_proj = tas_array_proj.rio.clip(geom, 'epsg:4326', drop=False)
+    
+            transformer = pyproj.Transformer.from_crs("EPSG:4326", "EPSG:27572", always_xy=True)
+            coords_transformed = transformer.transform(*coords)
+            
+            # carte des temperature
+            if True:
+                cmap = matplotlib.colormaps.get_cmap('viridis')
+                
+                fig,ax = blank_national_map()
+                
+                tas = tas_array_hist.isel(time=42)
+                img = tas.plot(ax=ax,transform=ccrs.epsg('27572'),add_colorbar=False,
+                               cmap=cmap,vmin=tas.min(),vmax=tas.max())
+                
+                ax.plot(*coords_transformed, transform=ccrs.epsg('27572'), marker='o',color='red',mec='k')
+                
+                ax.set_title('')
+                
+                ax_cb = fig.add_axes([0,0,0.1,0.1])
+                posn = ax.get_position()
+                ax_cb.set_position([posn.x0+posn.width+0.02, posn.y0, 0.04, posn.height])
+                fig.add_axes(ax_cb)
+                cbar = plt.colorbar(img,cax=ax_cb,extendfrac=0.02)
+                cbar.set_label('Daily mean temperature (°C)')
+                
+                ax.set_extent(get_extent())
+                
+                plt.show()
+            
+            
+            # détermination des périodes à +2 et +4 degrés 
+            if True:
+                mean_yt_deg2 = 11.37
+                mean_yt_deg4 = 13.25
+                
+                hist = tas_array_hist.mean(('x','y'))
+                # hist = tas_array_hist.sel(x=coords_transformed[0], y=coords_transformed[1], method='nearest')
+                hist = hist.groupby('time.year').mean('time')
+                
+                proj = tas_array_proj.mean(('x','y'))
+                # proj = tas_array_proj.sel(x=coords_transformed[0], y=coords_transformed[1], method='nearest')
+                proj = proj.groupby('time.year').mean('time')
+                
+                data_hist = pd.DataFrame(index=hist.year, data=hist)
+                data_proj = pd.DataFrame(index=proj.year, data=proj)
+                data = pd.concat([data_hist, data_proj]).rename(columns={0:'temperature'})
+                    
+                fig,ax = plt.subplots(figsize=(5,5),dpi=300)
+                data.plot(ax=ax,color='k')
+                ax.plot([data.index.min(),data.index.max()],[mean_yt_deg2]*2,color='tab:blue',label='+2°C')
+                ax.plot([data.index.min(),data.index.max()],[mean_yt_deg4]*2,color='tab:red',label='+4°C')
+                ax.legend()
+                ax.set_ylabel('Yearly mean temperature over France (°C)')
+                plt.show()
+                
+                period_list = []
+                mean_20_years_list = []
+                for y0 in data.index[10:-10]:
+                    data_20 = data.loc[y0-10:y0+10]
+                    mean_20 = data_20.mean()
+                    period = y0
+                    period_list.append(period)
+                    mean_20_years_list.append(mean_20)
+                    
+                mean_20_years_list = np.asarray(mean_20_years_list).T[0]
+                
+                year_deg2 = period_list[next(x[0] for x in enumerate(mean_20_years_list) if x[1] > mean_yt_deg2)]
+                year_deg4 = period_list[next(x[0] for x in enumerate(mean_20_years_list) if x[1] > mean_yt_deg4)]
+                    
+                fig,ax = plt.subplots(figsize=(5,5),dpi=300)
+                ax.plot(period_list,mean_20_years_list,color='k')
+                ax.plot([period_list[0],year_deg2],[mean_yt_deg2]*2,color='tab:blue',label='+2°C ({}-{})'.format(year_deg2-10,year_deg2+10),)
+                ax.plot([period_list[0],year_deg4],[mean_yt_deg4]*2,color='tab:red',label='+4°C ({}-{})'.format(year_deg4-10,year_deg4+10))
+                ax.plot([year_deg2],[mean_yt_deg2],color='tab:blue',marker='o')
+                ax.plot([year_deg4],[mean_yt_deg4],color='tab:red',marker='o')
+                ax.legend()
+                ax.set_ylabel('Yearly mean temperature over 20 years (°C)')
+                ax.set_xlabel('Center year of mean period')
+                plt.show()
+    
+        # comparaison avec les données ERA5
+        if True:
+            zcl = Climat('H3')
+            city = zcl.center_prefecture
+            coords = get_coordinates(city)
+            period = [1990,2000]
+            
+            tas_Explore2_hist = '/media/amounier/MPBE/heavy_data/Explore2/tasAdjust_France_CNRM-CERFACS-CNRM-CM5_historical_r1i1p1_CNRM-ALADIN63_v2_LSCE-IPSL-CDFt-L-1V-0L-1976-2005_day_19510101-20051231.nc'
+            tas_array_hist = xr.open_dataset(tas_Explore2_hist).tasAdjust - 273.15
+            
+            tas_array_hist.rio.write_crs('epsg:27572', inplace=True)
+            
+            # geom = pd.Series(France().geometry).apply(mapping)
+            # tas_array_hist = tas_array_hist.rio.clip(geom, 'epsg:4326', drop=False)
+    
+            transformer = pyproj.Transformer.from_crs("EPSG:4326", "EPSG:27572", always_xy=True)
+            coords_transformed = transformer.transform(*coords)
+            
+            explore2 = tas_array_hist.sel(x=coords_transformed[0], y=coords_transformed[1], method='nearest')
+            explore2 = explore2.sel(time=slice("{}-01-01".format(period[0]), "{}-12-31".format(period[1])))
+            
+            era5 = get_historical_weather_data(city,period)
+            era5 = aggregate_resolution(era5,resolution='D')
+            
+            if True:
+                fig,ax = plt.subplots(figsize=(5,5),dpi=300)
+                explore2.plot(ax=ax)
+                era5.temperature_2m.plot(ax=ax)
+                plt.show()
+                
+                fig,ax = plt.subplots(figsize=(5,5),dpi=300)
+                ax.plot(era5.temperature_2m,explore2,marker='.',alpha=0.05,ls='')
+                ax.plot([explore2.min(),explore2.max()],[explore2.min(),explore2.max()],color='k')
+                plt.axis('equal')
+                
+                plt.show()
+        
+    # Données de flux solaires
+    if False:
+        
+        if external_disk_connection:
+            data_folder = '/media/amounier/MPBE/heavy_data/Explore2'
+        else:
+            data_folder = os.path.join('data','Explore2')
+        
+        # association des projections et modelisations historiques (temperature)
+        if True:
+            zcl = Climat('H3')
+            city = zcl.center_prefecture
+            coords = get_coordinates(city)
+            
+            rsds_Explore2_hist = os.path.join(data_folder,"rsdsAdjust_France_CNRM-CERFACS-CNRM-CM5_historical_r1i1p1_CNRM-ALADIN63_v2_LSCE-IPSL-CDFt-L-1V-0L-1976-2005_day_19510101-20051231.nc")
+            # rlds_Explore2_hist = "/media/amounier/MPBE/heavy_data/Explore2/rldsAdjust_France_CNRM-CERFACS-CNRM-CM5_historical_r1i1p1_CNRM-ALADIN63_v2_LSCE-IPSL-CDFt-L-1V-0L-1976-2005_day_19510101-20051231.nc"
+            # rsds_Explore2_proj = "/media/amounier/MPBE/heavy_data/Explore2/rsdsAdjust_France_CNRM-CERFACS-CNRM-CM5_rcp85_r1i1p1_CNRM-ALADIN63_v2_LSCE-IPSL-CDFt-L-1V-0L-1976-2005_day_20060101-21001231.nc"
+            
+            rsds_array_hist = xr.open_dataset(rsds_Explore2_hist).rsdsAdjust
+            # rlds_array_hist = xr.open_dataset(rlds_Explore2_hist).rldsAdjust
+            # rsds_array_proj = xr.open_dataset(rsds_Explore2_proj).rsdsAdjust
+            
+            rsds_array_hist.rio.write_crs('epsg:27572', inplace=True)
+            # rlds_array_hist.rio.write_crs('epsg:27572', inplace=True)
+            # rsds_array_proj.rio.write_crs('epsg:27572', inplace=True)
+            
+            
+    
+            transformer = pyproj.Transformer.from_crs("EPSG:4326", "EPSG:27572", always_xy=True)
+            coords_transformed = transformer.transform(*coords)
+            
+            if False:
+                cmap = matplotlib.colormaps.get_cmap('viridis')
+                geom = pd.Series(France().geometry).apply(mapping)
+                rsds_array_hist = rsds_array_hist.rio.clip(geom, 'epsg:4326', drop=False)
+                # rsds_array_proj = rsds_array_proj.rio.clip(geom, 'epsg:4326', drop=False)
+                
+                fig,ax = blank_national_map()
+                
+                tas = rsds_array_hist.isel(time=42)
+                img = tas.plot(ax=ax,transform=ccrs.epsg('27572'),add_colorbar=False,
+                               cmap=cmap,vmin=tas.min(),vmax=tas.max())
+                
+                ax.plot(*coords_transformed, transform=ccrs.epsg('27572'), marker='o',color='red',mec='k')
+                
+                ax.set_title('')
+                
+                ax_cb = fig.add_axes([0,0,0.1,0.1])
+                posn = ax.get_position()
+                ax_cb.set_position([posn.x0+posn.width+0.02, posn.y0, 0.04, posn.height])
+                fig.add_axes(ax_cb)
+                cbar = plt.colorbar(img,cax=ax_cb,extendfrac=0.02)
+                cbar.set_label('rsdsAdjust')
+                
+                ax.set_extent(get_extent())
+                
+                plt.show()
+            
+            
+            if False:
+                # hist = rsds_array_hist.mean(('x','y'))
+                hist_rsds = rsds_array_hist.sel(x=coords_transformed[0], y=coords_transformed[1], method='nearest')
+                # hist = hist.groupby('time.year').mean('time')
+                # hist_rlds = rlds_array_hist.sel(x=coords_transformed[0], y=coords_transformed[1], method='nearest')
+                
+                # proj = rsds_array_proj.mean(('x','y'))
+                # # proj = tas_array_proj.sel(x=coords_transformed[0], y=coords_transformed[1], method='nearest')
+                # proj = proj.groupby('time.year').mean('time')
+                
+                data_hist_rsds = pd.DataFrame(index=hist_rsds.time, data=hist_rsds).rename(columns={0:'rsds'})
+                # data_hist_rlds = pd.DataFrame(index=hist_rlds.time, data=hist_rlds).rename(columns={0:'rlds'})
+                # data_proj = pd.DataFrame(index=proj.year, data=proj)
+                # data = data_hist_rsds.join(data_hist_rlds)
+                
+                # data['sum'] = data.rsds + data.rlds
+                
+                print(data_hist_rsds[data_hist_rsds.index.year==2001].sum())
+                    
+                fig,ax = plt.subplots(figsize=(15,5),dpi=300)
+                data_hist_rsds.plot(ax=ax)
+                # ax.legend()
+                ax.set_ylabel('rsdsAdjust')
+                ax.set_xlim([pd.to_datetime('2001-01-01'), pd.to_datetime('2001-12-31')])
+                plt.show()
+                
+            if False:
+                # hist = rsds_array_hist.mean(('x','y'))
+                hist = rsds_array_hist.sel(x=coords_transformed[0], y=coords_transformed[1], method='nearest')
+                hist = hist.groupby('time.year').mean('time')
+                
+                # proj = rsds_array_proj.mean(('x','y'))
+                # proj = rsds_array_proj.sel(x=coords_transformed[0], y=coords_transformed[1], method='nearest')
+                # proj = proj.groupby('time.year').mean('time')
+                
+                data_hist = pd.DataFrame(index=hist.year, data=hist)
+                data_proj = pd.DataFrame(index=proj.year, data=proj)
+                data = pd.concat([data_hist, data_proj]).rename(columns={0:'rsdsAdjust'})
+                    
+                fig,ax = plt.subplots(figsize=(5,5),dpi=300)
+                data.plot(ax=ax,color='k')
+                ax.legend()
+                ax.set_ylabel('rsdsAdjust')
+                plt.show()
+                
+                
+    #%% Formatage des données de modèles climatiques 
+    if False:
+        
+        
+        models_dict = {0:{'historical':'Adjust_France_CNRM-CERFACS-CNRM-CM5_historical_r1i1p1_CNRM-ALADIN63_v2_LSCE-IPSL-CDFt-L-1V-0L-1976-2005_day_19510101-20051231.nc',
+                          'rcp45':'Adjust_France_CNRM-CERFACS-CNRM-CM5_rcp45_r1i1p1_CNRM-ALADIN63_v2_LSCE-IPSL-CDFt-L-1V-0L-1976-2005_day_20060101-21001231.nc',
+                          'rcp85':'Adjust_France_CNRM-CERFACS-CNRM-CM5_rcp85_r1i1p1_CNRM-ALADIN63_v2_LSCE-IPSL-CDFt-L-1V-0L-1976-2005_day_20060101-21001231.nc'},
+                       
+                       1:{'historical':'Adjust_France_CNRM-CERFACS-CNRM-CM5_historical_r1i1p1_MOHC-HadREM3-GA7-05_v2_LSCE-IPSL-CDFt-L-1V-0L-1976-2005_day_19520101-20051231.nc',
+                          'rcp85':'Adjust_France_CNRM-CERFACS-CNRM-CM5_rcp85_r1i1p1_MOHC-HadREM3-GA7-05_v2_LSCE-IPSL-CDFt-L-1V-0L-1976-2005_day_20060101-21001230.nc'},
+                       
+                       2:{'historical':'Adjust_France_ICHEC-EC-EARTH_historical_r12i1p1_KNMI-RACMO22E_v1_LSCE-IPSL-CDFt-L-1V-0L-1976-2005_day_19500101-20051231.nc',
+                          'rcp45':'Adjust_France_ICHEC-EC-EARTH_rcp45_r12i1p1_KNMI-RACMO22E_v1_LSCE-IPSL-CDFt-L-1V-0L-1976-2005_day_20060101-21001231.nc',
+                          'rcp85':'Adjust_France_ICHEC-EC-EARTH_rcp85_r12i1p1_KNMI-RACMO22E_v1_LSCE-IPSL-CDFt-L-1V-0L-1976-2005_day_20060101-21001231.nc'},
+                       
+                       3:{'historical':'Adjust_France_ICHEC-EC-EARTH_historical_r12i1p1_MOHC-HadREM3-GA7-05_v1_LSCE-IPSL-CDFt-L-1V-0L-1976-2005_day_19520101-20051231.nc',
+                          'rcp85':'Adjust_France_ICHEC-EC-EARTH_rcp85_r12i1p1_MOHC-HadREM3-GA7-05_v1_LSCE-IPSL-CDFt-L-1V-0L-1976-2005_day_20060101-21001231.nc'},
+                       
+                       4:{'historical':'Adjust_France_MOHC-HadGEM2-ES_historical_r1i1p1_MOHC-HadREM3-GA7-05_v1_LSCE-IPSL-CDFt-L-1V-0L-1976-2005_day_19520101-20051231.nc',
+                          'rcp85':'Adjust_France_MOHC-HadGEM2-ES_rcp85_r1i1p1_MOHC-HadREM3-GA7-05_v1_LSCE-IPSL-CDFt-L-1V-0L-1976-2005_day_20060101-20991219.nc'},
+                       }
+        
+        
+        if external_disk_connection:
+            data_folder = '/media/amounier/MPBE/heavy_data/Explore2'
+        else:
+            data_folder = os.path.join('data','Explore2')
+            
+        
+        climate_vars = ['tas','tasmax','tasmin','rsds']
+        climate_vars = ['rsds']
+        for climate_var in climate_vars:
+        # climate_var = 'rsds' #'tas','tasmax','tasmin','rsds'
+        
+            for mod in range(0,5):
+                
+                Explore2_hist = os.path.join(data_folder,climate_var+models_dict.get(mod).get('historical'))
+                array_hist = xr.open_dataset(Explore2_hist)
+                array_hist = array_hist[list(array_hist.data_vars)[-1]]
+                if 'tas' in climate_var:
+                    array_hist = array_hist - 273.15
+                array_hist.rio.write_crs('epsg:27572', inplace=True)
+                
+                Explore2_proj = os.path.join(data_folder,climate_var+models_dict.get(mod).get('rcp85'))
+                array_proj = xr.open_dataset(Explore2_proj)
+                array_proj = array_proj[list(array_proj.data_vars)[-1]]
+                if 'tas' in climate_var:
+                    array_proj = array_proj - 273.15
+                array_proj.rio.write_crs('epsg:27572', inplace=True)
+                
+                
+                # concatenation des valeurs journalières
+                if True:
+                    climats = France().climats
+                    for zcl in climats:
+                        zcl = Climat(zcl)
+                        city = zcl.center_prefecture
+                        coords = get_coordinates(city)
+                        
+                        save_name = '{}_mod{}_{}.csv'.format(climate_var,mod,zcl.code)
+                        if save_name in os.listdir(os.path.join(output, folder)):
+                            continue
+                        
+                        transformer = pyproj.Transformer.from_crs("EPSG:4326", "EPSG:27572", always_xy=True)
+                        coords_transformed = transformer.transform(*coords)
+                        
+                        hist = array_hist.sel(x=coords_transformed[0], y=coords_transformed[1], method='nearest')
+                        proj = array_proj.sel(x=coords_transformed[0], y=coords_transformed[1], method='nearest')
+                        data_hist = pd.DataFrame(index=hist.time, data=hist).rename(columns={0:climate_var})
+                        data_proj = pd.DataFrame(index=proj.time, data=proj).rename(columns={0:climate_var})
+                        data = pd.concat([data_hist, data_proj]).rename(columns={0:climate_var})
+                        
+                        print('saving {}_mod{}_{}'.format(climate_var,mod,zcl.code))
+                        data.to_csv(os.path.join(os.path.join(output, folder),save_name))
+                    
+        
+                # affichage des données journalieres 
+                if False:
+                    zcl = Climat('H3')
+                    city = zcl.center_prefecture
+                    coords = get_coordinates(city)
+                    
+                    transformer = pyproj.Transformer.from_crs("EPSG:4326", "EPSG:27572", always_xy=True)
+                    coords_transformed = transformer.transform(*coords)
+                    
+                    hist_rsds = rsds_array_hist.sel(x=coords_transformed[0], y=coords_transformed[1], method='nearest')
+        
+                    data_hist_rsds = pd.DataFrame(index=hist_rsds.time, data=hist_rsds).rename(columns={0:climate_var})
+                    
+                    print(mod, data_hist_rsds[data_hist_rsds.index.year==2001].sum())
+                        
+                    fig,ax = plt.subplots(figsize=(15,5),dpi=300)
+                    data_hist_rsds.plot(ax=ax)
+                    ax.set_title(mod)
+                    ax.set_ylabel('rsdsAdjust')
+                    ax.set_xlim([pd.to_datetime('2001-01-01'), pd.to_datetime('2001-12-31')])
+                    plt.show()
+                
+                # concatenation des valeurs annuelles
+                if False and climate_var != 'tas':
+    
+                    hist = array_hist.mean(('x','y'))
+                    hist = hist.groupby('time.year').mean('time')
+                    
+                    proj = array_proj.mean(('x','y'))
+                    proj = proj.groupby('time.year').mean('time')
+                    
+                    data_hist = pd.DataFrame(index=hist.year, data=hist)
+                    data_proj = pd.DataFrame(index=proj.year, data=proj)
+                    data = pd.concat([data_hist, data_proj]).rename(columns={0:climate_var})
+                    
+                    # data.to_csv(os.path.join(os.path.join(output, folder),'{}_mod{}.csv'.format(climate_var,mod)))
+                        
+                    fig,ax = plt.subplots(figsize=(5,5),dpi=300)
+                    data.plot(ax=ax,color='k')
+                    ax.legend()
+                    # ax.set_ylim([8,17])
+                    ax.set_title(mod)
+                    # ax.set_ylabel('Yearly mean temperature over France (°C)')
+                    plt.savefig(os.path.join(figs_folder,'{}_mod{}_evolution.png'.format(climate_var,mod)),bbox_inches='tight')
+                    plt.show()
+                    
+                # concatenation des valeurs annuelles (temperature)
+                if False and climate_var == 'tas':
+                    mean_yt_deg2 = 11.37
+                    mean_yt_deg4 = 13.25
+                    
+                    hist = array_hist.mean(('x','y'))
+                    hist = hist.groupby('time.year').mean('time')
+                    
+                    proj = array_proj.mean(('x','y'))
+                    proj = proj.groupby('time.year').mean('time')
+                    
+                    data_hist = pd.DataFrame(index=hist.year, data=hist)
+                    data_proj = pd.DataFrame(index=proj.year, data=proj)
+                    data = pd.concat([data_hist, data_proj]).rename(columns={0:'temperature'})
+                    
+                    # data.to_csv(os.path.join(os.path.join(output, folder),'{}_mod{}.csv'.format(climate_var,mod)))
+                        
+                    fig,ax = plt.subplots(figsize=(5,5),dpi=300)
+                    data.plot(ax=ax,color='k')
+                    ax.plot([data.index.min(),data.index.max()],[mean_yt_deg2]*2,color='tab:blue',label='+2°C')
+                    ax.plot([data.index.min(),data.index.max()],[mean_yt_deg4]*2,color='tab:red',label='+4°C')
+                    ax.legend()
+                    ax.set_ylim([8,17])
+                    ax.set_title(mod)
+                    ax.set_ylabel('Yearly mean temperature over France (°C)')
+                    plt.savefig(os.path.join(figs_folder,'{}_mod{}_evolution.png'.format(climate_var,mod)),bbox_inches='tight')
+                    plt.show()
+                    
+                    period_list = []
+                    mean_20_years_list = []
+                    for y0 in data.index[10:-10]:
+                        data_20 = data.loc[y0-10:y0+10]
+                        mean_20 = data_20.mean()
+                        period = y0
+                        period_list.append(period)
+                        mean_20_years_list.append(mean_20)
+                        
+                    mean_20_years_list = np.asarray(mean_20_years_list).T[0]
+                    
+                    year_deg2 = period_list[next(x[0] for x in enumerate(mean_20_years_list) if x[1] > mean_yt_deg2)]
+                    year_deg4 = period_list[next(x[0] for x in enumerate(mean_20_years_list) if x[1] > mean_yt_deg4)]
+                        
+                    fig,ax = plt.subplots(figsize=(5,5),dpi=300)
+                    ax.plot(period_list,mean_20_years_list,color='k')
+                    ax.plot([period_list[0],year_deg2],[mean_yt_deg2]*2,color='tab:blue',label='+2°C ({}-{})'.format(year_deg2-10,year_deg2+10),)
+                    ax.plot([period_list[0],year_deg4],[mean_yt_deg4]*2,color='tab:red',label='+4°C ({}-{})'.format(year_deg4-10,year_deg4+10))
+                    ax.plot([year_deg2],[mean_yt_deg2],color='tab:blue',marker='o')
+                    ax.plot([year_deg4],[mean_yt_deg4],color='tab:red',marker='o')
+                    ax.legend()
+                    ax.set_ylim([8,17])
+                    ax.set_title(mod)
+                    ax.set_ylabel('Yearly mean temperature over 20 years (°C)')
+                    ax.set_xlabel('Center year of mean period')
+                    plt.savefig(os.path.join(figs_folder,'{}_mod{}_moving_mean_evolution.png'.format(climate_var,mod)),bbox_inches='tight')
+                    plt.show()
+                
+                array_hist.close()
+                array_proj.close()
+                
+    # Réalisation des cartes 
+    if False:
+        
+        models_dict = {0:{'historical':'Adjust_France_CNRM-CERFACS-CNRM-CM5_historical_r1i1p1_CNRM-ALADIN63_v2_LSCE-IPSL-CDFt-L-1V-0L-1976-2005_day_19510101-20051231.nc',
+                          'rcp45':'Adjust_France_CNRM-CERFACS-CNRM-CM5_rcp45_r1i1p1_CNRM-ALADIN63_v2_LSCE-IPSL-CDFt-L-1V-0L-1976-2005_day_20060101-21001231.nc',
+                          'rcp85':'Adjust_France_CNRM-CERFACS-CNRM-CM5_rcp85_r1i1p1_CNRM-ALADIN63_v2_LSCE-IPSL-CDFt-L-1V-0L-1976-2005_day_20060101-21001231.nc'},
+                       
+                       1:{'historical':'Adjust_France_CNRM-CERFACS-CNRM-CM5_historical_r1i1p1_MOHC-HadREM3-GA7-05_v2_LSCE-IPSL-CDFt-L-1V-0L-1976-2005_day_19520101-20051231.nc',
+                          'rcp85':'Adjust_France_CNRM-CERFACS-CNRM-CM5_rcp85_r1i1p1_MOHC-HadREM3-GA7-05_v2_LSCE-IPSL-CDFt-L-1V-0L-1976-2005_day_20060101-21001230.nc'},
+                       
+                       2:{'historical':'Adjust_France_ICHEC-EC-EARTH_historical_r12i1p1_KNMI-RACMO22E_v1_LSCE-IPSL-CDFt-L-1V-0L-1976-2005_day_19500101-20051231.nc',
+                          'rcp45':'Adjust_France_ICHEC-EC-EARTH_rcp45_r12i1p1_KNMI-RACMO22E_v1_LSCE-IPSL-CDFt-L-1V-0L-1976-2005_day_20060101-21001231.nc',
+                          'rcp85':'Adjust_France_ICHEC-EC-EARTH_rcp85_r12i1p1_KNMI-RACMO22E_v1_LSCE-IPSL-CDFt-L-1V-0L-1976-2005_day_20060101-21001231.nc'},
+                       
+                       3:{'historical':'Adjust_France_ICHEC-EC-EARTH_historical_r12i1p1_MOHC-HadREM3-GA7-05_v1_LSCE-IPSL-CDFt-L-1V-0L-1976-2005_day_19520101-20051231.nc',
+                          'rcp85':'Adjust_France_ICHEC-EC-EARTH_rcp85_r12i1p1_MOHC-HadREM3-GA7-05_v1_LSCE-IPSL-CDFt-L-1V-0L-1976-2005_day_20060101-21001231.nc'},
+                       
+                       4:{'historical':'Adjust_France_MOHC-HadGEM2-ES_historical_r1i1p1_MOHC-HadREM3-GA7-05_v1_LSCE-IPSL-CDFt-L-1V-0L-1976-2005_day_19520101-20051231.nc',
+                          'rcp85':'Adjust_France_MOHC-HadGEM2-ES_rcp85_r1i1p1_MOHC-HadREM3-GA7-05_v1_LSCE-IPSL-CDFt-L-1V-0L-1976-2005_day_20060101-20991219.nc'},
+                       }
+        
+        models_period_dict = {0:{2:[2029,2049],
+                                 4:[2064,2084],},
+                              1:{2:[2018,2038],
+                                 4:[2056,2076],},
+                              2:{2:[2024,2044],
+                                 4:[2066,2086],},
+                              3:{2:[2013,2033],
+                                 4:[2056,2076],},
+                              4:{2:[2006,2024], # debut des projections en 2006
+                                 4:[2046,2066],},}
+        
+        if external_disk_connection:
+            data_folder = '/media/amounier/MPBE/heavy_data/Explore2'
+        else:
+            data_folder = os.path.join('data','Explore2')
+            
+        
+        climate_vars = ['tas','tasmax','tasmin','rsds']
+        climate_vars = ['rsds']
+        for climate_var in climate_vars:
+        # climate_var = 'rsds' #'tas','tasmax','tasmin','rsds'
+            
+            for mod in range(0,5):
+            # for mod in range(3,5):
+                
+                Explore2_hist = os.path.join(data_folder,climate_var+models_dict.get(mod).get('historical'))
+                array_hist = xr.open_dataset(Explore2_hist)
+                array_hist = array_hist[list(array_hist.data_vars)[-1]]
+                if 'tas' in climate_var:
+                    array_hist = array_hist - 273.15
+                array_hist.rio.write_crs('epsg:27572', inplace=True)
+                
+                Explore2_proj = os.path.join(data_folder,climate_var+models_dict.get(mod).get('rcp85'))
+                array_proj = xr.open_dataset(Explore2_proj)
+                array_proj = array_proj[list(array_proj.data_vars)[-1]]
+                if 'tas' in climate_var:
+                    array_proj = array_proj - 273.15
+                array_proj.rio.write_crs('epsg:27572', inplace=True)
+                
+                geom = pd.Series(France().geometry).apply(mapping)
+                array_hist = array_hist.rio.clip(geom, 'epsg:4326', drop=False)
+                array_proj = array_proj.rio.clip(geom, 'epsg:4326', drop=False)
+                
+                
+                hist = array_hist.sel(time=slice("2000-01-01", "2020-12-31")).mean('time')
+                
+                proj2_period = models_period_dict.get(mod).get(2)
+                proj4_period = models_period_dict.get(mod).get(4)
+                
+                proj2 = array_proj.sel(time=slice("{}-01-01".format(proj2_period[0]), "{}-12-31".format(proj2_period[1]))).mean('time')
+                proj4 = array_proj.sel(time=slice("{}-01-01".format(proj4_period[0]), "{}-12-31".format(proj4_period[1]))).mean('time')
+                
+                diff2 = proj2 - hist
+                diff4 = proj4 - hist
+                
+                # etat de base
+                if 'tas' in climate_var:
+                    cmap = cmocean.cm.thermal
+                else:
+                    cmap = cmocean.cm.solar
+    
+                fig,ax = blank_national_map()
+                
+                img = hist.plot(ax=ax,transform=ccrs.epsg('27572'),add_colorbar=False,
+                               cmap=cmap,vmin=hist.min(),vmax=hist.max())
+                
+                ax.set_title(mod)
+                
+                ax_cb = fig.add_axes([0,0,0.1,0.1])
+                posn = ax.get_position()
+                ax_cb.set_position([posn.x0+posn.width+0.02, posn.y0, 0.04, posn.height])
+                fig.add_axes(ax_cb)
+                cbar = plt.colorbar(img,cax=ax_cb,extendfrac=0.02)
+                cbar.set_label(climate_var)
+                
+                ax.set_extent(get_extent())
+                plt.savefig(os.path.join(figs_folder,'map_{}_mod{}_2000-2020.png'.format(climate_var,mod)),bbox_inches='tight')
+                plt.show()
+                plt.close()
+                
+                # difference sur les periode 2 et 4
+                cmap = cmocean.cm.balance
+                
+                fig,ax = blank_national_map()
+                
+                max_val = max(np.abs(diff4.max()), np.abs(diff4.min()))
+                img = diff2.plot(ax=ax,transform=ccrs.epsg('27572'),add_colorbar=False,
+                                 cmap=cmap,vmin=-max_val,vmax=max_val)
+                
+                ax.set_title(mod)
+                
+                ax_cb = fig.add_axes([0,0,0.1,0.1])
+                posn = ax.get_position()
+                ax_cb.set_position([posn.x0+posn.width+0.02, posn.y0, 0.04, posn.height])
+                fig.add_axes(ax_cb)
+                cbar = plt.colorbar(img,cax=ax_cb,extendfrac=0.02)
+                cbar.set_label(climate_var)
+                
+                ax.set_extent(get_extent())
+                plt.savefig(os.path.join(figs_folder,'map_{}_mod{}_2deg.png'.format(climate_var,mod)),bbox_inches='tight')
+                plt.show()
+                plt.close()
+                
+                cmap = cmocean.cm.balance
+                
+                fig,ax = blank_national_map()
+                
+                img = diff4.plot(ax=ax,transform=ccrs.epsg('27572'),add_colorbar=False,
+                                 cmap=cmap,vmin=-max_val,vmax=max_val)
+                
+                ax.set_title(mod)
+                
+                ax_cb = fig.add_axes([0,0,0.1,0.1])
+                posn = ax.get_position()
+                ax_cb.set_position([posn.x0+posn.width+0.02, posn.y0, 0.04, posn.height])
+                fig.add_axes(ax_cb)
+                cbar = plt.colorbar(img,cax=ax_cb,extendfrac=0.02)
+                cbar.set_label(climate_var)
+                
+                ax.set_extent(get_extent())
+                plt.savefig(os.path.join(figs_folder,'map_{}_mod{}_4deg.png'.format(climate_var,mod)),bbox_inches='tight')
+                plt.show()
+                plt.close()
+                
+                array_hist.close()
+                array_proj.close()
+                
+                del array_hist
+                del array_proj
+                
+            
+    #%% Détermination des périodes de +2, +4 degrés d'après les données de l'atlas interactif
+    if False:
+        
+        deg2_data = xr.open_dataset(os.path.join('data','CORDEX','CORDEX Europe - Mean temperature (T) deg C - Warming 2°C RCP8.5 - Annual (47 models)','map.nc'))
+        deg2_data = deg2_data.tas
+        deg2_data.rio.write_crs('epsg:4326', inplace=True)
+        
+        deg4_data = xr.open_dataset(os.path.join('data','CORDEX','CORDEX Europe - Mean temperature (T) deg C - Warming 4°C RCP8.5 - Annual (39 models)','map.nc'))
+        deg4_data = deg4_data.tas
+        deg4_data.rio.write_crs('epsg:4326', inplace=True)
+        
+        geom = pd.Series(France().geometry).apply(mapping)
+        deg2_data_cropped = deg2_data.rio.clip(geom, 'epsg:4326', drop=False)
+        deg4_data_cropped = deg4_data.rio.clip(geom, 'epsg:4326', drop=False)
+        
+        mean_yt_deg2 = deg2_data_cropped.mean()
+        mean_yt_deg4 = deg4_data_cropped.mean()
+        
+        print('2°C',float(mean_yt_deg2))
+        print('4°C',float(mean_yt_deg4))
+        
+        
+        if False:
+            cmap = matplotlib.colormaps.get_cmap('viridis')
+            cmap = cmocean.cm.thermal
+            
+            fig,ax = blank_national_map()
+            img = deg2_data_cropped.plot(ax=ax,transform=ccrs.PlateCarree(),add_colorbar=False,
+                                         cmap=cmap,vmin=-3,vmax=16)
+            
+            ax.set_title('Yearly mean temperature over France : {:.1f}°C'.format(mean_yt_deg2))
+            
+            ax_cb = fig.add_axes([0,0,0.1,0.1])
+            posn = ax.get_position()
+            ax_cb.set_position([posn.x0+posn.width+0.02, posn.y0, 0.04, posn.height])
+            fig.add_axes(ax_cb)
+            cbar = plt.colorbar(img,cax=ax_cb,extendfrac=0.02)
+            cbar.set_label('Yearly mean temperature (°C) - Global warming +2°C')
+            
+            ax.set_extent(get_extent())
+            plt.savefig(os.path.join(figs_folder,'mean_yearly_temperature_france_gw2deg.png'), bbox_inches='tight')
+            plt.show()
+            
+            
+            fig,ax = blank_national_map()
+            img = deg4_data_cropped.plot(ax=ax,transform=ccrs.PlateCarree(),add_colorbar=False,
+                                         cmap=cmap,vmin=-3,vmax=16)
+            
+            
+            ax.set_title('Yearly mean temperature over France : {:.1f}°C'.format(mean_yt_deg4))
+            
+            ax_cb = fig.add_axes([0,0,0.1,0.1])
+            posn = ax.get_position()
+            ax_cb.set_position([posn.x0+posn.width+0.02, posn.y0, 0.04, posn.height])
+            fig.add_axes(ax_cb)
+            cbar = plt.colorbar(img,cax=ax_cb,extendfrac=0.02)
+            cbar.set_label('Yearly mean temperature (°C) - Global warming +4°C')
+            
+            ax.set_extent(get_extent())
+            plt.savefig(os.path.join(figs_folder,'mean_yearly_temperature_france_gw4deg.png'), bbox_inches='tight')
+            plt.show()
+            
+            
+            
+    # %% Test des projections climatiques propres
+    if False:
+        
+        zcl_list = France().climats
+        mod_list = list(range(5))
+        
+        run_list = []
+        for zcl_code in zcl_list:
+            for mod in mod_list:
+                run_list.append((zcl_code, mod))
+                    
+        # nb_cpu = multiprocessing.cpu_count()
+        # pool = multiprocessing.Pool(nb_cpu)
+        # pool.starmap(get_projected_weather_data, run_list)
+        
+        for run in run_list:
+            print(run)
+            compute_projected_weather_data(*run)
+        
+        # explore2 = get_projected_weather_data(zcl_code=zcl_code, nmod=mod)
+        # print(explore2)
+        
+    if False:
+        test = get_projected_weather_data('H3',[2090,2090])
+        agg = aggregate_resolution(test[['direct_sun_radiation_H']],resolution='D',agg_method='mean')
+        print(agg.direct_sun_radiation_H.plot())
         
     tac = time.time()
     print('Done in {:.2f}s.'.format(tac-tic))
