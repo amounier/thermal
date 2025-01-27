@@ -28,23 +28,48 @@ from typologies import Typology
 from future_meteorology import get_projected_weather_data
 
 
+models_period_dict = {0:{2:[2029,2049],
+                         4:[2064,2084],},
+                      1:{2:[2018,2038],
+                         4:[2056,2076],},
+                      2:{2:[2024,2044],
+                         4:[2066,2086],},
+                      3:{2:[2013,2033],
+                         4:[2056,2076],},
+                      4:{2:[2006,2024], # debut des projections en 2006
+                         4:[2046,2066],},}
+
 
 def compute_energy_needs_single_actions(component,typo_code,zcl,output_path,
                                         behaviour='conventionnel',period=[2000,2020],
                                         plot=True,nb_intervals=10,show=False,
-                                        progressbar=False):
+                                        progressbar=False, model='explore2',
+                                        nmod=3):
     
     city = zcl.center_prefecture
     typo = Typology(typo_code)
     
     # weather data
-    weather_data_checkfile = ".weather_data_{}_{}_{}".format(city,period[0],period[1]) + ".pickle"
-    if weather_data_checkfile not in os.listdir():
-        weather_data = get_historical_weather_data(city,period)
-        weather_data = refine_resolution(weather_data, resolution='600s')
-        pickle.dump(weather_data, open(weather_data_checkfile, "wb"))
+    if model == 'explore2':
+        weather_data_checkfile = ".weather_data_{}_{}_{}_explore2_mod{}".format(city,period[0],period[1],nmod) + ".pickle"
+        if weather_data_checkfile not in os.listdir():
+            weather_data = get_projected_weather_data(zcl.code, period,nmod=nmod)
+            weather_data = refine_resolution(weather_data, resolution='600s')
+            pickle.dump(weather_data, open(weather_data_checkfile, "wb"))
+        else:
+            weather_data = pickle.load(open(weather_data_checkfile, 'rb'))
+
     else:
-        weather_data = pickle.load(open(weather_data_checkfile, 'rb'))
+        weather_data_checkfile = ".weather_data_{}_{}_{}".format(city,period[0],period[1]) + ".pickle"
+        if weather_data_checkfile not in os.listdir():
+            weather_data = get_historical_weather_data(city,period)
+            weather_data = refine_resolution(weather_data, resolution='600s')
+            pickle.dump(weather_data, open(weather_data_checkfile, "wb"))
+        else:
+            weather_data = pickle.load(open(weather_data_checkfile, 'rb'))
+    
+    
+    
     
     if behaviour == 'conventionnel':
         behaviour = Behaviour('conventionnel_th-bce_2020')
@@ -183,18 +208,30 @@ def compute_energy_needs_single_actions(component,typo_code,zcl,output_path,
 
 
 def compute_energy_needs_typology(typo_code, typo_level,zcl,output_path,
-                                  behaviour='conventionnel',period=[2000,2020]):
+                                  behaviour='conventionnel',period=[2000,2020],
+                                  model='explore2',nmod=3):
     typo = Typology(typo_code, typo_level)
     city = zcl.center_prefecture
     
     # weather data
-    weather_data_checkfile = ".weather_data_{}_{}_{}".format(city,period[0],period[1]) + ".pickle"
-    if weather_data_checkfile not in os.listdir():
-        weather_data = get_historical_weather_data(city,period)
-        weather_data = refine_resolution(weather_data, resolution='600s')
-        pickle.dump(weather_data, open(weather_data_checkfile, "wb"))
+    if model == 'explore2':
+        weather_data_checkfile = ".weather_data_{}_{}_{}_explore2_mod{}".format(city,period[0],period[1],nmod) + ".pickle"
+        if weather_data_checkfile not in os.listdir():
+            weather_data = get_projected_weather_data(zcl.code, period,nmod=nmod)
+            weather_data = refine_resolution(weather_data, resolution='600s')
+            pickle.dump(weather_data, open(weather_data_checkfile, "wb"))
+        else:
+            weather_data = pickle.load(open(weather_data_checkfile, 'rb'))
+
     else:
-        weather_data = pickle.load(open(weather_data_checkfile, 'rb'))
+        weather_data_checkfile = ".weather_data_{}_{}_{}".format(city,period[0],period[1]) + ".pickle"
+        if weather_data_checkfile not in os.listdir():
+            weather_data = get_historical_weather_data(city,period)
+            weather_data = refine_resolution(weather_data, resolution='600s')
+            pickle.dump(weather_data, open(weather_data_checkfile, "wb"))
+        else:
+            weather_data = pickle.load(open(weather_data_checkfile, 'rb'))
+    
     
     if behaviour == 'conventionnel':
         behaviour = Behaviour('conventionnel_th-bce_2020')
@@ -215,7 +252,8 @@ def compute_energy_needs_typology(typo_code, typo_level,zcl,output_path,
 
 
 def draw_building_type_energy_needs(building_type, zcl, output_path, save=True,
-                                    behaviour='conventionnel', period=[2000,2020]):
+                                    behaviour='conventionnel', period=[2000,2020],
+                                    model="explore2",nmod=3):
     
     heating_needs = {}
     cooling_needs = {}
@@ -224,7 +262,13 @@ def draw_building_type_energy_needs(building_type, zcl, output_path, save=True,
         code = 'FR.N.{}.{:02d}.Gen'.format(building_type,i)
         for level in ['initial','standard','advanced']:
             typology = Typology(code,level)
-            simu = compute_energy_needs_typology(code,level,zcl=zcl,output_path=output_path,behaviour=behaviour,period=period)
+            simu = compute_energy_needs_typology(code,level,
+                                                 zcl=zcl,
+                                                 output_path=output_path,
+                                                 behaviour=behaviour,
+                                                 period=period,
+                                                 model=model,
+                                                 nmod=nmod)
             simu = simu/(1e3 * typology.surface)
             heating_needs[(code,level)] = simu.heating_needs.values
             cooling_needs[(code,level)] = simu.cooling_needs.values
@@ -270,6 +314,81 @@ def draw_building_type_energy_needs(building_type, zcl, output_path, save=True,
     return 
 
 
+
+def draw_climate_impact_building_type_energy_needs(building_type, zcl, output_path, save=True,
+                                                   behaviour='conventionnel', period_dict=models_period_dict,
+                                                   model="explore2",nmod=3):
+    
+    # heating_needs = {}
+    # cooling_needs = {}
+    total_needs = {}
+    
+    for i in range(1,11):
+        code = 'FR.N.{}.{:02d}.Gen'.format(building_type,i)
+        for level in ['initial','standard','advanced']:
+            for climat in ['now',2,4]:
+                if climat == 'now':
+                    period = [2000,2020]
+                else:
+                    period = period_dict.get(nmod).get(climat)
+                    
+                typology = Typology(code,level)
+                simu = compute_energy_needs_typology(code,level,
+                                                     zcl=zcl,
+                                                     output_path=output_path,
+                                                     behaviour=behaviour,
+                                                     period=period,
+                                                     model=model,
+                                                     nmod=nmod)
+                simu = simu/(1e3 * typology.surface)
+                # heating_needs[(code,level,climat)] = simu.heating_needs.values
+                # cooling_needs[(code,level,climat)] = simu.cooling_needs.values
+                total_needs[(code,level,climat)] = simu.cooling_needs.values + simu.heating_needs.values
+            
+    fig,ax = plt.subplots(figsize=(10,5),dpi=300)
+    for i in range(1,11):
+        code = 'FR.N.{}.{:02d}.Gen'.format(building_type,i)
+        
+        j = i*7
+        X = [j,j+2,j+4]
+            
+        for k,level in enumerate(['initial','standard','advanced']):
+            if i==1 and k==1:
+                label_heating ='Heating needs'
+                label_cooling ='Cooling needs'
+            else:
+                label_heating = None
+                label_cooling = None
+            heating_color = 'tab:red'
+            cooling_color = 'tab:blue'
+
+            # ax.bar([X[k]], heating_needs[(code,level)].mean(), 
+            #        yerr = heating_needs[(code,level)].std(),
+            #        width=1.6, label=label_heating, color=heating_color,alpha=0.5,
+            #        error_kw=dict(ecolor=heating_color,lw=1, capsize=2, capthick=1))
+            
+            # ax.bar([X[k]], cooling_needs[(code,level)].mean(), 
+            #        bottom=heating_needs[(code,level)].mean(),
+            #        yerr = cooling_needs[(code,level)].std(),
+            #        width=1.6, label=label_cooling, color=cooling_color,alpha=0.5,
+            #        error_kw=dict(ecolor=cooling_color,lw=1, capsize=2, capthick=1))
+            
+            ax.boxplot(total_needs[(code,level)],positions=[X[k]],widths=1)
+
+    ax.set_ylim(bottom=0.)
+    ax.set_ylabel('Energy needs (kWh.m$^{-2}$.yr$^{-1}$)')
+    ax.legend()
+    ax.set_title(zcl.code)
+    ax.set_xticks([(i*7)+2 for i in range(1,11)],['{}.{:02d}'.format(building_type,i) for i in range(1,11)])
+    
+    if save:
+        plt.savefig(os.path.join(output_path,'figs','{}.png'.format('typology_energy_needs_{}_{}_{}-{}'.format(building_type,zcl.code,period[0],period[1]))),bbox_inches='tight')
+    plt.show()
+    plt.close()
+    return 
+
+
+
 #%% ===========================================================================
 # script principal
 # =============================================================================
@@ -296,9 +415,11 @@ def main():
     if True:
         
         # Caractérisation du temps de calcul
-        if True:
+        if False:
             # Localisation
-            city = 'Beauvais'
+            zcl = Climat('H1a')
+            city = zcl.center_prefecture
+            # city = 'Beauvais'
             # city = 'Nice'
             
             # Période de calcul
@@ -313,6 +434,16 @@ def main():
                 pickle.dump(weather_data, open(weather_data_checkfile, "wb"))
             else:
                 weather_data = pickle.load(open(weather_data_checkfile, 'rb'))
+            
+            
+            weather_data = get_projected_weather_data(zcl.code, period)
+            weather_data = refine_resolution(weather_data, resolution='600s')
+            
+            plot_timeserie(weather_data[['temperature_2m']],figsize=(15,5),ylabel='Energy needs (Wh)',
+                           figs_folder=figs_folder,show=True)
+            
+            plot_timeserie(weather_data[['direct_sun_radiation_H']],figsize=(15,5),ylabel='Energy needs (Wh)',
+                           figs_folder=figs_folder,show=True)
                 
             # Définition des habitudes
             conventionnel = Behaviour('conventionnel_th-bce_2020')
@@ -333,8 +464,8 @@ def main():
             t2 = time.time()
             print('{} an(s) de simulation : {:.2f}s.'.format(len(list(range(*period)))+1,t2-t1))
             
-            # plot_timeserie(simulation[['heating_needs','cooling_needs']],figsize=(15,5),ylabel='Energy needs (Wh)',
-            #                figs_folder=figs_folder,show=True)
+            plot_timeserie(simulation[['heating_needs','cooling_needs']],figsize=(15,5),ylabel='Energy needs (Wh)',
+                           figs_folder=figs_folder,show=True)
             
             
         
@@ -468,56 +599,56 @@ def main():
             
             
         # Évolution des monogestes
-        if False:
+        if True:
             # Localisation
             zcl = Climat('H1a')
-            # zcl = Climat('H3')
+            zcl = Climat('H3')
             typo_code = 'FR.N.SFH.01.Gen'
             # typo_code = 'FR.N.SFH.07.Gen'
             
             # premier test
-            if True:
-                compute_energy_needs_single_actions('roof',typo_code,zcl,
-                                     output_path=os.path.join(output, folder),
-                                     behaviour='conventionnel',
-                                     period=[2000,2020],
-                                     plot=True,show=True,
-                                     progressbar=True)
+            if False:
+                # compute_energy_needs_single_actions('roof',typo_code,zcl,
+                #                      output_path=os.path.join(output, folder),
+                #                      behaviour='conventionnel',
+                #                      period=[2000,2020],
+                #                      plot=True,show=True,
+                #                      progressbar=True)
                 
-                compute_energy_needs_single_actions('walls',typo_code,zcl,
-                                     output_path=os.path.join(output, folder),
-                                     behaviour='conventionnel',
-                                     period=[2000,2020],
-                                     plot=True,show=True,
-                                     progressbar=True)
+                # compute_energy_needs_single_actions('walls',typo_code,zcl,
+                #                      output_path=os.path.join(output, folder),
+                #                      behaviour='conventionnel',
+                #                      period=[2000,2020],
+                #                      plot=True,show=True,
+                #                      progressbar=True)
                 
-                compute_energy_needs_single_actions('floor',typo_code,zcl,
-                                     output_path=os.path.join(output, folder),
-                                     behaviour='conventionnel',
-                                     period=[2000,2020],
-                                     plot=True,show=True,
-                                     progressbar=True)
+                # compute_energy_needs_single_actions('floor',typo_code,zcl,
+                #                      output_path=os.path.join(output, folder),
+                #                      behaviour='conventionnel',
+                #                      period=[2000,2020],
+                #                      plot=True,show=True,
+                #                      progressbar=True)
                 
-                compute_energy_needs_single_actions('albedo',typo_code,zcl,
-                                     output_path=os.path.join(output, folder),
-                                     behaviour='conventionnel',
-                                     period=[2000,2020],
-                                     plot=True,show=True,
-                                     progressbar=True)
+                # compute_energy_needs_single_actions('albedo',typo_code,zcl,
+                #                      output_path=os.path.join(output, folder),
+                #                      behaviour='conventionnel',
+                #                      period=[2000,2020],
+                #                      plot=True,show=True,
+                #                      progressbar=True)
                 
-                compute_energy_needs_single_actions('ventilation',typo_code,zcl,
-                                     output_path=os.path.join(output, folder),
-                                     behaviour='conventionnel',
-                                     period=[2000,2020],
-                                     plot=True,show=True,
-                                     progressbar=True)
+                # compute_energy_needs_single_actions('ventilation',typo_code,zcl,
+                #                      output_path=os.path.join(output, folder),
+                #                      behaviour='conventionnel',
+                #                      period=[2000,2020],
+                #                      plot=True,show=True,
+                #                      progressbar=True)
                 
                 compute_energy_needs_single_actions('shading',typo_code,zcl,
                                      output_path=os.path.join(output, folder),
                                      behaviour='conventionnel',
                                      period=[2000,2020],
                                      plot=True,show=True,
-                                     progressbar=True)
+                                     progressbar=True,model='era5')
             
             # parallelisation
             if False:
@@ -536,7 +667,30 @@ def main():
                         
                 pool.starmap(compute_energy_needs_single_actions, run_list)
                 
+            # optimisation par geste
+            if False:
+                zcl_list = ['H2c']
                 
+                run_list = []
+                for zcl_code in zcl_list:
+                    zcl = Climat(zcl_code)
+                    # for building_type in ['SFH','TH','MFH','AB']:
+                    for building_type in ['SFH']:
+                        for i in range(1,11):
+                            code = 'FR.N.{}.{:02d}.Gen'.format(building_type,i)
+                            run_list.append(('shading',
+                                             code,
+                                             zcl,
+                                             os.path.join(output, folder),
+                                             'conventionnel',
+                                             [2010,2020]))
+                
+                nb_cpu = multiprocessing.cpu_count()
+                pool = multiprocessing.Pool(nb_cpu)
+                pool.starmap(compute_energy_needs_single_actions, run_list)
+        
+        
+        
         # Consommations énergétiques des typologies à différents niveaux
         if False:
             zcl_list = ['H1b','H3']
@@ -562,10 +716,74 @@ def main():
                 # for building_type in ['SFH']:
                     draw_building_type_energy_needs(building_type,zcl=zcl,output_path=os.path.join(output, folder))
                     
+
+    #%% Changement de période climatique
+    if True:
+        
+        models_period_dict = {0:{2:[2029,2049],
+                                 4:[2064,2084],},
+                              1:{2:[2018,2038],
+                                 4:[2056,2076],},
+                              2:{2:[2024,2044],
+                                 4:[2066,2086],},
+                              3:{2:[2013,2033],
+                                 4:[2056,2076],},
+                              4:{2:[2006,2024], # debut des projections en 2006
+                                 4:[2046,2066],},}
+        
+        # premier test 
+        if False:
+            zcl = Climat('H1a')
+            zcl = Climat('H3')
+            typo_code = 'FR.N.SFH.01.Gen'
+            typo_code = 'FR.N.SFH.08.Gen'
+            mod = 3
+            component = 'walls'
+            # component = 'shading'
             
+            compute_energy_needs_single_actions(component,typo_code,zcl,
+                                 output_path=os.path.join(output, folder),
+                                 behaviour='conventionnel',
+                                 period=[2000,2020],
+                                 plot=True,show=True,
+                                 progressbar=True,
+                                 model='explore2',nmod=mod)
+            
+            compute_energy_needs_single_actions(component,typo_code,zcl,
+                                 output_path=os.path.join(output, folder),
+                                 behaviour='conventionnel',
+                                 period=models_period_dict.get(mod).get(4),
+                                 plot=True,show=True,
+                                 progressbar=True,
+                                 model='explore2',nmod=mod)
+            
+        # evolution des consommations totales pour les typologies
+        if True:
+            zcl_list = ['H1b']#,'H3']
+            zcl = Climat('H1b')
+        
+            run_list = []
+            for zcl_code in zcl_list:
+                zcl = Climat(zcl_code)
+                # for building_type in ['SFH','TH','MFH','AB']:
+                for building_type in ['SFH']:
+                    for i in range(1,11):
+                        code = 'FR.N.{}.{:02d}.Gen'.format(building_type,i)
+                        for level in ['initial','standard','advanced']:
+                            run_list.append((code, level, zcl, os.path.join(output, folder)))
+                        
+            nb_cpu = multiprocessing.cpu_count()
+            pool = multiprocessing.Pool(nb_cpu)
+            pool.starmap(compute_energy_needs_typology, run_list)
+            
+            for zcl_code in zcl_list:
+                zcl = Climat(zcl_code)
+                # for building_type in ['SFH','TH','MFH','AB']:
+                for building_type in ['SFH']:
+                    draw_climate_impact_building_type_energy_needs(building_type,zcl=zcl,output_path=os.path.join(output, folder))
                 
-                
-                                 
+    # %% Autres    
+    if False:                           
     
         # Effets de l'albedo de la maison 
         if False:

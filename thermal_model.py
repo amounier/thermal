@@ -2684,7 +2684,7 @@ def main():
         
         
         # Comparaison entre typologies (consommations et U-values)
-        if False:
+        if True:
             
             for building_type in ['SFH','TH','MFH','AB']:
             # for building_type in ['SFH']:
@@ -2791,7 +2791,7 @@ def main():
             
 
                 # graphe pour les valeurs U
-                if True:
+                if False:
                     element_GENMOD_dict = {'Umur':Umur_GENMOD,
                                            'Uph':Uph_GENMOD,
                                            'Upb':Upb_GENMOD,
