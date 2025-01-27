@@ -298,6 +298,7 @@ class France:
         self.climats = sorted(list(set([e.climat for e in self.departements])))
         self.climats_winter = ['H1','H2','H3']
         self.climats_summer = ['a','b','c','d']
+        self.geometry = unary_union([Climat_winter(d).geometry for d in self.climats_winter])
         
 
 
@@ -446,7 +447,7 @@ def main():
         draw_departement_map({dep:None}, figs_folder=figs_folder, save='dep_{}'.format(dep.code))
     
     # zone climatique 8
-    if True:
+    if False:
         zcl = Climat('H3')
         # print(zcl.code)
         # print(zcl.codint)
@@ -460,7 +461,7 @@ def main():
         # [print(d) for d in zcl.departements]
         
     # zones climatiques d'été et d'hiver
-    if True:
+    if False:
        france = France()
        
        climats_winter = [Climat_winter(e) for e in france.climats_winter]

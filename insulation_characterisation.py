@@ -243,6 +243,17 @@ def main():
                              7: 'District network',
                              98: 'Other'}
         
+        dict_tremi_RS4_en_cat = {1: '< 30m2',
+                                 2: '30-39 m2',
+                                 3: '40-49 m2',
+                                 4: '50-69 m2',
+                                 5: '70-99 m2',
+                                 6: '100-149 m2',
+                                 7: '> 150 m2',
+                                 98: 'DNK'}
+        
+        dict_tremi_RS4_en_int = {1: 20, 2: 35,3: 45, 4: 70,5: 85,6: 125,7: 170,99: np.nan}
+        
         # filtre des répondants TREMI pour ne garder que ceux qui effectuent des travux énergétiques
         # (définis ci-dessus)
         
@@ -284,7 +295,7 @@ def main():
         
         # caractérisation de l'effet de la période de construction sur la réalisation de travaux 
         # (et en séparant par remplacement chauffage et d'isolation)
-        if True:
+        if False:
             tremi['Q102'] = pd.Categorical([dict_tremi_Q102_en.get(e,np.nan) for e in tremi['Q102']], list(dict_tremi_Q102_en.values()))
             tremi_insulation['Q102'] = pd.Categorical([dict_tremi_Q102_en.get(e,np.nan) for e in tremi_insulation['Q102']], list(dict_tremi_Q102_en.values()))
             for nba in range(1,13):
@@ -503,7 +514,7 @@ def main():
             
             # print(tremi_insulation.number_actions.mean())
             # histogramme du nombre d'actions
-            if True:
+            if False:
                 fig,ax= plt.subplots(figsize=(5,5),dpi=300)
                 sns.histplot(tremi_insulation, x='number_actions_cat',ax=ax, 
                              stat='percent',multiple='dodge',weights='wCal',)
@@ -572,7 +583,7 @@ def main():
                 
             
             # caractérisation des monogestes 
-            if True:
+            if False:
                 
                 tremi_monogeste = tremi_insulation[tremi_insulation.number_actions==1].copy()
                 for nba in range(1,13):
@@ -654,7 +665,7 @@ def main():
                         plt.show()
                     
                 # statistiques pour les actiosn de remplacement d'équipements 
-                if True:
+                if False:
                     # actions_replacement = [l for l in actions if 'replacement' in l]
                     
                     # remplacement de chauffage
@@ -794,7 +805,7 @@ def main():
                 
             
             # caractérisation des multigestes
-            if True:
+            if False:
                 tremi_insulation = pickle.load(open(os.path.join(tremi_reno_path,tremi_reno_file), 'rb'))
                 
                 for nb_actions in range(1,4):
@@ -847,6 +858,80 @@ def main():
         if False:
             # TODO
             pass
+        
+        
+        # Caractéeisation des coûts des travaux 
+        if True:
+            actions = list(dict_tremi_Q1_en.values())
+            reverse_actions_dict = {v:k for k,v in dict_tremi_Q1_en.items()}
+            
+            tremi_monogeste = tremi_insulation[tremi_insulation.number_actions==1].copy()
+            for nba in range(1,13):
+                tremi_monogeste['Q1_{}'.format(nba)] = pd.Categorical([dict_tremi_Q1_en.get(e,np.nan) for e in tremi_monogeste['Q1_{}'.format(nba)]], list(dict_tremi_Q1_en.values()))
+            
+            # le premier geste n'est pas forcément un de rénovation énergétique
+            monogeste_list = []
+            for i in range(len(tremi_monogeste)):
+                idx = 1
+                while not isinstance(tremi_monogeste.iloc[i]['Q1_{}'.format(idx)],str):
+                    idx +=1
+                monogeste_list.append(tremi_monogeste.iloc[i]['Q1_{}'.format(idx)])
+            
+            tremi_monogeste['monogeste'] = monogeste_list
+            tremi_monogeste['monogeste'] = pd.Categorical(tremi_monogeste['monogeste'], list(dict_tremi_Q1_en.values()))
+            tremi_monogeste['surface'] = [dict_tremi_RS4_en_int.get(e) for e in tremi_monogeste.RS4]
+            
+            actions_insulation = [l for l in actions if 'insulation' in l]
+            for action in actions_insulation:
+                thickness_var = 'Q12_{}'.format(reverse_actions_dict.get(action))
+                cost_var = 'Q21_{}'.format(reverse_actions_dict.get(action))
+            
+                tremi_action = tremi_monogeste[tremi_monogeste.monogeste==action]
+                tremi_action['surface_costs'] = tremi_action[cost_var]/tremi_action.surface
+                
+                # if action == 'Flat roof insulation':
+                #     print(tremi_action)
+                nb_res = len(tremi_action[thickness_var].dropna())
+                
+                print(action)
+                tremi_action = tremi_action[[thickness_var,'surface_costs','Q102']].dropna()
+                a_0 = np.polyfit(tremi_action[thickness_var], tremi_action['surface_costs'], deg=0)[0]
+                a_1,b_1 = np.polyfit(tremi_action[thickness_var], tremi_action['surface_costs'], deg=1)
+                a_2,b_2,c_2 = np.polyfit(tremi_action[thickness_var], tremi_action['surface_costs'], deg=2)
+                
+                fig,ax = plt.subplots(figsize=(5,5),dpi=300)
+                sns.scatterplot(data=tremi_action,x=thickness_var,y='surface_costs',hue='Q102',alpha=0.2,legend=False)
+                # for p in list(dict_tremi_Q102_en.values()):
+                #     tremi_action_period = tremi_action[tremi_action.Q102==p]
+                #     # ax.plot([tremi_action_period[width_var].mean()],
+                #     #         [tremi_action_period['energy_gains_EP'].mean()],
+                #     #         marker='o',label=p,ls='',mec='w')
+                    
+                #     ax.errorbar([tremi_action_period[thickness_var].mean()],
+                #                 [tremi_action_period['surface_costs'].mean()],
+                #                 xerr=[tremi_action_period[thickness_var].std()],
+                #                 yerr=[tremi_action_period['surface_costs'].std()],
+                #                 marker='o',label=p,ls='',mec='w')
+                    
+                xlim = ax.get_xlim()
+                
+                ax.plot(xlim,[0,0],color='k',ls=':')
+                
+                X = np.linspace(xlim[0], xlim[1])
+                Y_0 = np.asarray([a_0]*len(X))
+                Y_1 = a_1*X + b_1
+                Y_2 = a_2*X**2 + b_2*X + c_2
+                # ax.plot(X,Y_0,label='cst fit ({:.2f} (€/m2)/cm)'.format(a_0),color='k')
+                # ax.plot(X,Y_1,label='linear fit ({:.2f}x+{:.2f} (€/m2)/cm)'.format(a_1,b_1),color='k')
+                ax.plot(X,Y_2,label='square fit',color='k')
+                
+                ax.set_xlim(xlim)
+                ax.legend(title='Mean values')
+                ax.set_title(action)
+                ax.set_xlabel('Insulation thickness (cm)')
+                # ax.set_ylabel('Energy savings in primary energy (%)')
+                # plt.savefig(os.path.join(figs_folder,'tremi_renovation_mono_actions_{}_energy_savings.png'.format(action)),bbox_inches='tight')
+                plt.show()
             
     #%% CEE
     if False:
