@@ -82,32 +82,36 @@ def compute_energy_needs_single_actions(component,typo_code,zcl,output_path,
                                         
     dict_all_components = {'floor':{'var_space':np.logspace(np.log10(0+0.05),np.log10(0.4+0.05),num=nb_intervals)-0.05,
                                     'var_label':'Supplementary floor insulation thickness (m)',
-                                    'var_saver':'action_{}_{}_{}_{}_{}-{}'.format(component,typo_code,zcl.code,behaviour.name,period[0],period[1])
+                                    'var_saver':'action_{}_{}_{}_{}_{}-{}_mod{}'.format(component,typo_code,zcl.code,behaviour.name,period[0],period[1],nmod)
                                     },
                            'walls':{'var_space':np.logspace(np.log10(0+0.05),np.log10(0.4+0.05),num=nb_intervals)-0.05,
                                     'var_label':'Supplementary walls insulation thickness (m)',
-                                    'var_saver':'action_{}_{}_{}_{}_{}-{}'.format(component,typo_code,zcl.code,behaviour.name,period[0],period[1])
+                                    'var_saver':'action_{}_{}_{}_{}_{}-{}_mod{}'.format(component,typo_code,zcl.code,behaviour.name,period[0],period[1],nmod)
                                     },
                            'roof':{'var_space':np.logspace(np.log10(0+0.05),np.log10(0.4+0.05),num=nb_intervals)-0.05,
                                    'var_label':'Supplementary roof insulation thickness (m)',
-                                   'var_saver':'action_{}_{}_{}_{}_{}-{}'.format(component,typo_code,zcl.code,behaviour.name,period[0],period[1])
+                                   'var_saver':'action_{}_{}_{}_{}_{}-{}_mod{}'.format(component,typo_code,zcl.code,behaviour.name,period[0],period[1],nmod)
                                     },
                            'albedo':{'var_space':['light','medium','dark','black'],
                                      'var_label':'External surface color',
-                                     'var_saver':'action_{}_{}_{}_{}_{}-{}'.format(component,typo_code,zcl.code,behaviour.name,period[0],period[1])
+                                     'var_saver':'action_{}_{}_{}_{}_{}-{}_mod{}'.format(component,typo_code,zcl.code,behaviour.name,period[0],period[1],nmod)
                                      },
                            'ventilation':{'var_space':['natural','{} MV'.format(type_long),'{} DCV'.format(type_long),'{} HRV'.format(type_long)],
                                           'var_label':'Ventilation type',
-                                          'var_saver':'action_{}_{}_{}_{}_{}-{}'.format(component,typo_code,zcl.code,behaviour.name,period[0],period[1])
+                                          'var_saver':'action_{}_{}_{}_{}_{}-{}_mod{}'.format(component,typo_code,zcl.code,behaviour.name,period[0],period[1],nmod)
                                           },
                            'shading':{'var_space':np.linspace(0, 2, nb_intervals),
                                       'var_label':'Solar shader length (m)',
-                                      'var_saver':'action_{}_{}_{}_{}_{}-{}'.format(component,typo_code,zcl.code,behaviour.name,period[0],period[1])
+                                      'var_saver':'action_{}_{}_{}_{}_{}-{}_mod{}'.format(component,typo_code,zcl.code,behaviour.name,period[0],period[1],nmod)
+                                          },
+                           'windows':{'var_space':np.linspace(1, 5, nb_intervals),
+                                      'var_label':'Windows U-value (W.m$^{-2}$.K$^{-1}$)',
+                                      'var_saver':'action_{}_{}_{}_{}_{}-{}_mod{}'.format(component,typo_code,zcl.code,behaviour.name,period[0],period[1],nmod)
                                           },
                            }
     
     
-    dict_plot_top_value = {'SFH':300,
+    dict_plot_top_value = {'SFH':350,
                            'TH':250,
                            'MFH':300,
                            'AB':250}
@@ -148,6 +152,8 @@ def compute_energy_needs_single_actions(component,typo_code,zcl,output_path,
                 typo.ventilation_efficiency = typo.get_ventilation_efficiency()
             if component == 'shading':
                 typo.solar_shader_length = var_value
+            if component == 'windows':
+                typo.windows_U = var_value
                 
             # typo.basement = False
                 
@@ -207,6 +213,98 @@ def compute_energy_needs_single_actions(component,typo_code,zcl,output_path,
     return 
 
 
+def get_energy_needs_single_actions(component,typo_code,zcl,output_path,
+                                    behaviour='conventionnel',period=[2000,2020],
+                                    nb_intervals=10, model='explore2',nmod=3):
+    
+    city = zcl.center_prefecture
+    typo = Typology(typo_code)
+    
+    # weather data
+    if model == 'explore2':
+        weather_data_checkfile = ".weather_data_{}_{}_{}_explore2_mod{}".format(city,period[0],period[1],nmod) + ".pickle"
+        if weather_data_checkfile not in os.listdir():
+            weather_data = get_projected_weather_data(zcl.code, period,nmod=nmod)
+            weather_data = refine_resolution(weather_data, resolution='600s')
+            pickle.dump(weather_data, open(weather_data_checkfile, "wb"))
+        else:
+            weather_data = pickle.load(open(weather_data_checkfile, 'rb'))
+
+    else:
+        weather_data_checkfile = ".weather_data_{}_{}_{}".format(city,period[0],period[1]) + ".pickle"
+        if weather_data_checkfile not in os.listdir():
+            weather_data = get_historical_weather_data(city,period)
+            weather_data = refine_resolution(weather_data, resolution='600s')
+            pickle.dump(weather_data, open(weather_data_checkfile, "wb"))
+        else:
+            weather_data = pickle.load(open(weather_data_checkfile, 'rb'))
+    
+    if behaviour == 'conventionnel':
+        behaviour = Behaviour('conventionnel_th-bce_2020')
+    
+    type_dict = {'SFH':'Individual',
+                 'TH':'Individual',
+                 'MFH':'Collective',
+                 'AB':'Collective'}
+    type_long = type_dict.get(typo.type)
+                                        
+    dict_all_components = {'floor':{'var_space':np.logspace(np.log10(0+0.05),np.log10(0.4+0.05),num=nb_intervals)-0.05,
+                                    'var_label':'Supplementary floor insulation thickness (m)',
+                                    'var_saver':'action_{}_{}_{}_{}_{}-{}_mod{}'.format(component,typo_code,zcl.code,behaviour.name,period[0],period[1],nmod)
+                                    },
+                           'walls':{'var_space':np.logspace(np.log10(0+0.05),np.log10(0.4+0.05),num=nb_intervals)-0.05,
+                                    'var_label':'Supplementary walls insulation thickness (m)',
+                                    'var_saver':'action_{}_{}_{}_{}_{}-{}_mod{}'.format(component,typo_code,zcl.code,behaviour.name,period[0],period[1],nmod)
+                                    },
+                           'roof':{'var_space':np.logspace(np.log10(0+0.05),np.log10(0.4+0.05),num=nb_intervals)-0.05,
+                                   'var_label':'Supplementary roof insulation thickness (m)',
+                                   'var_saver':'action_{}_{}_{}_{}_{}-{}_mod{}'.format(component,typo_code,zcl.code,behaviour.name,period[0],period[1],nmod)
+                                    },
+                           'albedo':{'var_space':['light','medium','dark','black'],
+                                     'var_label':'External surface color',
+                                     'var_saver':'action_{}_{}_{}_{}_{}-{}_mod{}'.format(component,typo_code,zcl.code,behaviour.name,period[0],period[1],nmod)
+                                     },
+                           'ventilation':{'var_space':['natural','{} MV'.format(type_long),'{} DCV'.format(type_long),'{} HRV'.format(type_long)],
+                                          'var_label':'Ventilation type',
+                                          'var_saver':'action_{}_{}_{}_{}_{}-{}_mod{}'.format(component,typo_code,zcl.code,behaviour.name,period[0],period[1],nmod)
+                                          },
+                           'shading':{'var_space':np.linspace(0, 2, nb_intervals),
+                                      'var_label':'Solar shader length (m)',
+                                      'var_saver':'action_{}_{}_{}_{}_{}-{}_mod{}'.format(component,typo_code,zcl.code,behaviour.name,period[0],period[1],nmod)
+                                          },
+                           'windows':{'var_space':np.linspace(1, 5, nb_intervals),
+                                      'var_label':'Windows U-value (W.m$^{-2}$.K$^{-1}$)',
+                                      'var_saver':'action_{}_{}_{}_{}_{}-{}_mod{}'.format(component,typo_code,zcl.code,behaviour.name,period[0],period[1],nmod)
+                                          },
+                           }
+    
+    
+    dict_plot_top_value = {'SFH':300,
+                           'TH':250,
+                           'MFH':300,
+                           'AB':250}
+    
+    dict_components = dict_all_components.get(component)
+    
+    var_space = dict_components.get('var_space')
+    
+    Bch_list = [0]*len(var_space)
+    Bfr_list = [0]*len(var_space)
+    
+    if '{}.pickle'.format(dict_components.get('var_saver')) not in os.listdir(output_path):
+        compute_energy_needs_single_actions(component,typo_code,zcl,output_path,
+                                            behaviour,period,
+                                            plot=False,nb_intervals=nb_intervals,show=False,
+                                            progressbar=False, model=model,
+                                            nmod=nmod)
+        
+    Bch_list,Bfr_list = pickle.load(open(os.path.join(os.path.join(output_path),'{}.pickle'.format(dict_components.get('var_saver'))), 'rb'))
+    
+    Bch_list = np.asarray(Bch_list)/(1e3 * typo.surface)
+    Bfr_list = np.asarray(Bfr_list)/(1e3 * typo.surface)
+    return Bch_list, Bfr_list
+
+
 def compute_energy_needs_typology(typo_code, typo_level,zcl,output_path,
                                   behaviour='conventionnel',period=[2000,2020],
                                   model='explore2',nmod=3):
@@ -236,7 +334,7 @@ def compute_energy_needs_typology(typo_code, typo_level,zcl,output_path,
     if behaviour == 'conventionnel':
         behaviour = Behaviour('conventionnel_th-bce_2020')
     
-    var_saver = 'typology_{}_lvl-{}_{}_{}-{}'.format(typo.code, typo.insulation_level, zcl.code, period[0],period[1])
+    var_saver = 'typology_{}_lvl-{}_{}_{}-{}_mod{}'.format(typo.code, typo.insulation_level, zcl.code, period[0],period[1],nmod)
     
     if '{}.pickle'.format(var_saver) not in os.listdir(output_path):
         
@@ -341,11 +439,9 @@ def draw_climate_impact_building_type_energy_needs(building_type, zcl, output_pa
                                                      model=model,
                                                      nmod=nmod)
                 simu = simu/(1e3 * typology.surface)
-                # heating_needs[(code,level,climat)] = simu.heating_needs.values
-                # cooling_needs[(code,level,climat)] = simu.cooling_needs.values
                 total_needs[(code,level,climat)] = simu.cooling_needs.values + simu.heating_needs.values
             
-    fig,ax = plt.subplots(figsize=(10,5),dpi=300)
+    fig,ax = plt.subplots(figsize=(15,5),dpi=300)
     for i in range(1,11):
         code = 'FR.N.{}.{:02d}.Gen'.format(building_type,i)
         
@@ -353,14 +449,19 @@ def draw_climate_impact_building_type_energy_needs(building_type, zcl, output_pa
         X = [j,j+2,j+4]
             
         for k,level in enumerate(['initial','standard','advanced']):
+            # for climat in ['now',2,4]:
             if i==1 and k==1:
-                label_heating ='Heating needs'
-                label_cooling ='Cooling needs'
+                label_now ='2000-2020'
+                label_2 ='+2°C'
+                label_4 ='+4°C'
             else:
-                label_heating = None
-                label_cooling = None
-            heating_color = 'tab:red'
-            cooling_color = 'tab:blue'
+                label_now = None
+                label_2 = None
+                label_4 = None
+             
+            color_now = 'k'
+            color_2 = 'tab:blue'
+            color_4 = 'tab:red'
 
             # ax.bar([X[k]], heating_needs[(code,level)].mean(), 
             #        yerr = heating_needs[(code,level)].std(),
@@ -373,7 +474,31 @@ def draw_climate_impact_building_type_energy_needs(building_type, zcl, output_pa
             #        width=1.6, label=label_cooling, color=cooling_color,alpha=0.5,
             #        error_kw=dict(ecolor=cooling_color,lw=1, capsize=2, capthick=1))
             
-            ax.boxplot(total_needs[(code,level)],positions=[X[k]],widths=1)
+            ax.boxplot(total_needs[(code,level,'now')],positions=[X[k]-0.6],
+                       widths=0.5,label=label_now,
+                       boxprops=dict(color=color_now),
+                       capprops=dict(color=color_now),
+                       whiskerprops=dict(color=color_now),
+                       flierprops=dict(markeredgecolor=color_now,markersize=2),
+                       medianprops=dict(color=color_now),)
+            
+            ax.boxplot(total_needs[(code,level,2)],positions=[X[k]],
+                       widths=0.5,label=label_2,
+                       boxprops=dict(color=color_2),
+                       capprops=dict(color=color_2),
+                       whiskerprops=dict(color=color_2),
+                       flierprops=dict(markeredgecolor=color_2,markersize=2),
+                       medianprops=dict(color=color_2),)
+            
+            ax.boxplot(total_needs[(code,level,4)],positions=[X[k]+0.6],
+                       widths=0.5,label=label_4,
+                       boxprops=dict(color=color_4),
+                       capprops=dict(color=color_4),
+                       whiskerprops=dict(color=color_4),
+                       flierprops=dict(markeredgecolor=color_4,markersize=2),
+                       medianprops=dict(color=color_4),)
+        
+        
 
     ax.set_ylim(bottom=0.)
     ax.set_ylabel('Energy needs (kWh.m$^{-2}$.yr$^{-1}$)')
@@ -381,8 +506,17 @@ def draw_climate_impact_building_type_energy_needs(building_type, zcl, output_pa
     ax.set_title(zcl.code)
     ax.set_xticks([(i*7)+2 for i in range(1,11)],['{}.{:02d}'.format(building_type,i) for i in range(1,11)])
     
+    ylims = ax.get_ylim()
+    xlims = ax.get_xlim()
+    for i in range(1,11):
+        j = i*7
+        X = [j-1.5,j+2,j+5.5]
+        if i%2==0:
+            ax.fill_between(X,[ylims[1]]*3,[ylims[0]]*3,color='lightgrey',alpha=0.37,zorder=-2)
+    
+    ax.set_xlim(xlims)
     if save:
-        plt.savefig(os.path.join(output_path,'figs','{}.png'.format('typology_energy_needs_{}_{}_{}-{}'.format(building_type,zcl.code,period[0],period[1]))),bbox_inches='tight')
+        plt.savefig(os.path.join(output_path,'figs','{}.png'.format('typology_climate_impacts_energy_needs_{}_{}_{}-{}_nmod{}'.format(building_type,zcl.code,period[0],period[1],nmod))),bbox_inches='tight')
     plt.show()
     plt.close()
     return 
@@ -412,7 +546,7 @@ def main():
     
     
     #%% Variation des paramètres d'isolation 
-    if True:
+    if False:
         
         # Caractérisation du temps de calcul
         if False:
@@ -599,10 +733,10 @@ def main():
             
             
         # Évolution des monogestes
-        if True:
+        if False:
             # Localisation
             zcl = Climat('H1a')
-            zcl = Climat('H3')
+            # zcl = Climat('H3')
             typo_code = 'FR.N.SFH.01.Gen'
             # typo_code = 'FR.N.SFH.07.Gen'
             
@@ -643,7 +777,14 @@ def main():
                 #                      plot=True,show=True,
                 #                      progressbar=True)
                 
-                compute_energy_needs_single_actions('shading',typo_code,zcl,
+                # compute_energy_needs_single_actions('shading',typo_code,zcl,
+                #                      output_path=os.path.join(output, folder),
+                #                      behaviour='conventionnel',
+                #                      period=[2000,2020],
+                #                      plot=True,show=True,
+                #                      progressbar=True,model='era5')
+                
+                compute_energy_needs_single_actions('windows',typo_code,zcl,
                                      output_path=os.path.join(output, folder),
                                      behaviour='conventionnel',
                                      period=[2000,2020],
@@ -732,14 +873,15 @@ def main():
                                  4:[2046,2066],},}
         
         # premier test 
-        if False:
-            zcl = Climat('H1a')
+        if True:
+            zcl = Climat('H1b')
             zcl = Climat('H3')
             typo_code = 'FR.N.SFH.01.Gen'
             typo_code = 'FR.N.SFH.08.Gen'
             mod = 3
-            component = 'walls'
-            # component = 'shading'
+            # component = 'walls'
+            # component = 'roof'
+            component = 'windows'
             
             compute_energy_needs_single_actions(component,typo_code,zcl,
                                  output_path=os.path.join(output, folder),
@@ -758,30 +900,229 @@ def main():
                                  model='explore2',nmod=mod)
             
         # evolution des consommations totales pour les typologies
-        if True:
-            zcl_list = ['H1b']#,'H3']
+        if False:
+            zcl_list = ['H1b','H3']
             zcl = Climat('H1b')
+            mod = 3
         
             run_list = []
             for zcl_code in zcl_list:
                 zcl = Climat(zcl_code)
-                # for building_type in ['SFH','TH','MFH','AB']:
-                for building_type in ['SFH']:
+                for building_type in ['SFH','TH','MFH','AB']:
+                # for building_type in ['SFH']:
                     for i in range(1,11):
                         code = 'FR.N.{}.{:02d}.Gen'.format(building_type,i)
                         for level in ['initial','standard','advanced']:
-                            run_list.append((code, level, zcl, os.path.join(output, folder)))
-                        
+                            for climat in ['now',2,4]:
+                                if climat == 'now':
+                                    period = [2000,2020]
+                                else:
+                                    period = models_period_dict.get(mod).get(climat)
+                                run_list.append((code, level, zcl, os.path.join(output, folder),
+                                                 'conventionnel',period,'explore2',mod))
+                                              
             nb_cpu = multiprocessing.cpu_count()
             pool = multiprocessing.Pool(nb_cpu)
             pool.starmap(compute_energy_needs_typology, run_list)
             
             for zcl_code in zcl_list:
                 zcl = Climat(zcl_code)
-                # for building_type in ['SFH','TH','MFH','AB']:
-                for building_type in ['SFH']:
+                for building_type in ['SFH','TH','MFH','AB']:
+                # for building_type in ['SFH']:
                     draw_climate_impact_building_type_energy_needs(building_type,zcl=zcl,output_path=os.path.join(output, folder))
+        
+        
+        # cadran des rénovations par gestes
+        if False:
+            
+            # calcul des gains
+            if True:
+                # component = 'shading'
+                mod = 3
+                zcl_list = ['H1b','H3']
                 
+                run_list = []
+                # for component in ['shading','walls','floor','roof','albedo','windows']:
+                for component in ['windows']:
+                    for zcl_code in zcl_list:
+                        zcl = Climat(zcl_code)
+                        # for building_type in ['SFH','TH','MFH','AB']:
+                        for building_type in ['SFH']:
+                            for i in range(1,11):
+                                code = 'FR.N.{}.{:02d}.Gen'.format(building_type,i)
+                                
+                                run_list.append((component,code,zcl,
+                                                 os.path.join(output, folder),
+                                                 'conventionnel',
+                                                 [2000,2020],False))
+                                
+                                run_list.append((component,code,zcl,
+                                                 os.path.join(output, folder),
+                                                 'conventionnel',
+                                                 models_period_dict.get(mod).get(2),False))
+                                
+                                run_list.append((component,code,zcl,
+                                                 os.path.join(output, folder),
+                                                 'conventionnel',
+                                                 models_period_dict.get(mod).get(4),False))
+                
+                nb_cpu = multiprocessing.cpu_count()
+                pool = multiprocessing.Pool(nb_cpu)
+                pool.starmap(compute_energy_needs_single_actions, run_list)
+                
+            # affichage du cadran
+            if True:
+                
+                def find_nearest(array, value):
+                    array = np.asarray(array)
+                    idx = (np.abs(array - value)).argmin()
+                    return idx, array[idx]
+
+
+                dict_all_components = {'floor':{'var_space':np.logspace(np.log10(0+0.05),np.log10(0.4+0.05),num=10)-0.05,
+                                                'var_label':'Supplementary floor insulation',
+                                                'var_test':0.1,
+                                                'var_ref':0,
+                                                },
+                                       'walls':{'var_space':np.logspace(np.log10(0+0.05),np.log10(0.4+0.05),num=10)-0.05,
+                                                'var_label':'Supplementary walls insulation',
+                                                'var_test':0.12,
+                                                'var_ref':0,
+                                                },
+                                       'roof':{'var_space':np.logspace(np.log10(0+0.05),np.log10(0.4+0.05),num=10)-0.05,
+                                               'var_label':'Supplementary roof insulation',
+                                               'var_test':0.2,
+                                               'var_ref':0,
+                                               },
+                                       'albedo':{'var_space':['light','medium','dark','black'],
+                                                 'var_label':'External surface color',
+                                                 'var_test':'light',
+                                                 'var_ref':'dark',
+                                                 },
+                                       'ventilation':{'var_space':['natural','MV','DCV','HRV'],
+                                                      'var_label':'Ventilation type',
+                                                      'var_test':'HRV',
+                                                      'var_ref':'natural',
+                                                      },
+                                       'shading':{'var_space':np.linspace(0, 2, 10),
+                                                  'var_label':'Solar shader',
+                                                  'var_test':1,
+                                                  'var_ref':0,
+                                                  },
+                                       'windows':{'var_space':np.linspace(1, 5, 10),
+                                                  'var_label':'Windows U-value',
+                                                  'var_test':1.5,
+                                                  'var_ref':4.6,
+                                                  },
+                                       }
+                
+                # component = 'windows'
+                mod = 3
+                zcl_list = ['H1b','H3']
+                # zcl_list = ['H3']
+                output_path = os.path.join(output, folder)
+    
+
+                # for component in ['shading','walls','floor','roof','albedo']:
+                for component in ['windows']:
+                    for zcl_code in zcl_list:
+                        zcl = Climat(zcl_code)
+                        # for building_type in ['SFH','TH','MFH','AB']:
+                        for building_type in ['SFH']:
+                            fig,ax = plt.subplots(figsize=(5,5),dpi=300)
+                            max_Delta_x = 0
+                            max_Delta_y = 0
+                            for i in range(1,11):
+                                code = 'FR.N.{}.{:02d}.Gen'.format(building_type,i)
+                                # print(code)
+                                Bch_list,Bfr_list = get_energy_needs_single_actions(component,code,zcl,output_path, behaviour='conventionnel',period=[2000,2020], nmod=mod)
+                                Bch_list2,Bfr_list2 = get_energy_needs_single_actions(component,code,zcl,output_path, behaviour='conventionnel',period=models_period_dict.get(mod).get(2), nmod=mod)
+                                Bch_list4,Bfr_list4 = get_energy_needs_single_actions(component,code,zcl,output_path, behaviour='conventionnel',period=models_period_dict.get(mod).get(4), nmod=mod)
+                                
+                                Btot_list = Bch_list + Bfr_list
+                                Bch_mean = Bch_list.mean(axis=1)
+                                Bfr_mean = Bfr_list.mean(axis=1)
+                                Btot_mean = Btot_list.mean(axis=1)
+                                
+                                Btot_list2 = Bch_list2 + Bfr_list2
+                                Bch_mean2 = Bch_list2.mean(axis=1)
+                                Bfr_mean2 = Bfr_list2.mean(axis=1)
+                                Btot_mean2 = Btot_list2.mean(axis=1)
+                                
+                                Btot_list4 = Bch_list4 + Bfr_list4
+                                Bch_mean4 = Bch_list4.mean(axis=1)
+                                Bfr_mean4 = Bfr_list4.mean(axis=1)
+                                Btot_mean4 = Btot_list4.mean(axis=1)
+                                
+                                var_space = dict_all_components.get(component).get('var_space')
+                                var_ref = dict_all_components.get(component).get('var_ref')
+                                var_test = dict_all_components.get(component).get('var_test')
+                                
+                                if var_test in var_space:
+                                    nearest_test = var_test
+                                    idx_test = var_space.index(var_test)
+                                else:
+                                    idx_test, nearest_test = find_nearest(var_space, var_test)
+                                    
+                                if var_ref in var_space:
+                                    nearest_ref = var_ref
+                                    idx_ref = list(var_space).index(var_ref)
+                                else:
+                                    idx_ref, nearest_ref = find_nearest(var_space, var_ref)
+                                
+                                
+                                
+                                idx_max = Btot_mean.argmax()
+                                # idx_min = 3
+                                # print(idx_min)
+                                
+                                Delta_Bch = Bch_mean[idx_ref]-Bch_mean[idx_test]
+                                Delta_Bfr = Bfr_mean[idx_ref]-Bfr_mean[idx_test]
+                                
+                                Delta_Bch2 = Bch_mean2[idx_ref]-Bch_mean2[idx_test]
+                                Delta_Bfr2 = Bfr_mean2[idx_ref]-Bfr_mean2[idx_test]
+                                
+                                Delta_Bch4 = Bch_mean4[idx_ref]-Bch_mean4[idx_test]
+                                Delta_Bfr4 = Bfr_mean4[idx_ref]-Bfr_mean4[idx_test]
+                                
+                                max_Delta_y = np.max([max_Delta_y,np.abs(Delta_Bch),np.abs(Delta_Bch2),np.abs(Delta_Bch4)])
+                                max_Delta_x = np.max([max_Delta_x,np.abs(Delta_Bfr),np.abs(Delta_Bfr2),np.abs(Delta_Bfr4)])
+                                
+                                cmap_dict = {'H3':plt.colormaps.get_cmap('Reds_r'),
+                                             'H1b':plt.colormaps.get_cmap('Blues_r')}
+                                cmap = cmap_dict.get(zcl.code)
+                                
+                                ax.plot([Delta_Bfr,Delta_Bfr2,Delta_Bfr4], 
+                                        [Delta_Bch,Delta_Bch2,Delta_Bch4], 
+                                        marker='o',color=cmap(i/11),
+                                        label='{}.{:02d}'.format(building_type,i))
+                                
+                                ax.plot([Delta_Bfr], 
+                                        [Delta_Bch], 
+                                        marker='o',color=cmap(i/11),ls='',mfc='w')
+                    
+                            max_Delta_y *= 1.01
+                            max_Delta_x *= 1.01
+                            max_Delta = max(max_Delta_x, max_Delta_y)
+                            ax.set_xlim([-max_Delta,max_Delta])
+                            ax.set_ylim([-max_Delta,max_Delta])
+                            
+                            title = '{} - {}'.format(dict_all_components.get(component).get('var_label'), zcl.code) 
+                            ax.set_title(title)
+                            
+                            ax.plot([0,0],[-max_Delta,max_Delta],ls=':',color='k',zorder=-1)
+                            ax.plot([-max_Delta,max_Delta],[0,0],ls=':',color='k',zorder=-1)
+                            ax.fill_between([-max_Delta,max_Delta],[max_Delta,-max_Delta],[-max_Delta,-max_Delta],
+                                            color='lightgrey',alpha=0.5,zorder=-2)
+                            
+                            ax.set_xlabel('Gains in cooling needs (kWh.yr$^{-1}$.m$^{-2}$)')
+                            ax.set_ylabel('Gains in heating needs (kWh.yr$^{-1}$.m$^{-2}$)')
+                            ax.legend(ncol=2)
+                            plt.savefig(os.path.join(figs_folder,'interactions_{}_{}_{}.png'.format(component,building_type,zcl.code)), bbox_inches='tight')
+                            plt.show()
+                        
+        
+        
     # %% Autres    
     if False:                           
     
