@@ -943,7 +943,7 @@ def main():
                     plt.show()
                     
                 # stats en nombre de logements 
-                if True:
+                if False:
                     draw_departement_map(departements_dict_maison_logements, figs_folder,
                                          map_title='Single-family (mean : {:.1f}%)'.format(rep_maison_france_log*100),
                                          cbar_label='Representativity (%)',
@@ -1007,7 +1007,7 @@ def main():
         # Statistiques des typologies en France
         # TODO à refaire avec les données complètes
         # TODO : à reprendre avec les stats de représentativité 
-        if False:
+        if True:
             dpe = pd.read_parquet(os.path.join('data','BDNB',reformat_bdnb_dpe_file))
             
             mask = dpe["dpe_mix_arrete_surface_habitable_logement"] > 1e3
@@ -1122,7 +1122,7 @@ def main():
 
 
             # statistiques sur les valeurs U par typologie
-            if False:
+            if True:
                 for typo_group in ['SFH', 'TH', 'MFH', 'AB']:
                 # typo_group = 'AB' # SFH, TH, MFH, AB
                     hue_order = ['FR.N.{}.{:02d}.Gen'.format(typo_group,n) for n in range(1,12)]

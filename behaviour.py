@@ -172,7 +172,7 @@ class Behaviour():
         ax.plot(data.index,data.heating_temperature,label='Heating',color='tab:red')
         ax.plot(data.index,data.cooling_temperature,label='Cooling',color='tab:blue')
         ax.legend()
-        ax.set_ylim(bottom=10.,top=30)
+        ax.set_ylim(bottom=10.,top=31)
         ax.set_ylabel('Setpoint temperature (°C)')
         
         locator = mdates.AutoDateLocator()
@@ -214,8 +214,8 @@ def main():
         
         # Affichage des règles de consommation conventionnelle
         if True:
-            conventionnel.heating_rules = {i:[19]*24 for i in range(1,8)}
-            conventionnel.cooling_rules = {i:[26]*24 for i in range(1,8)}
+            # conventionnel.heating_rules = {i:[19]*24 for i in range(1,8)}
+            # conventionnel.cooling_rules = {i:[26]*24 for i in range(1,8)}
             
             conventionnel.plot_rules(figs_folder)
             # conventionnel.get_number_equivalent_adults(0,figs_folder)
@@ -229,7 +229,7 @@ def main():
         weather_data = open_meteo_historical_data(longitude=coordinates[0], latitude=coordinates[1], year=year, hourly_variables=variables)
         
         # Graphe pour des apports internes constants
-        conventionnel.cst_internal_gains = 4.17 # W/m2
+        # conventionnel.cst_internal_gains = 4.17 # W/m2
         
         heating_setpoint, cooling_setpoint = conventionnel.get_set_point_temperature(weather_data)
         internal_gains = conventionnel.get_internal_gains(80,weather_data)

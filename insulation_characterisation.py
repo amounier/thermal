@@ -502,7 +502,7 @@ def main():
             
         
         # Caractérisation des gestes de rénovations
-        if False:
+        if True:
             tremi_insulation = pickle.load(open(os.path.join(tremi_reno_path,tremi_reno_file), 'rb'))
             pd.options.mode.chained_assignment = None  # default='warn'
             
@@ -514,7 +514,7 @@ def main():
             
             # print(tremi_insulation.number_actions.mean())
             # histogramme du nombre d'actions
-            if False:
+            if True:
                 fig,ax= plt.subplots(figsize=(5,5),dpi=300)
                 sns.histplot(tremi_insulation, x='number_actions_cat',ax=ax, 
                              stat='percent',multiple='dodge',weights='wCal',)
@@ -583,7 +583,7 @@ def main():
                 
             
             # caractérisation des monogestes 
-            if False:
+            if True:
                 
                 tremi_monogeste = tremi_insulation[tremi_insulation.number_actions==1].copy()
                 for nba in range(1,13):
@@ -805,7 +805,7 @@ def main():
                 
             
             # caractérisation des multigestes
-            if False:
+            if True:
                 tremi_insulation = pickle.load(open(os.path.join(tremi_reno_path,tremi_reno_file), 'rb'))
                 
                 for nb_actions in range(1,4):
@@ -861,7 +861,7 @@ def main():
         
         
         # Caractéeisation des coûts des travaux 
-        if True:
+        if False:
             actions = list(dict_tremi_Q1_en.values())
             reverse_actions_dict = {v:k for k,v in dict_tremi_Q1_en.items()}
             
