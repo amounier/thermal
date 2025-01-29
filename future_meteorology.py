@@ -793,11 +793,12 @@ def main():
             
         
         climate_vars = ['tas','tasmax','tasmin','rsds']
-        climate_vars = ['rsds']
+        climate_vars = ['tas']
         for climate_var in climate_vars:
         # climate_var = 'rsds' #'tas','tasmax','tasmin','rsds'
             
-            for mod in range(0,5):
+            # for mod in range(0,5):
+            for mod in [3]:
             # for mod in range(3,5):
                 
                 Explore2_hist = os.path.join(data_folder,climate_var+models_dict.get(mod).get('historical'))
@@ -836,19 +837,25 @@ def main():
                 else:
                     cmap = cmocean.cm.solar
     
+                # carte de base
                 fig,ax = blank_national_map()
                 
                 img = hist.plot(ax=ax,transform=ccrs.epsg('27572'),add_colorbar=False,
                                cmap=cmap,vmin=hist.min(),vmax=hist.max())
                 
-                ax.set_title(mod)
+                ax.set_title('Model n°{} (2000-2020)'.format(mod))
                 
                 ax_cb = fig.add_axes([0,0,0.1,0.1])
                 posn = ax.get_position()
                 ax_cb.set_position([posn.x0+posn.width+0.02, posn.y0, 0.04, posn.height])
                 fig.add_axes(ax_cb)
                 cbar = plt.colorbar(img,cax=ax_cb,extendfrac=0.02)
-                cbar.set_label(climate_var)
+                
+                cbar_label_dict = {'tas':'Mean daily temperature (°C)',
+                                   'tasmax':'Mean of daily maximal temperature (°C)',
+                                   'tasmin':'Mean of daily minimal temperature (°C)',
+                                   'rsds':'Surface downwelling shortwave radiation (W.m$^{-2}$)'}
+                cbar.set_label(cbar_label_dict.get(climate_var))
                 
                 ax.set_extent(get_extent())
                 plt.savefig(os.path.join(figs_folder,'map_{}_mod{}_2000-2020.png'.format(climate_var,mod)),bbox_inches='tight')
@@ -856,6 +863,11 @@ def main():
                 plt.close()
                 
                 # difference sur les periode 2 et 4
+                cbar_label_diff_dict = {'tas':'Difference of daily temperature (°C)',
+                                        'tasmax':'Difference of daily maximal temperature (°C)',
+                                        'tasmin':'Difference of daily minimal temperature (°C)',
+                                        'rsds':'RSDS difference (W.m$^{-2}$)'}
+                
                 cmap = cmocean.cm.balance
                 
                 fig,ax = blank_national_map()
@@ -864,14 +876,14 @@ def main():
                 img = diff2.plot(ax=ax,transform=ccrs.epsg('27572'),add_colorbar=False,
                                  cmap=cmap,vmin=-max_val,vmax=max_val)
                 
-                ax.set_title(mod)
+                ax.set_title('Model n°{} (+2°C)'.format(mod))
                 
                 ax_cb = fig.add_axes([0,0,0.1,0.1])
                 posn = ax.get_position()
                 ax_cb.set_position([posn.x0+posn.width+0.02, posn.y0, 0.04, posn.height])
                 fig.add_axes(ax_cb)
                 cbar = plt.colorbar(img,cax=ax_cb,extendfrac=0.02)
-                cbar.set_label(climate_var)
+                cbar.set_label(cbar_label_diff_dict.get(climate_var))
                 
                 ax.set_extent(get_extent())
                 plt.savefig(os.path.join(figs_folder,'map_{}_mod{}_2deg.png'.format(climate_var,mod)),bbox_inches='tight')
@@ -885,14 +897,14 @@ def main():
                 img = diff4.plot(ax=ax,transform=ccrs.epsg('27572'),add_colorbar=False,
                                  cmap=cmap,vmin=-max_val,vmax=max_val)
                 
-                ax.set_title(mod)
+                ax.set_title('Model n°{} (+4°C)'.format(mod))
                 
                 ax_cb = fig.add_axes([0,0,0.1,0.1])
                 posn = ax.get_position()
                 ax_cb.set_position([posn.x0+posn.width+0.02, posn.y0, 0.04, posn.height])
                 fig.add_axes(ax_cb)
                 cbar = plt.colorbar(img,cax=ax_cb,extendfrac=0.02)
-                cbar.set_label(climate_var)
+                cbar.set_label(cbar_label_diff_dict.get(climate_var))
                 
                 ax.set_extent(get_extent())
                 plt.savefig(os.path.join(figs_folder,'map_{}_mod{}_4deg.png'.format(climate_var,mod)),bbox_inches='tight')
@@ -907,7 +919,7 @@ def main():
                 
             
     #%% Détermination des périodes de +2, +4 degrés d'après les données de l'atlas interactif
-    if False:
+    if True:
         
         deg2_data = xr.open_dataset(os.path.join('data','CORDEX','CORDEX Europe - Mean temperature (T) deg C - Warming 2°C RCP8.5 - Annual (47 models)','map.nc'))
         deg2_data = deg2_data.tas
@@ -928,7 +940,7 @@ def main():
         print('4°C',float(mean_yt_deg4))
         
         
-        if False:
+        if True:
             cmap = matplotlib.colormaps.get_cmap('viridis')
             cmap = cmocean.cm.thermal
             
