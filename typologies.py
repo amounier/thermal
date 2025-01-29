@@ -588,7 +588,7 @@ def main():
         
         
     #%% Tests de la classe Typology
-    if True:
+    if False:
         code = 'FR.N.TH.03.Gen'
         typo = Typology(code)
         print(typo)
@@ -670,7 +670,7 @@ def main():
         plt.savefig(os.path.join(figs_folder,'{}.png'.format('{}_TABULA_consumption_tabula_only'.format(building_type))),bbox_inches='tight')
         
     # Comparaison des valeurs U
-    if True:
+    if False:
         building_type = 'SFH'
         element = 'Umur'
         
@@ -717,7 +717,45 @@ def main():
         
         plt.savefig(os.path.join(figs_folder,'{}.png'.format('{}_TABULA_Umur_tabula_only'.format(building_type))),bbox_inches='tight')
                 
-    
+    #%% Statistiques TABULA
+    if False:
+
+        building_type ='AB'
+        formated_dict_data = ['Category','Variable','Unit'] + ['{}.{:02d}'.format(building_type,i) for i in range(1,11)]#,'standard','advanced']]
+        data = pd.DataFrame().from_dict({e:[] for e in formated_dict_data})
+        
+        for i in range(1,11):
+            for level in ['initial']:##,'standard','advanced']:
+                
+                code = 'FR.N.{}.{:02d}.Gen'.format(building_type,i)
+                typo = Typology(code,level)
+                
+                dict_data = [['Building','Households surface','\\SI{}{\\square\\meter}',typo.surface],
+                             ['Building','Households levels','-',typo.levels],
+                             ['Building','Basement','boolean',typo.basement],
+                             ['Building','Converted attic','boolean',typo.converted_attic],
+                             ['Building','\\# semi-detached','-',typo.nb_non_detached],
+                             ['Building','Building orientation','-',typo.w0_orientation],
+                             ['Building','Windows surface','\\SI{}{\\square\\meter}',typo.w0_windows_surface+typo.w1_windows_surface+typo.w2_windows_surface+typo.w3_windows_surface],
+                             ['Insulation','Wall insulation thickness','\\SI{}{\\centi\\meter}',typo.w0_insulation_thickness*100],
+                             ['Insulation','Floor insulation thickness','\\SI{}{\\centi\\meter}',typo.floor_insulation_thickness*100],
+                             ['Insulation','Windows U-value','\\SI{}{\\watt\\per\\square\\meter\\kelvin}',typo.windows_U],
+                             ['Insulation','Roof U-value','\\SI{}{\\watt\\per\\square\\meter\\kelvin}',typo.ceiling_U],
+                             ['Energy needs','Heating needs','\\SI{}{\\kilo\\watthour\\per\\square\\meter\\year}',typo.tabula_heating_needs]
+                             ]
+                
+                if i == 1 and level =='initial':
+                    data['Category'] = [e[0] for e in dict_data]
+                    data['Variable'] = [e[1] for e in dict_data]
+                    data['Unit'] = [e[2] for e in dict_data]
+                    
+                data['{}.{:02d}'.format(building_type,i)] = [e[3] for e in dict_data]
+                
+        # data = data.set_index(['Category','Variable','Unit'])
+        printer_data = data.to_latex(float_format='%.1f',index=False)
+        # printer_data = data.split()
+        print(printer_data)
+        
     tac = time.time()
     print('Done in {:.2f}s.'.format(tac-tic))
     
