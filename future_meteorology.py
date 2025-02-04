@@ -30,7 +30,7 @@ from meteorology import (get_historical_weather_data,
                          get_diffuse_solar_irradiance_projection_ratio)
 from administrative import Climat, get_coordinates, France, City
 from climate_zone_characterisation import map_xarray
-from utils import blank_national_map, get_extent
+from utils import blank_national_map, get_extent,plot_timeserie
 
 
 def open_zcl_daily_temperature():
@@ -919,7 +919,7 @@ def main():
                 
             
     #%% Détermination des périodes de +2, +4 degrés d'après les données de l'atlas interactif
-    if True:
+    if False:
         
         deg2_data = xr.open_dataset(os.path.join('data','CORDEX','CORDEX Europe - Mean temperature (T) deg C - Warming 2°C RCP8.5 - Annual (47 models)','map.nc'))
         deg2_data = deg2_data.tas
@@ -1008,6 +1008,50 @@ def main():
         test = get_projected_weather_data('H3',[2090,2090])
         agg = aggregate_resolution(test[['direct_sun_radiation_H']],resolution='D',agg_method='mean')
         print(agg.direct_sun_radiation_H.plot())
+    
+    # caractérisation des évolutions de températures
+    if True:
+        zcl = Climat('H1a')
+        var = 'temperature_2m'
+        # var = 'direct_sun_radiation_H'
+        
+        
+        data = get_historical_weather_data(zcl.center_prefecture, [1990,2020])
+        data = aggregate_resolution(data[[var]],resolution='YE',agg_method='mean')
+        data = data.rename(columns={var:'ERA5'})
+        
+        for nmod in range(5):
+            explore2 = get_projected_weather_data('H1a', [1990,2100],nmod=nmod)
+            explore2 = aggregate_resolution(explore2[[var]],resolution='YE',agg_method='mean')
+            explore2 = explore2.rename(columns={var:'Explore2 - mod n°{}'.format(nmod)})
+            data = data.join(explore2,how='outer')
+        
+        cmap = matplotlib.colormaps.get_cmap('viridis')
+        plot_timeserie(data, show=True,figsize=(10,5),
+                       colors=['k']+[cmap(i/5) for i in range(5)],
+                       linestyles=['-']+[':','--','-.',':','--'], 
+                       ylabel=var)
+        
+        # fort écart sur les flux solaire: à comparer avec les données d'observation MF # TODO
+        
+        models_period_dict = {0:{'now':[2000,2020], 
+                                 2:[2029,2049],
+                                 4:[2064,2084],},
+                              1:{'now':[2000,2020], 
+                                 2:[2018,2038],
+                                 4:[2056,2076],},
+                              2:{'now':[2000,2020], 
+                                 2:[2024,2044],
+                                 4:[2066,2086],},
+                              3:{'now':[2000,2020], 
+                                 2:[2013,2033],
+                                 4:[2056,2076],},
+                              4:{'now':[2000,2020], 
+                                 2:[2006,2024], # debut des projections en 2006
+                                 4:[2046,2066],},}
+        period = 'now'
+        
+        
         
     tac = time.time()
     print('Done in {:.2f}s.'.format(tac-tic))
