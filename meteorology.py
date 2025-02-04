@@ -20,13 +20,14 @@ import seaborn as sns
 import pickle
 from sklearn.metrics import root_mean_squared_error
 from scipy.optimize import curve_fit
+import subprocess
 
 # Pour ne pas utiliser numpy dans la gestion des dates de Pysolar (moins efficace et plus à jour)
 import pysolar
 pysolar.use_math()
 
 from utils import plot_timeserie
-from administrative import get_coordinates, France, Climat
+from administrative import get_coordinates, France, Climat, Departement
 
 import warnings
 
@@ -334,6 +335,21 @@ def refine_resolution(data, resolution):
     upsampled = data.resample(resolution)
     interpolated = upsampled.interpolate(method='linear')
     return interpolated
+
+
+
+def download_MF_compressed_files():
+    departements = France().departements
+    output_path = os.path.join(os.getcwd(),'data','Meteo-France')
+    
+    for dep in departements:
+        folder = os.path.join('data','Meteo-France')
+        file = 'MENSQ_{}_previous-1950-2021.csv'.format(dep.code)
+        if file in os.listdir(folder):
+            continue
+        url = 'https://object.files.data.gouv.fr/meteofrance/data/synchro_ftp/BASE/MENS/MENSQ_{}_previous-1950-2023.csv.gz'.format(dep.code)
+        subprocess.run('wget "{}" -P {}'.format(url,output_path), shell=True)
+    return
 
 
 
@@ -813,7 +829,7 @@ def main():
     
     
     #%% Caractérisation de la désagréggation horaire à partir des données journalières 
-    if True:
+    if False:
         test = Climat('H1a')
         test = Climat('H3')
         # test = Climat('H2b')
@@ -1265,6 +1281,143 @@ def main():
                     ax.set_ylim([0,6])
                     plt.show()
             
+    #%% Comparaison avec les données météo-France
+    if True:
+        
+        # téléchargement des données
+        if False:
+            download_MF_compressed_files() 
+            # pour dezipper : find . -name '*.csv.gz' -exec gzip -d {} \;
+        
+        # formatage des données pour la France, pour les zones climatiques
+        if False:
+            
+            variables = ['TX','TN','TM','GLOT']#'DIFT','GLOT','DIRT'
+            
+            departements = France().departements
+            
+            data_france = None
+            full_nan_counter = 0
+            for dep in tqdm.tqdm(departements):
+                if dep.code == '2A':
+                    dep_code = '20'
+                elif dep.code == '2B':
+                    continue
+                else:
+                    dep_code = dep.code
+                    
+                data_dep = pd.read_csv(os.path.join('data','Meteo-France','MENSQ_{}_previous-1950-2023.csv'.format(dep_code)),sep=';')
+                data_dep = data_dep[['AAAAMM']+variables]
+                data_dep = data_dep.dropna()
+                    
+                if data_dep.empty:
+                    full_nan_counter += 1
+                    continue
+                
+                data_dep = data_dep.groupby('AAAAMM')[variables].mean()
+                data_dep.index = pd.to_datetime(data_dep.index,format='%Y%m')
+                
+                if data_france is None:
+                    data_france = data_dep
+                else:
+                    data_france = pd.concat([data_france, data_dep])
+                    
+            data_france = data_france.groupby(data_france.index).mean()
+            # data_france = data_france / (len(departements)-full_nan_counter)
+            
+            print(data_france, full_nan_counter)
+            # plot_timeserie(data_france[['TN','TM','TX']], xlim=[pd.to_datetime('2000-01-01'),pd.to_datetime('2010-01-01')])
+            # plot_timeserie(data_france[['GLOT']], xlim=[pd.to_datetime('2000-01-01'),pd.to_datetime('2020-01-01')],figsize=(15,5))
+            
+            data_france.to_csv(os.path.join('data','Meteo-France','MENSQ_meanFrance_previous-1950-2023.csv'),index=True)
+        
+        
+        # comparaison avec les données open meteo (attetnion aux unitées)
+        if True:
+            
+            # premier test
+            if False:
+                zcl = Climat('H1a')
+                variables = ['TX','TN','TM','GLOT']#'DIFT','GLOT','DIRT'
+                
+                data_MF = pd.read_csv(os.path.join('data','Meteo-France','MENSQ_{}_previous-1950-2023.csv'.format(zcl.center_departement.code)),sep=';')
+                data_MF = data_MF[['AAAAMM']+variables]
+                data_MF = data_MF.dropna()
+                data_MF = data_MF.groupby('AAAAMM')[variables].mean()
+                data_MF.index = pd.to_datetime(data_MF.index,format='%Y%m')
+                
+                period = [data_MF.index.year[0],data_MF.index.year[-1]]
+                
+                data_OM_daily = get_historical_weather_data(zcl.center_prefecture, period=period)
+                data_OM = pd.DataFrame()
+                data_OM['TX'] = data_OM_daily.groupby(pd.Grouper(freq='D')).temperature_2m.max().groupby(pd.Grouper(freq='MS')).mean()
+                data_OM['TM'] = ((data_OM_daily.groupby(pd.Grouper(freq='D')).temperature_2m.max() + data_OM_daily.groupby(pd.Grouper(freq='D')).temperature_2m.min())/2).groupby(pd.Grouper(freq='MS')).mean()
+                data_OM['TN'] = data_OM_daily.groupby(pd.Grouper(freq='D')).temperature_2m.min().groupby(pd.Grouper(freq='MS')).mean()
+                data_OM['GLOT'] = data_OM_daily.groupby(pd.Grouper(freq='MS')).direct_sun_radiation_H.sum() + data_OM_daily.groupby(pd.Grouper(freq='MS')).diffuse_sun_radiation_H.sum()
+                data_OM['GLOT'] = data_OM.GLOT * 3600 * 1e-4 # from Wh.m-2 to J.cm-2
+                
+                data_plot = data_MF.join(data_OM,how='outer',lsuffix='_MF',rsuffix='_OM')
+                data_plot['Climate zone'] = [zcl.code]*len(data_plot)
+            
+            # affichage des graphes 
+            if True:
+                variables = ['TX','TN','TM','GLOT']#'DIFT','GLOT','DIRT'
+                label_dict = {'TX':'Monthly mean of daily maximal temperature (°C)',
+                              'TN':'Monthly mean of daily minimal temperature (°C)',
+                              'TM':'Monthly mean of mean of daily TX \nand TN (°C)',
+                              'GLOT':'Monthly cumulative sum of daily total \nradiation (kJ.cm$^{-2}$)'}
+                
+                data_plot_all = pd.DataFrame()
+                for zcl in tqdm.tqdm(France().climats):
+                    
+                    if zcl not in ['H1b','H3']:
+                        continue
+                    
+                    zcl = Climat(zcl)
+                    
+                    data_MF = pd.read_csv(os.path.join('data','Meteo-France','MENSQ_{}_previous-1950-2023.csv'.format(zcl.center_departement.code)),sep=';')
+                    data_MF = data_MF[['AAAAMM']+variables]
+                    data_MF = data_MF.dropna()
+                    data_MF = data_MF.groupby('AAAAMM')[variables].mean()
+                    data_MF.index = pd.to_datetime(data_MF.index,format='%Y%m')
+                    data_MF['GLOT'] = data_MF.GLOT * 1e-3 # from J.cm-2 to kJ.cm-2
+                    
+                    period = [data_MF.index.year[0],data_MF.index.year[-1]]
+                    
+                    data_OM_daily = get_historical_weather_data(zcl.center_prefecture, period=period)
+                    data_OM = pd.DataFrame()
+                    data_OM['TX'] = data_OM_daily.groupby(pd.Grouper(freq='D')).temperature_2m.max().groupby(pd.Grouper(freq='MS')).mean()
+                    data_OM['TM'] = ((data_OM_daily.groupby(pd.Grouper(freq='D')).temperature_2m.max() + data_OM_daily.groupby(pd.Grouper(freq='D')).temperature_2m.min())/2).groupby(pd.Grouper(freq='MS')).mean()
+                    data_OM['TN'] = data_OM_daily.groupby(pd.Grouper(freq='D')).temperature_2m.min().groupby(pd.Grouper(freq='MS')).mean()
+                    data_OM['GLOT'] = data_OM_daily.groupby(pd.Grouper(freq='MS')).direct_sun_radiation_H.sum() + data_OM_daily.groupby(pd.Grouper(freq='MS')).diffuse_sun_radiation_H.sum()
+                    data_OM['GLOT'] = data_OM.GLOT * 3600 * 1e-4 # from Wh.m-2 to J.cm-2
+                    data_OM['GLOT'] = data_OM.GLOT * 1e-3 # from J.cm-2 to kJ.cm-2
+                    
+                    data_plot = data_MF.join(data_OM,how='outer',lsuffix='_MF',rsuffix='_OM')
+                    data_plot['Climate zone'] = [zcl.code]*len(data_plot)
+                    
+                    data_plot_all = pd.concat([data_plot_all,data_plot])
+                
+                data_plot_all = data_plot_all.dropna()
+                
+                for var in ['TM','GLOT']:
+                    min_val = min(data_plot_all["{}_MF".format(var)])*0.99
+                    max_val = max(data_plot_all["{}_MF".format(var)])*1.01
+                    
+                    fig,ax = plt.subplots(figsize=(5,5),dpi=300)
+                    sns.scatterplot(data=data_plot_all, x="{}_MF".format(var), 
+                                    y="{}_OM".format(var),ax=ax,hue='Climate zone',alpha=0.5)
+                    ax.plot([min_val,max_val],[min_val,max_val],color='k',ls='-')
+                    ax.set_ylim([min_val,max_val])
+                    ax.set_xlim([min_val,max_val])
+                    ax.set_xlabel('Météo-France observations')
+                    ax.set_ylabel('ERA5 reanalysis')
+                    ax.set_title(label_dict.get(var)+' between {} and {}'.format(data_plot_all.index.year[0],data_plot_all.index.year[-1]),wrap=True)
+                    plt.savefig(os.path.join(figs_folder,'comparison_{}_MF_ERA5.png'.format(var)), bbox_inches='tight')
+                    plt.show()
+                
+        # print(test)
+
     tac = time.time()
     print('Done in {:.2f}s.'.format(tac-tic))
     
