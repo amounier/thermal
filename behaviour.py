@@ -18,8 +18,8 @@ class Behaviour():
     def __init__(self,name):
         self.name = name
         self.cst_internal_gains = None
-        self.nocturnal_ventilation = False
-        self.closing_shutters = False
+        self.nocturnal_ventilation = False # TODO: à intégrer
+        self.closing_shutters = False # TODO: à intégrer
         
         if self.name == 'conventionnel_th-bce_2020':
             self.heating_rules = {1:[19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 16, 16, 16, 16, 16, 16, 16, 16, 19, 19, 19, 19, 19, 19],
@@ -77,18 +77,30 @@ class Behaviour():
         return heating_temperature, cooling_temperature
     
     
-    def get_number_equivalent_adults(self, surface, figs_folder=None):
-        def get_nb_max(surface):
-            if surface < 30:
-                nb_max = 1
-            elif surface < 70:
-                nb_max = 1.75 - 0.01875 * (70 - surface)
-            else:
-                nb_max = 0.025 * surface
-            return nb_max
+    def get_number_equivalent_adults(self, surface, building_type, figs_folder=None):
+        def get_nb_max(surface, building_type):
+            # print(surface, building_type)
+            if building_type in ['TH','SFH']:
+                if surface < 30:
+                    nb_max = 1
+                elif surface < 70:
+                    nb_max = 1.75 - 0.01875 * (70 - surface)
+                else:
+                    nb_max = 0.025 * surface
+                return nb_max
+            
+            if building_type in ['AB','MFH']:
+                if surface < 10:
+                    nb_max = 1
+                elif surface < 50:
+                    nb_max = 1.75 - 0.01875 * (50 - surface)
+                else:
+                    nb_max = 0.035 * surface
+                return nb_max
+            return 
         
         if self.name in ['conventionnel_th-bce_2020' ,'conventionnel_3cl-dpe_2021', 'conventionnel_th-bce_2020_cst']:
-            nb_max = get_nb_max(surface)
+            nb_max = get_nb_max(surface, building_type)
             if nb_max < 1.75:
                 nb_ea = nb_max
             else:
@@ -97,16 +109,20 @@ class Behaviour():
             nb_ea = None
             
         if figs_folder is not None:
-            surface_list = np.linspace(10,150)
-            n_max_list = [get_nb_max(s) for s in surface_list]
-            n_ea_list = [self.get_number_equivalent_adults(s,None) for s in surface_list]
+            surface_list = np.linspace(5,150,100)
+            n_max_list_sf = [get_nb_max(s,'SFH') for s in surface_list]
+            n_max_list_mf = [get_nb_max(s,'MFH') for s in surface_list]
+            n_ea_list_sf = [self.get_number_equivalent_adults(s,'SFH',None) for s in surface_list]
+            n_ea_list_mf = [self.get_number_equivalent_adults(s,'MFH',None) for s in surface_list]
             
             fig,ax = plt.subplots(figsize=(5,5),dpi=300)
-            ax.plot(surface_list, n_max_list, color='tab:red',label='N$_{max}$')
-            ax.plot(surface_list, n_ea_list, color='tab:blue',label='N$_{adeq}$')
+            # ax.plot(surface_list, n_max_list, color='tab:red',label='N$_{max}$')
+            # ax.plot(surface_list, n_ea_list, color='tab:blue',label='N$_{adeq}$')
+            ax.plot(surface_list, n_ea_list_sf, color='tab:blue',label='Single-family')
+            ax.plot(surface_list, n_ea_list_mf, color='tab:red',label='Multi-family')
             ax.legend()
             ax.set_ylim(bottom=0.)
-            ax.set_ylabel('Number of adults')
+            ax.set_ylabel('Number of equivalents adults')
             ax.set_xlabel('Surface (m$^2$)')
             
             plt.savefig(os.path.join(figs_folder,'{}.png'.format('{}_nb_adulte_eq'.format(self.name))),bbox_inches='tight')
@@ -114,7 +130,7 @@ class Behaviour():
         return nb_ea
         
     
-    def get_internal_gains(self, surface, weather_data):
+    def get_internal_gains(self, surface, building_type, weather_data):
         if self.name in ['conventionnel_th-bce_2020' ,'conventionnel_3cl-dpe_2021', 'conventionnel_th-bce_2020_cst']:
             internal_gains = []
             
@@ -135,9 +151,12 @@ class Behaviour():
                 else:
                     light_gains = 0 # W
                     
-                if presence_time:
-                    nb_equivalent_adults = self.get_number_equivalent_adults(surface)
+                if presence_time and not sleeping_time:
+                    nb_equivalent_adults = self.get_number_equivalent_adults(surface,building_type)
                     people_gains = 90 * nb_equivalent_adults # W
+                elif presence_time and sleeping_time:
+                    nb_equivalent_adults = self.get_number_equivalent_adults(surface,building_type)
+                    people_gains = 63 * nb_equivalent_adults # W
                 else:
                     people_gains = 0 # W
                 
@@ -232,7 +251,7 @@ def main():
         # conventionnel.cst_internal_gains = 4.17 # W/m2
         
         heating_setpoint, cooling_setpoint = conventionnel.get_set_point_temperature(weather_data)
-        internal_gains = conventionnel.get_internal_gains(80,weather_data)
+        internal_gains = conventionnel.get_internal_gains(80,'SFH',weather_data)
         weather_data['internal_gains'] = internal_gains
         
         # Graphe des apports internes
@@ -251,7 +270,7 @@ def main():
             ax.plot(data.index,data.internal_gains,label='Internal gains',color='k')
             ax.legend()
             ax.set_ylim(bottom=0.)
-            ax.set_ylabel('Internal gains for a 80m$^2$ dwelling (W)')
+            ax.set_ylabel('Internal gains for a 80m$^2$ single-family house (W)')
             
             locator = mdates.AutoDateLocator()
             # formatter = mdates.ConciseDateFormatter(locator)
@@ -261,7 +280,10 @@ def main():
             
             if figs_folder is not None:
                 plt.savefig(os.path.join(figs_folder,'{}.png'.format('{}_internal_gains_rules'.format(behaviour))),bbox_inches='tight')
-            
+        
+        # graphe du nombre d'adultes équivalent 
+        if True:
+            conventionnel.get_number_equivalent_adults(20,'SFH',figs_folder=figs_folder)
         
         
         
