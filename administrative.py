@@ -193,6 +193,8 @@ class City:
     def __init__(self,name):
         self.name = name
         self.coordinates = get_coordinates(self.name)
+        self.departement_name = {v:k for k,v in dict_name_dep_name_prf.items()}.get(self.name)
+        self.departement = Departement(dict_name_dep_code_dep.get(self.departement_name))
         
     def __str__(self):
         return self.name
