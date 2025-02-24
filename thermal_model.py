@@ -36,8 +36,10 @@ GROUND_DENSITY = 2500 # kg/m3
 GROUND_THERMAL_CONDUCTIVITY = 1.5 # W/(m.K)
 # GROUND_THERMAL_CONDUCTIVITY = 2.05 # W/(m.K) # Gerard 2020
 
+GRAVITY_ACCELERATION = 9.81 # m/s2
 
-def get_P_heater(Ti, Ti_min, Pmax, method='all_or_nothing', pmax_warning=True):
+
+def get_P_heater(Ti, Ti_min, Pmax, method='linear_tolerance', pmax_warning=True):
     """
     Renvoie la puissance des équipemetns de chauffage
 
@@ -77,7 +79,7 @@ def get_P_heater(Ti, Ti_min, Pmax, method='all_or_nothing', pmax_warning=True):
     return P_heater
 
 
-def get_P_cooler(Ti, Ti_max, Pmax, method='all_or_nothing', pmax_warning=True):
+def get_P_cooler(Ti, Ti_max, Pmax, method='linear_tolerance', pmax_warning=True):
     """
     Renvoie la puissance des équipements de refroidissement
 
@@ -140,9 +142,23 @@ def get_P_vmeca(Ti,Te,Tch_cons,Tfr_cons,typology):
     return P_vmeca
 
 
-def get_P_vnat(Ti,Te,typology,behaviour):
-    # TODO : comportements de ventilation manuelles par ouverture des fenêtres
+def get_P_vnat(Ti,Te,Tfr_cons,typology,behaviour):
+    # comportements de ventilation manuelles par ouverture des fenêtres
+    
     P_vnat = 0
+    
+    # Fracastoro 2022 (10.1016/S0378-7788(02)00099-3)
+    if behaviour.nocturnal_ventilation:
+        if Ti > Tfr_cons and Ti > Te:
+            windows_surface = typology.w0_windows_surface + typology.w1_windows_surface + typology.w2_windows_surface + typology.w3_windows_surface
+            half_windows_surface = windows_surface/2
+            half_windows_height = typology.windows_height/2
+            C_d = 0.4 * 0.0045 * np.abs(Ti-Te)
+            
+            air_flow = AIR_DENSITY * half_windows_surface * C_d * np.sqrt((GRAVITY_ACCELERATION * half_windows_height * np.abs(Ti-Te))/(Ti)) # kg/s
+            U_air = air_flow * AIR_THERMAL_CAPACITY
+            P_vnat = U_air * (Te-Ti)
+            
     return P_vnat
 
 
@@ -581,7 +597,7 @@ def get_solar_absorption_coefficient(typology,wall):
 
 def compute_external_Phi(typology, weather_data, wall):
     # coefficient d'absorption du flux solaire
-    # TODO : à préciser pour les masquages et clarifier les flux solaires diffus
+    #  à préciser pour les masquages et clarifier les flux solaires diffus
     # alpha = get_solar_absorption_coefficient(typology)
     
     # orientation de la paroi
@@ -693,9 +709,9 @@ def get_environment_masking(typology,weather_data,wall,minimal_altitude=10):
 
 
 def compute_internal_Phi(typology, weather_data, wall):
-    # TODO : à préciser
+    #  à préciser
     # coefficient d'absorption du flux solaire
-    Ug = typology.windows_Ug
+    
     solar_factor = get_solar_transmission_factor(typology,weather_data,wall)
     
     solar_env_mask = get_environment_masking(typology,weather_data,wall)
@@ -719,7 +735,7 @@ def compute_internal_Phi(typology, weather_data, wall):
     diffuse_sun_radiation = weather_data['diffuse_sun_radiation_{}'.format(orientation)].values
     
     # solar masks
-    Phi_si = direct_sun_radiation * solar_factor * solar_env_mask * solar_elem_mask * surface * Ug + diffuse_sun_radiation * surface * Ug * solar_env_mask * solar_elem_diffuse_mask
+    Phi_si = direct_sun_radiation * solar_factor * solar_env_mask * solar_elem_mask * surface + diffuse_sun_radiation * surface * solar_env_mask * solar_elem_diffuse_mask
     return Phi_si
 
 
@@ -785,7 +801,7 @@ def SFH_test_model(typology, behaviour, weather_data, progressbar=False):
     Ti_setpoint_winter, Ti_setpoint_summer = behaviour.get_set_point_temperature(weather_data)
     P_max_heater = typology.heater_maximum_power
     P_max_cooler = typology.cooler_maximum_power
-    internal_thermal_gains = behaviour.get_internal_gains(typology.surface,weather_data)
+    internal_thermal_gains = behaviour.get_internal_gains(typology.surface, typology.type, weather_data)
     
     time_ = np.asarray(weather_data.index)
     delta_t = (time_[1]-time_[0]) / np.timedelta64(1, 's')
@@ -1026,7 +1042,7 @@ def run_thermal_model(typology, behaviour, weather_data, progressbar=False, pmax
         common_area_factor = 0.9 # cd 2.8 https://www.legifrance.gouv.fr/download/pdf/circ?id=34719
     else:
         common_area_factor = 1
-    internal_thermal_gains = behaviour.get_internal_gains(typology.surface*common_area_factor,weather_data)
+    internal_thermal_gains = behaviour.get_internal_gains(typology.surface*common_area_factor, typology.type, weather_data)
     
     # calcul des valeurs U des quatres composantes
     if typology.converted_attic:
@@ -1272,7 +1288,7 @@ def run_thermal_model(typology, behaviour, weather_data, progressbar=False, pmax
         P_cooler = get_P_cooler(Ti, Ti_max=Ts_cooler, Pmax=P_max_cooler, method='linear_tolerance', pmax_warning=pmax_warning)
         
         P_vmeca = get_P_vmeca(Ti,Te,Ts_heater,Ts_cooler,typology)
-        P_vnat = get_P_vnat(Ti,Te,typology,behaviour)
+        P_vnat = get_P_vnat(Ti,Te,Ts_cooler,typology,behaviour)
         
         heating_needs[i-1] = P_heater
         cooling_needs[i-1] = -P_cooler
@@ -1281,7 +1297,7 @@ def run_thermal_model(typology, behaviour, weather_data, progressbar=False, pmax
         U[i,13] = P_vmeca
         U[i,14] = P_vnat
         
-        X[i] = np.dot(F,X[i-1]) + np.dot(G, U[i].T)
+        X[i] = np.dot(F,X[i-1]) + np.dot(G, U[i-1].T)
     
     heating_needs[-1] = get_P_heater(X[i,0], Ti_min=Ti_setpoint_winter[i], Pmax=P_max_heater, method='linear_tolerance', pmax_warning=pmax_warning)
     cooling_needs[-1] = get_P_cooler(X[i,0], Ti_max=Ti_setpoint_summer[i], Pmax=P_max_cooler, method='linear_tolerance', pmax_warning=pmax_warning)
@@ -1873,7 +1889,7 @@ def main():
             # plt.show()
             
         # Étude de l'effet de l'épaisseur d'isolant de plancher sur la consommation annuelle
-        if True:
+        if False:
             def get_annual_energy_needs(typology,weather_data,behaviour, by_surface=True):
                 simulation_data = SFH_test_model(typology, conventionnel, weather_data,progressbar=False)
                 simulation_data = aggregate_resolution(simulation_data, resolution='h')
@@ -2559,8 +2575,8 @@ def main():
         city = 'Beauvais'
         # period = [2010,2020]
         # period = [1990,2000]
-        # period = [2020,2020]
-        period = [2000,2020]
+        period = [2020,2020]
+        # period = [2000,2020]
         # period = [2005,2005]
         
         # Checkpoint weather data
