@@ -18,16 +18,19 @@ from pysolar.solar import get_altitude, get_altitude_fast, get_azimuth, get_azim
 import tqdm
 import seaborn as sns
 import pickle
-from sklearn.metrics import root_mean_squared_error
+from sklearn.metrics import root_mean_squared_error, mean_absolute_error
 from scipy.optimize import curve_fit
 import subprocess
+from scipy.spatial.distance import euclidean
+import geopandas as gpd
+from sklearn.metrics import r2_score
 
 # Pour ne pas utiliser numpy dans la gestion des dates de Pysolar (moins efficace et plus à jour)
 import pysolar
 pysolar.use_math()
 
 from utils import plot_timeserie
-from administrative import get_coordinates, France, Climat, Departement
+from administrative import get_coordinates, France, Climat, Departement, City
 
 import warnings
 
@@ -246,8 +249,9 @@ def get_init_ground_temperature(x, data, xi_1 = 0.8, xi_2=0.4, w0=1.37, second_o
     theta_ginf = data.temperature_2m.median()
     
     if second_order:
-        res = theta_ginit + (theta_ginf-theta_ginit)*(1 - np.exp(-xi_2*w0*x) * np.cos(w0*np.sqrt(1-xi_2**2)*x))
-                                        
+        # res = theta_ginit + (theta_ginf-theta_ginit)*(1 - np.exp(-xi_2*w0*x) * np.cos(w0*np.sqrt(1-xi_2**2)*x))
+        res = get_kusuda_ground_temperature(x, data, lambda_th=1.5,cp=1000,rho=2500)[0]
+        
     else:
         # data_january = data[data.index.month==1]
         # TODO : tendance à sous estimer les valeurs : à modifier
@@ -258,6 +262,26 @@ def get_init_ground_temperature(x, data, xi_1 = 0.8, xi_2=0.4, w0=1.37, second_o
         # theta_ginf = data.temperature_2m.median()
         res = theta_ginit + (theta_ginf-theta_ginit) * (1-np.exp(-x/xi_1))
     return res 
+
+
+def get_kusuda_ground_temperature(x, data, lambda_th, rho, cp):
+    daily_data = data.groupby(pd.Grouper(freq='D')).agg(func='mean')
+    daily_data = daily_data.rolling(15,min_periods=0,center=True).mean()
+    
+    theta_ginf = daily_data.temperature_2m.mean()
+    delta_theta = (daily_data.temperature_2m.max() - daily_data.temperature_2m.min())/2
+    phi_s = daily_data.temperature_2m.idxmin().dayofyear
+    
+    alpha = lambda_th/(rho*cp)
+    omega = 2*np.pi/365
+    delta = np.sqrt(2*alpha*3600*24/omega)
+    
+    nb_years = len(set(data.index.year))
+    list_t = np.linspace(0,365*nb_years,len(data))
+    res = np.asarray([theta_ginf - delta_theta*np.exp(-x/delta)*np.cos(omega*t-np.pi*phi_s/365-x/delta) for t in list_t])
+    
+    
+    return res
 
 
 def get_list_orientations(principal_orientation):
@@ -353,6 +377,57 @@ def download_MF_compressed_files():
 
 
 
+def get_safran_weather_data(city, period, param='SSI_Q',verbose=False):
+    param_name = ','.join(param)
+    city_coords = City(city).coordinates
+    coord = "POINT({} {})".format(city_coords[0],city_coords[1])
+    projection = "EPSG:4326"
+    formatage = "CoverageJSON"
+    date = "{}-01-01/{}-12-31".format(period[0],period[1])
+    
+    url = "https://api.geosas.fr/edr/collections/safran-isba/position"
+    params = {
+        "coords": coord,
+        "crs": projection,
+        "parameter-name": param_name,
+        "f": formatage,
+        "datetime": date
+    }
+    r = requests.get(url, params=params)
+    if verbose:
+        print(r.request.url)
+    if r.ok:
+        if verbose:
+            print("requête ok")
+        data = r.json()
+    else:
+        if verbose:
+            print(f"erreur code : {r.status_code}")
+    
+    if isinstance(param, str):
+        date_value = data["domain"]["axes"]["t"]["values"]
+        values = data["ranges"][param_name]["values"]
+        
+        df = pd.DataFrame()
+        df[param_name] = values
+        df["date"] = pd.to_datetime(date_value, format="%Y-%m-%dT%H-%M-%SZ")
+        df = df.set_index('date')
+    
+    if isinstance(param, list):
+        df = pd.DataFrame()
+        
+        date_value = data["domain"]["axes"]["t"]["values"]
+        df["date"] = pd.to_datetime(date_value, format="%Y-%m-%dT%H-%M-%SZ")
+        
+        for p in param:
+            values = data["ranges"][p]["values"]
+            df[p] = values
+            
+        df = df.set_index('date')
+    return df
+
+
+
 #%% ===========================================================================
 # Script principal
 # =============================================================================
@@ -393,12 +468,16 @@ def main():
     #%% Étude de la température du sol en fonction de la température de surface 
     if False:
         city = 'Marseille'
+        # city = 'Chaumont'
         year = 2021
+        year = 2010
         # 2021
         variables = ['temperature_2m','soil_temperature_0_to_7cm','soil_temperature_7_to_28cm','soil_temperature_28_to_100cm','soil_temperature_100_to_255cm']
         
         coordinates = get_coordinates(city)
         data = open_meteo_historical_data(longitude=coordinates[0], latitude=coordinates[1], year=year, hourly_variables=variables)
+        data_year_before = open_meteo_historical_data(longitude=coordinates[0], latitude=coordinates[1], year=year-1, hourly_variables=variables)
+        data = pd.concat([data_year_before, data])
         meteo_units = get_meteo_units(longitude=coordinates[0], latitude=coordinates[1], year=year, hourly_variables=variables)
         
         # Modélisation des températures souterraines en fonction des températures de surface 
@@ -452,29 +531,55 @@ def main():
             
             # Affichage des séries temporelles
             if True:
-                depth_list = [((3/5)*mh+(2/5)*ml)/100 for ml,mh in [(28,100),(100,255)]]
+                # depth_list = [((3/5)*mh+(2/5)*ml)/100 for ml,mh in [(28,100),(100,255)]]
+                depth_list = [((2/3)*mh+(1/3)*ml)/100 for ml,mh in [(28,100),(100,255)]]
                 # depth_list = [((1/2)*mh+(1/2)*ml)/100 for ml,mh in [(28,100),(100,255)]]
+                
                 ground_data = model_ground_temperature(depth_list, data)
+                ground_data['kusuda_soil_temperature_{:.0f}cm'.format(depth_list[0]*100)] = get_kusuda_ground_temperature(depth_list[0],data,lambda_th=1.5,cp=1000,rho=2500)
+                ground_data['kusuda_soil_temperature_{:.0f}cm'.format(depth_list[1]*100)] = get_kusuda_ground_temperature(depth_list[1],data,lambda_th=1.5,cp=1000,rho=2500)
+                
+                
+                print(ground_data)
                 
                 fig,ax = plot_timeserie(ground_data[['soil_temperature_28_to_100cm',
                                                      'modelled_soil_temperature_{:.0f}cm'.format(depth_list[0]*100),
+                                                     'kusuda_soil_temperature_{:.0f}cm'.format(depth_list[0]*100),
                                                      'soil_temperature_100_to_255cm',
-                                                     'modelled_soil_temperature_{:.0f}cm'.format(depth_list[1]*100),]],
-                                        colors = ['tab:blue','tab:blue','tab:red','tab:red'],
-                                        labels=['']*4,
-                                        linestyles=['-',':','-',':'],show=False,
-                                        figsize=(15,5),figs_folder = figs_folder,
+                                                     'modelled_soil_temperature_{:.0f}cm'.format(depth_list[1]*100),
+                                                     'kusuda_soil_temperature_{:.0f}cm'.format(depth_list[1]*100),
+                                                     ]],
+                                        colors = ['tab:blue','tab:blue','tab:blue','tab:red','tab:red','tab:red'],
+                                        labels=['']*6,
+                                        linestyles=['-','--',':','-','--',':'],show=False,
+                                        figsize=(10,5),figs_folder = figs_folder,
                                         xlim=[pd.to_datetime('{}-01-01'.format(year)), pd.to_datetime('{}-12-31'.format(year))])
                 ax.set_ylabel('Soil temperature (°C)')
                 ax.plot(ground_data.iloc[0]['soil_temperature_28_to_100cm'],ls='-',color='tab:blue',label='$d \\in [28,100]~cm$')
                 ax.plot(ground_data.iloc[0]['soil_temperature_100_to_255cm'],ls='-',color='tab:red',label='$d \\in [100,255]~cm$')
                 
+                # ground_data['kusuda_soil_temperature_{:.0f}cm'.format(0*100)] = get_kusuda_ground_temperature(0,data,lambda_th=1.5,cp=1000,rho=2500)
+                # ax.plot(ground_data['kusuda_soil_temperature_{:.0f}cm'.format(0*100)],ls=':',color='k',label='0')
+                # ax.plot(ground_data['temperature_2m'],ls='-',color='k',label='0 data')
+                
                 # ax2 = ax.twinx()
                 # ax2.tick_params(right=False)
                 # ax2.set(yticklabels=[])
+                r2_data = ground_data[ground_data.index.year == year]
+                r2_rc_75 = root_mean_squared_error(r2_data['soil_temperature_28_to_100cm'], r2_data['modelled_soil_temperature_{:.0f}cm'.format(depth_list[0]*100)])
+                r2_rc_150 = root_mean_squared_error(r2_data['soil_temperature_100_to_255cm'], r2_data['modelled_soil_temperature_{:.0f}cm'.format(depth_list[1]*100)])
+                r2_kusuda_75 = root_mean_squared_error(r2_data['soil_temperature_28_to_100cm'], r2_data['kusuda_soil_temperature_{:.0f}cm'.format(depth_list[0]*100)])
+                r2_kusuda_150 = root_mean_squared_error(r2_data['soil_temperature_100_to_255cm'], r2_data['kusuda_soil_temperature_{:.0f}cm'.format(depth_list[1]*100)])
                 
-                ax.plot(ground_data.iloc[0]['soil_temperature_28_to_100cm'],ls='-',color='k',label='$Data$')
-                ax.plot(ground_data.iloc[0]['soil_temperature_100_to_255cm'],ls=':',color='k',label='$Model$')
+                print('RMSE')
+                print('\tRC RMSE {:.0f}cm'.format(depth_list[0]*100), r2_rc_75)
+                print('\tKusuda RMSE {:.0f}cm'.format(depth_list[0]*100), r2_kusuda_75)
+                print('\tRC RMSE {:.0f}cm'.format(depth_list[1]*100), r2_rc_150)
+                print('\tKusuda RMSE {:.0f}cm'.format(depth_list[1]*100), r2_kusuda_150)
+                
+                ax.plot(ground_data.iloc[0]['soil_temperature_28_to_100cm'],ls='-',color='k',label='Data')
+                ax.plot(ground_data.iloc[0]['soil_temperature_100_to_255cm'],ls='--',color='k',label='RC Model')
+                ax.plot(ground_data.iloc[0]['soil_temperature_100_to_255cm'],ls=':',color='k',label='Kusuda & Achenbach Model')
                 # ax2.legend(loc='upper right')
                 ax.legend(loc='upper left')
                 
@@ -524,13 +629,15 @@ def main():
             
             
             # Affichage des températures sous terraines avec des moyennes par saison (ou par mois ?)
-            if False:
+            if True:
                 season = False
                 month = True
                 
                 # liste des profondeur modélisées
                 depth_list = [x/100 for x in np.linspace(5,1000,30)]
                 ground_data = model_ground_temperature(depth_list, data)
+                
+                ground_data = ground_data[ground_data.index.year==year]
                 
                 if season:
                     fig, ax = plt.subplots(figsize=(5,5),dpi=300)
@@ -552,7 +659,7 @@ def main():
                         
                     ax.set_ylim(ax.get_ylim()[::-1])
                     ax.legend()
-                    ax.plot([ground_data.temperature_2m.median(),ground_data.temperature_2m.median()],[min(depth_list), max(depth_list)],color='k')
+                    # ax.plot([ground_data.temperature_2m.median(),ground_data.temperature_2m.median()],[min(depth_list), max(depth_list)],color='k')
                     ax.set_ylabel('Profondeur (m)')
                     ax.set_xlabel('Température du sol (°C)')
                     plt.savefig(os.path.join(figs_folder,'{}.png'.format('modelling_of_ground_temperature_seasons')),bbox_inches='tight')
@@ -579,9 +686,9 @@ def main():
                         
                     ax.set_ylim(ax.get_ylim()[::-1])
                     ax.legend()
-                    ax.plot([ground_data.temperature_2m.median(),ground_data.temperature_2m.median()],[min(depth_list), max(depth_list)],color='k')
-                    ax.set_ylabel('Profondeur (m)')
-                    ax.set_xlabel('Température du sol (°C)')
+                    # ax.plot([ground_data.temperature_2m.median(),ground_data.temperature_2m.median()],[min(depth_list), max(depth_list)],color='k')
+                    ax.set_ylabel('Depth (m)')
+                    ax.set_xlabel('Soil temperature (°C)')
                     plt.savefig(os.path.join(figs_folder,'{}.png'.format('modelling_of_ground_temperature_months_{}_{}'.format(city,year))),bbox_inches='tight')
                     plt.show()
         
@@ -831,9 +938,9 @@ def main():
     #%% Caractérisation de la désagréggation horaire à partir des données journalières 
     if False:
         test = Climat('H1a')
-        test = Climat('H3')
+        # test = Climat('H3')
         # test = Climat('H2b')
-        # test = Climat('H1b')
+        test = Climat('H1b')
         city = test.center_prefecture
         coordinates = get_coordinates(city)
         period = [2020,2020]
@@ -987,9 +1094,13 @@ def main():
                 
                 # weather_data_modelled['temperature_sin14R1'] = weather_data_modelled['temperature_sin14R1'] - diff
                     # temperature_Qsin[idx] = 
-                    
-                        
-                        
+                
+                weather_data_checkfile_mod = ".modelled_weather_data_{}_{}_{}_".format(city,period[0],period[1]) + today + ".pickle"
+                pickle.dump(weather_data_modelled, open(weather_data_checkfile_mod, "wb"))
+            
+                
+                # TODO : faire ces graphes avec plsuieurs localisation en même temps
+                # weather_data_modelled.to_pickle()
                 
                 
                 fig,ax = plot_timeserie(weather_data[['temperature_2m']], figsize=(10,5),color='k',
@@ -1282,7 +1393,7 @@ def main():
                     plt.show()
             
     #%% Comparaison avec les données météo-France
-    if True:
+    if False:
         
         # téléchargement des données
         if False:
@@ -1339,11 +1450,24 @@ def main():
             if False:
                 zcl = Climat('H1a')
                 variables = ['TX','TN','TM','GLOT']#'DIFT','GLOT','DIRT'
+                city = City(zcl.center_prefecture)
+                dep_code = city.departement.code
                 
-                data_MF = pd.read_csv(os.path.join('data','Meteo-France','MENSQ_{}_previous-1950-2023.csv'.format(zcl.center_departement.code)),sep=';')
+                data_MF = pd.read_csv(os.path.join('data','Meteo-France','MENSQ_{}_previous-1950-2023.csv'.format(dep_code)),sep=';')
+                data_MF = data_MF[['AAAAMM','LAT','LON']+variables]
+                
+                data_MF = gpd.GeoDataFrame(data_MF, geometry=gpd.points_from_xy(data_MF.LON, data_MF.LAT), crs="EPSG:4326")
+                coords_list = [e.coords[0] for e in data_MF.geometry.centroid]
+                data_MF['distance'] = [euclidean(e, city.coordinates,) for e in coords_list]
+                data_MF = data_MF.dropna()
+                
+                min_distance = data_MF['distance'].min()
+                data_MF = data_MF[data_MF['distance']==min_distance]
+                
                 data_MF = data_MF[['AAAAMM']+variables]
                 data_MF = data_MF.dropna()
-                data_MF = data_MF.groupby('AAAAMM')[variables].mean()
+                # data_MF = data_MF.groupby('AAAAMM')[variables].mean()
+                data_MF = data_MF.set_index('AAAAMM')
                 data_MF.index = pd.to_datetime(data_MF.index,format='%Y%m')
                 
                 period = [data_MF.index.year[0],data_MF.index.year[-1]]
@@ -1366,23 +1490,38 @@ def main():
                               'TN':'Monthly mean of daily minimal temperature (°C)',
                               'TM':'Monthly mean of mean of daily TX \nand TN (°C)',
                               'GLOT':'Monthly cumulative sum of daily total \nradiation (kJ.cm$^{-2}$)'}
+                climate_zcl_period = {}
                 
                 data_plot_all = pd.DataFrame()
+                error_stats = {'zcl':France().climats,'period':[],'TM_mae':[],'TM_rmse':[],'GLOT_mae':[],'GLOT_rmse':[]}
+                
                 for zcl in tqdm.tqdm(France().climats):
-                    
-                    if zcl not in ['H1b','H3']:
-                        continue
                     
                     zcl = Climat(zcl)
                     
-                    data_MF = pd.read_csv(os.path.join('data','Meteo-France','MENSQ_{}_previous-1950-2023.csv'.format(zcl.center_departement.code)),sep=';')
+                    city = City(zcl.center_prefecture)
+                    dep_code = city.departement.code
+                    
+                    data_MF = pd.read_csv(os.path.join('data','Meteo-France','MENSQ_{}_previous-1950-2023.csv'.format(dep_code)),sep=';')
+                    data_MF = data_MF[['AAAAMM','LAT','LON']+variables]
+                    
+                    data_MF = gpd.GeoDataFrame(data_MF, geometry=gpd.points_from_xy(data_MF.LON, data_MF.LAT), crs="EPSG:4326")
+                    data_MF = data_MF.to_crs(crs='4326')
+                    coords_list = [e.coords[0] for e in data_MF.geometry]
+                    data_MF['distance'] = [euclidean(e, city.coordinates,) for e in coords_list]
+                    data_MF = data_MF.dropna()
+            
+                    min_distance = data_MF['distance'].min()
+                    data_MF = data_MF[data_MF['distance']==min_distance]
+                    
                     data_MF = data_MF[['AAAAMM']+variables]
                     data_MF = data_MF.dropna()
-                    data_MF = data_MF.groupby('AAAAMM')[variables].mean()
+                    data_MF = data_MF.set_index('AAAAMM')
                     data_MF.index = pd.to_datetime(data_MF.index,format='%Y%m')
                     data_MF['GLOT'] = data_MF.GLOT * 1e-3 # from J.cm-2 to kJ.cm-2
                     
                     period = [data_MF.index.year[0],data_MF.index.year[-1]]
+                    climate_zcl_period[zcl.code] = period
                     
                     data_OM_daily = get_historical_weather_data(zcl.center_prefecture, period=period)
                     data_OM = pd.DataFrame()
@@ -1393,10 +1532,36 @@ def main():
                     data_OM['GLOT'] = data_OM.GLOT * 3600 * 1e-4 # from Wh.m-2 to J.cm-2
                     data_OM['GLOT'] = data_OM.GLOT * 1e-3 # from J.cm-2 to kJ.cm-2
                     
-                    data_plot = data_MF.join(data_OM,how='outer',lsuffix='_MF',rsuffix='_OM')
-                    data_plot['Climate zone'] = [zcl.code]*len(data_plot)
                     
-                    data_plot_all = pd.concat([data_plot_all,data_plot])
+                    data_safran_daily = get_safran_weather_data(zcl.center_prefecture,period,param=['SSI_Q','TINF_H_Q','TSUP_H_Q'])
+                    data_safran = pd.DataFrame()
+                    data_safran['GLOT_SF'] = data_safran_daily.groupby(pd.Grouper(freq='MS')).SSI_Q.sum()
+                    data_safran['GLOT_SF'] = data_safran.GLOT_SF * 1e-3 # from J.cm-2 to kJ.cm-2
+                    # data_safran['TX_SF'] = [np.nan]*len(data_safran)
+                    data_safran['TM_SF'] = ((data_safran_daily.TSUP_H_Q + data_safran_daily.TINF_H_Q)/2).groupby(pd.Grouper(freq='MS')).mean()
+                    # data_safran['TN_SF'] = [np.nan]*len(data_safran)
+                    
+                    data_plot = data_MF.join(data_OM,how='outer',lsuffix='_MF',rsuffix='_OM')
+                    data_plot = data_plot.join(data_safran,how='outer')
+                    data_plot['Climate zone'] = ['{} ({}-{})'.format(zcl.code,period[0],period[1])]*len(data_plot)
+                    
+                    error_stats['period'].append(period)
+                    for var in ['TM','GLOT'] :
+                        
+                        test_rea = 'OM' # ERA5
+                        # test_rea = 'SF' # SAFRAN
+                        
+                        test = data_plot[['{}_MF'.format(var),'{}_{}'.format(var,test_rea)]].dropna()
+                        
+                        error_stats['{}_mae'.format(var)].append(mean_absolute_error(test['{}_MF'.format(var)],test['{}_{}'.format(var,test_rea)]))
+                        error_stats['{}_rmse'.format(var)].append(root_mean_squared_error(test['{}_MF'.format(var)],test['{}_{}'.format(var,test_rea)]))
+
+                    
+                    if zcl.code in ['H1b','H3']:
+                        data_plot_all = pd.concat([data_plot_all,data_plot])
+                
+                df_error_stats = pd.DataFrame().from_dict(error_stats).set_index('zcl').T
+                print(df_error_stats.to_latex())
                 
                 data_plot_all = data_plot_all.dropna()
                 
@@ -1412,8 +1577,36 @@ def main():
                     ax.set_xlim([min_val,max_val])
                     ax.set_xlabel('Météo-France observations')
                     ax.set_ylabel('ERA5 reanalysis')
-                    ax.set_title(label_dict.get(var)+' between {} and {}'.format(data_plot_all.index.year[0],data_plot_all.index.year[-1]),wrap=True)
+                    ax.set_title(label_dict.get(var),wrap=True)
                     plt.savefig(os.path.join(figs_folder,'comparison_{}_MF_ERA5.png'.format(var)), bbox_inches='tight')
+                    plt.show()
+                    
+                for var in ['GLOT']:
+                    min_val = min(data_plot_all["{}_MF".format(var)])*0.99
+                    max_val = max(data_plot_all["{}_MF".format(var)])*1.01
+                    
+                    fig,ax = plt.subplots(figsize=(5,5),dpi=300)
+                    sns.scatterplot(data=data_plot_all, x="{}_MF".format(var), 
+                                    y="{}_SF".format(var),ax=ax,hue='Climate zone',alpha=0.5)
+                    ax.plot([min_val,max_val],[min_val,max_val],color='k',ls='-')
+                    ax.set_ylim([min_val,max_val])
+                    ax.set_xlim([min_val,max_val])
+                    ax.set_xlabel('Météo-France observations')
+                    ax.set_ylabel('SAFRAN reanalysis')
+                    ax.set_title(label_dict.get(var),wrap=True)
+                    plt.savefig(os.path.join(figs_folder,'comparison_{}_MF_safran.png'.format(var)), bbox_inches='tight')
+                    plt.show()
+                    
+                    fig,ax = plt.subplots(figsize=(5,5),dpi=300)
+                    sns.scatterplot(data=data_plot_all, x="{}_SF".format(var), 
+                                    y="{}_OM".format(var),ax=ax,hue='Climate zone',alpha=0.5)
+                    ax.plot([min_val,max_val],[min_val,max_val],color='k',ls='-')
+                    ax.set_ylim([min_val,max_val])
+                    ax.set_xlim([min_val,max_val])
+                    ax.set_xlabel('SAFRAN reanalysis')
+                    ax.set_ylabel('ERA5 reanalysis')
+                    ax.set_title(label_dict.get(var),wrap=True)
+                    plt.savefig(os.path.join(figs_folder,'comparison_{}_safran_ERA5.png'.format(var)), bbox_inches='tight')
                     plt.show()
                 
         # print(test)
