@@ -718,9 +718,9 @@ def main():
         plt.savefig(os.path.join(figs_folder,'{}.png'.format('{}_TABULA_Umur_tabula_only'.format(building_type))),bbox_inches='tight')
                 
     #%% Statistiques TABULA
-    if False:
+    if True:
 
-        building_type ='AB'
+        building_type ='MFH'
         formated_dict_data = ['Category','Variable','Unit'] + ['{}.{:02d}'.format(building_type,i) for i in range(1,11)]#,'standard','advanced']]
         data = pd.DataFrame().from_dict({e:[] for e in formated_dict_data})
         
@@ -754,6 +754,7 @@ def main():
         # data = data.set_index(['Category','Variable','Unit'])
         printer_data = data.to_latex(float_format='%.1f',index=False)
         # printer_data = data.split()
+        printer_data = printer_data.replace("True",'\\checkmark').replace('False','')
         print(printer_data)
         
     tac = time.time()
