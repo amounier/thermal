@@ -17,7 +17,7 @@ import matplotlib.pyplot as plt
 from sklearn.metrics import r2_score
 import multiprocessing
 
-from meteorology import get_historical_weather_data
+from meteorology import get_historical_weather_data, get_safran_hourly_weather_data
 from thermal_model import (refine_resolution, 
                            aggregate_resolution, 
                            run_thermal_model, 
@@ -28,16 +28,27 @@ from typologies import Typology
 from future_meteorology import get_projected_weather_data
 
 
-models_period_dict = {0:{2:[2029,2049],
-                         4:[2064,2084],},
-                      1:{2:[2018,2038],
-                         4:[2056,2076],},
-                      2:{2:[2024,2044],
-                         4:[2066,2086],},
-                      3:{2:[2013,2033],
-                         4:[2056,2076],},
-                      4:{2:[2006,2024], # debut des projections en 2006
-                         4:[2046,2066],},}
+# models_period_dict = {0:{2:[2029,2049],
+#                          4:[2064,2084],},
+#                       1:{2:[2018,2038],
+#                          4:[2056,2076],},
+#                       2:{2:[2024,2044],
+#                          4:[2066,2086],},
+#                       3:{2:[2013,2033],
+#                          4:[2056,2076],},
+#                       4:{2:[2006,2024], # debut des projections en 2006
+#                          4:[2046,2066],},}
+
+models_period_dict = {0:{2:[2020,2040],
+                         4:[2059,2079],},
+                      1:{2:[2013,2033],
+                         4:[2054,2074],},
+                      2:{2:[2017,2037],
+                         4:[2061,2081],},
+                      3:{2:[2006,2025],
+                         4:[2047,2067],},
+                      4:{2:[2006,2021], # debut des projections en 2006
+                         4:[2040,2060],},}
 
 
 def compute_energy_needs_single_actions(component,typo_code,zcl,output_path,
@@ -662,14 +673,21 @@ def main():
             period = [2000,2010]
             # period = [2003,2003]
             
+            weather_source = 'ERA5' # ERA5
+            
             # Checkpoint weather data
-            weather_data_checkfile = ".weather_data_{}_{}_{}_".format(city,period[0],period[1]) + today + ".pickle"
-            if weather_data_checkfile not in os.listdir():
-                weather_data = get_historical_weather_data(city,period)
-                weather_data = refine_resolution(weather_data, resolution='600s')
-                pickle.dump(weather_data, open(weather_data_checkfile, "wb"))
-            else:
-                weather_data = pickle.load(open(weather_data_checkfile, 'rb'))
+            if weather_source == 'ERA5':
+                weather_data_checkfile = ".weather_data_{}_{}_{}_".format(city,period[0],period[1]) + today + ".pickle"
+                if weather_data_checkfile not in os.listdir():
+                    weather_data = get_historical_weather_data(city,period)
+                    weather_data = refine_resolution(weather_data, resolution='600s')
+                    pickle.dump(weather_data, open(weather_data_checkfile, "wb"))
+                else:
+                    weather_data = pickle.load(open(weather_data_checkfile, 'rb'))
+            # elif weather_source == 'SAFRAN':
+            #     weather_data = get_safran_hourly_weather_data(zcl_code,period)
+            #     weather_data = refine_resolution(weather_data, resolution='600s')
+                
             
             # Définition des habitudes
             conventionnel = Behaviour('conventionnel_th-bce_2020')
@@ -679,14 +697,19 @@ def main():
             
             # typo_name = 'FR.N.SFH.03.Gen'
             typo_name = 'FR.N.MFH.03.Gen'
+            # typo_name = 'FR.N.AB.03.Gen'
             typo = Typology(typo_name)
             
-            thickness_list = np.linspace(0.05, 0.3, 30)
+            # thickness_list = np.linspace(0.05, 0.3, 30)
+            thickness_list = np.logspace(np.log10(0+0.05),np.log10(0.3),num=10)
             Bch_list = []
             Bfr_list = []
             
             for idx,thickness in tqdm.tqdm(enumerate(thickness_list),total=len(thickness_list)):
-                typo.ceiling_supplementary_insulation_thickness = 0.1
+                typo.ceiling_supplementary_insulation_thickness = 0.05
+                typo.floor_insulation_thickness = 0.05
+                typo.windows_U = 1
+                
                 typo.w0_insulation_thickness = thickness
                 typo.w1_insulation_thickness = thickness
                 typo.w2_insulation_thickness = thickness
@@ -859,23 +882,23 @@ def main():
                     
 
     #%% Changement de période climatique
-    if True:
+    if False:
         
-        models_period_dict = {0:{2:[2029,2049],
-                                 4:[2064,2084],},
-                              1:{2:[2018,2038],
-                                 4:[2056,2076],},
-                              2:{2:[2024,2044],
-                                 4:[2066,2086],},
-                              3:{2:[2013,2033],
-                                 4:[2056,2076],},
-                              4:{2:[2006,2024], # debut des projections en 2006
-                                 4:[2046,2066],},}
+        # models_period_dict = {0:{2:[2029,2049],
+        #                          4:[2064,2084],},
+        #                       1:{2:[2018,2038],
+        #                          4:[2056,2076],},
+        #                       2:{2:[2024,2044],
+        #                          4:[2066,2086],},
+        #                       3:{2:[2013,2033],
+        #                          4:[2056,2076],},
+        #                       4:{2:[2006,2024], # debut des projections en 2006
+        #                          4:[2046,2066],},}
         
         # premier test 
-        if True:
+        if False:
             zcl = Climat('H1b')
-            zcl = Climat('H3')
+            # zcl = Climat('H3')
             typo_code = 'FR.N.SFH.01.Gen'
             typo_code = 'FR.N.SFH.08.Gen'
             mod = 3
