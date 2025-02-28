@@ -20,12 +20,12 @@ from sklearn.metrics import r2_score
 import pickle
 
 from utils import plot_timeserie
-from meteorology import get_init_ground_temperature, get_historical_weather_data
+from meteorology import get_init_ground_temperature, get_historical_weather_data, get_safran_hourly_weather_data
 from typologies import Typology, dict_orientation_angle
 from behaviour import Behaviour
 from thermal_sensitivity import plot_thermal_sensitivity
 from future_meteorology import get_projected_weather_data
-from administrative import Departement, Climat, France, draw_climat_map
+from administrative import Departement, Climat, France, draw_climat_map, City
 
 
 AIR_THERMAL_CAPACITY = 1000 # J/(kg.K)
@@ -1042,7 +1042,9 @@ def run_thermal_model(typology, behaviour, weather_data, progressbar=False, pmax
         common_area_factor = 0.9 # cd 2.8 https://www.legifrance.gouv.fr/download/pdf/circ?id=34719
     else:
         common_area_factor = 1
-    internal_thermal_gains = behaviour.get_internal_gains(typology.surface*common_area_factor, typology.type, weather_data)
+    
+    internal_thermal_gains = behaviour.get_internal_gains(typology.surface*common_area_factor/typology.households, typology.type, weather_data)
+    internal_thermal_gains = np.asarray(internal_thermal_gains) * typology.households
     
     # calcul des valeurs U des quatres composantes
     if typology.converted_attic:
@@ -2570,23 +2572,30 @@ def main():
                 plt.show()
     
     #%% Comparaisons des typologies TABULA
-    if False:
+    if True:
         # Génération du fichier météo
-        city = 'Beauvais'
+        zcl_code = 'H1a'
+        city = City(Climat(zcl_code).center_prefecture).name
         # period = [2010,2020]
         # period = [1990,2000]
-        period = [2020,2020]
-        # period = [2000,2020]
-        # period = [2005,2005]
+        # period = [2020,2020]
+        period = [2000,2020]
+        # period = [2010,2010]
+        weather_source = 'SAFRAN' # ERA5
+        # weather_source = 'ERA5' # ERA5
         
         # Checkpoint weather data
-        weather_data_checkfile = ".weather_data_{}_{}_{}_".format(city,period[0],period[1]) + today + ".pickle"
-        if weather_data_checkfile not in os.listdir():
-            weather_data = get_historical_weather_data(city,period)
+        if weather_source == 'ERA5':
+            weather_data_checkfile = ".weather_data_{}_{}_{}_".format(city,period[0],period[1]) + today + ".pickle"
+            if weather_data_checkfile not in os.listdir():
+                weather_data = get_historical_weather_data(city,period)
+                weather_data = refine_resolution(weather_data, resolution='600s')
+                pickle.dump(weather_data, open(weather_data_checkfile, "wb"))
+            else:
+                weather_data = pickle.load(open(weather_data_checkfile, 'rb'))
+        elif weather_source == 'SAFRAN':
+            weather_data = get_safran_hourly_weather_data(zcl_code,period)
             weather_data = refine_resolution(weather_data, resolution='600s')
-            pickle.dump(weather_data, open(weather_data_checkfile, "wb"))
-        else:
-            weather_data = pickle.load(open(weather_data_checkfile, 'rb'))
         
         # Carte de France avec la localisation de la ville
         if False:
@@ -2621,6 +2630,7 @@ def main():
         if False:
             # Définition de la typologie
             typo_name = 'FR.N.SFH.01.Gen'
+            # typo_name = 'FR.N.AB.04.Gen'
             typo = Typology(typo_name)
             
             # print(typo.modelled_Upb)
@@ -2639,10 +2649,15 @@ def main():
             
             print(heating_cooling_modelling)
             
-            plot_timeserie(simulation[['temperature_2m','internal_temperature','ground_temperature']],figsize=(15,5),
+            plot_timeserie(simulation[['temperature_2m','internal_temperature']],figsize=(15,5),
                            ylabel='Temperature (°C)',
-                           xlim=[pd.to_datetime('{}-01-01'.format(period[0])), pd.to_datetime('{}-12-31'.format(period[1]))],)
+                           xlim=[pd.to_datetime('{}-02-15'.format(period[0])), pd.to_datetime('{}-02-28'.format(period[1]))],)
             
+            fig,ax = plot_timeserie(simulation[['heating_needs','cooling_needs']],figsize=(15,5),
+                                    ylabel='Energy needs (W)',show=False,
+                                    xlim=[pd.to_datetime('{}-02-15'.format(period[0])), pd.to_datetime('{}-02-28'.format(period[1]))],)
+            # ax.plot([pd.to_datetime('{}-02-15'.format(period[0])), pd.to_datetime('{}-02-28'.format(period[1]))],[typo.heater_maximum_power]*2)
+            plt.show()
             # print(typo.modelled_Upb)
             
         
@@ -2700,7 +2715,7 @@ def main():
         
         
         # Comparaison entre typologies (consommations et U-values)
-        if True:
+        if False:
             
             for building_type in ['SFH','TH','MFH','AB']:
             # for building_type in ['SFH']:
@@ -2745,7 +2760,7 @@ def main():
                         Umur_TABULA[(code,level)] = typo.tabula_Umur
                         Uw_TABULA[(code,level)] = typo.tabula_Uw
                         
-                        tmp_checkfile = ".heating_needs_{}_{}_{}_{}_".format(city,period[0],period[1],building_type) + today + ".pickle"
+                        tmp_checkfile = ".heating_needs_{}_{}_{}_{}_".format(city,period[0],period[1],building_type) + today + "_{}.pickle".format(weather_source)
                         if tmp_checkfile not in os.listdir():
                             simulation = run_thermal_model(typo, conventionnel, weather_data, pmax_warning=False)
                             simulation = aggregate_resolution(simulation, resolution='h')

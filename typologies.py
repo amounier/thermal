@@ -102,7 +102,7 @@ class Typology():
         
         # paramètres d'habitation
         self.rdc = bool(params.get('building_rdc_level'))
-        self.households = params.get('building_households')
+        self.households = int(params.get('building_households'))
         
         # caractéristiques inférieures et supérieurs 
         self.basement = bool(params.get('building_basement'))
@@ -140,7 +140,7 @@ class Typology():
             self.floor_adiabatic = True
             self.levels = self.levels - 1
             
-        # TODO : parois adiabatiques dans les logements collectifs
+        
         
         self.height = params.get('building_floor_height')
         self.volume = self.surface*self.height
@@ -720,7 +720,7 @@ def main():
     #%% Statistiques TABULA
     if True:
 
-        building_type ='MFH'
+        building_type ='AB'
         formated_dict_data = ['Category','Variable','Unit'] + ['{}.{:02d}'.format(building_type,i) for i in range(1,11)]#,'standard','advanced']]
         data = pd.DataFrame().from_dict({e:[] for e in formated_dict_data})
         

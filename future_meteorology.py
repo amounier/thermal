@@ -22,12 +22,15 @@ import geopandas as gpd
 from shapely.geometry import mapping
 import cmocean
 from pysolar.solar import get_altitude, get_altitude_fast, get_azimuth, get_azimuth_fast
-import multiprocessing
+# import multiprocessing
+import seaborn as sns
 
 from meteorology import (get_historical_weather_data, 
                          aggregate_resolution, 
                          get_direct_solar_irradiance_projection_ratio,
-                         get_diffuse_solar_irradiance_projection_ratio)
+                         get_diffuse_solar_irradiance_projection_ratio,
+                         get_meteo_data,
+                         get_safran_weather_data)
 from administrative import Climat, get_coordinates, France, City
 from climate_zone_characterisation import map_xarray
 from utils import blank_national_map, get_extent,plot_timeserie
@@ -196,7 +199,7 @@ def compute_projected_weather_data(zcl_code,nmod):
         hourly_data['rsds'] = hourly_data['rsds'].clip(lower=0.)
         
         daily_data['rsds_model'] = aggregate_resolution(hourly_data[['rsds']],resolution='D', agg_method='mean')
-        daily_data['rsds_factor'] = daily_data.rsds/daily_data.rsds_model*1.09
+        daily_data['rsds_factor'] = daily_data.rsds/daily_data.rsds_model # *1.09 # caution
         rsds_factor = np.asarray([[e]*24 for e in daily_data['rsds_factor']]).flatten()
         rsds_factor = list(rsds_factor) + [np.nan]*(len(hourly_data)-len(rsds_factor))
         
@@ -247,6 +250,8 @@ def get_projected_weather_data(zcl_code,period,nmod=3):
     hourly = hourly[hourly.index.year.isin(list(range(period[0],period[1]+1)))]
     
     return hourly
+
+
                                
                                
 
@@ -275,27 +280,85 @@ def main():
     #%% Téléchargement des données CORDEX sur CDS (ne marche pas)
     if False:
         import cdsapi
-        
+
         dataset = "projections-cordex-domains-single-levels"
         request = {
             "domain": "europe",
-            "experiment": "rcp_8_5",
+            "experiment": "historical",
             "horizontal_resolution": "0_11_degree_x_0_11_degree",
-            "temporal_resolution": "3_hours",
+            "temporal_resolution": "daily_mean",
             "variable": [
                 "2m_air_temperature",
-                "surface_solar_radiation_downwards",
-                "surface_thermal_radiation_downward"
+                "maximum_2m_temperature_in_the_last_24_hours",
+                "minimum_2m_temperature_in_the_last_24_hours",
+                "surface_solar_radiation_downwards"
             ],
-            "gcm_model": "ipsl_cm5a_mr",
-            "rcm_model": "knmi_racmo22e",
+            "gcm_model": "cnrm_cerfacs_cm5",
+            "rcm_model": "cnrm_aladin63",
             "ensemble_member": "r1i1p1",
-            "start_year": ["2078"],
-            "end_year": ["2079"]
+            "start_year": ["1996"],
+            "end_year": ["2000"]
         }
         
         client = cdsapi.Client()
         client.retrieve(dataset, request).download()
+
+    # projections cliamtiques d'open-meteo CMIP6 HighRes
+    if False:
+        import openmeteo_requests
+
+        import requests_cache
+        # import pandas as pd
+        from retry_requests import retry
+        
+        # Setup the Open-Meteo API client with cache and retry on error
+        cache_session = requests_cache.CachedSession('.cache', expire_after = 3600)
+        retry_session = retry(cache_session, retries = 5, backoff_factor = 0.2)
+        openmeteo = openmeteo_requests.Client(session = retry_session)
+        
+        # Make sure all required weather variables are listed here
+        # The order of variables in hourly or daily is important to assign them correctly below
+        url = "https://climate-api.open-meteo.com/v1/climate"
+        params = {
+        	"latitude": 52.52,
+        	"longitude": 13.41,
+        	"start_date": "1950-01-01",
+        	"end_date": "2050-12-31",
+        	"models": ["CMCC_CM2_VHR4", "FGOALS_f3_H", "HiRAM_SIT_HR", "MRI_AGCM3_2_S", "EC_Earth3P_HR", "MPI_ESM1_2_XR", "NICAM16_8S"],
+        	"daily": ["temperature_2m_mean", "temperature_2m_max", "temperature_2m_min", "shortwave_radiation_sum"]
+        }
+        responses = openmeteo.weather_api(url, params=params)
+        
+        # Process first location. Add a for-loop for multiple locations or weather models
+        response = responses[0]
+        print(f"Coordinates {response.Latitude()}°N {response.Longitude()}°E")
+        print(f"Elevation {response.Elevation()} m asl")
+        print(f"Timezone {response.Timezone()} {response.TimezoneAbbreviation()}")
+        print(f"Timezone difference to GMT+0 {response.UtcOffsetSeconds()} s")
+        
+        # Process daily data. The order of variables needs to be the same as requested.
+        daily = response.Daily()
+        daily_temperature_2m_mean = daily.Variables(0).ValuesAsNumpy()
+        daily_temperature_2m_max = daily.Variables(1).ValuesAsNumpy()
+        daily_temperature_2m_min = daily.Variables(2).ValuesAsNumpy()
+        daily_shortwave_radiation_sum = daily.Variables(3).ValuesAsNumpy()
+        
+        daily_data = {"date": pd.date_range(
+        	start = pd.to_datetime(daily.Time(), unit = "s", utc = True),
+        	end = pd.to_datetime(daily.TimeEnd(), unit = "s", utc = True),
+        	freq = pd.Timedelta(seconds = daily.Interval()),
+        	inclusive = "left"
+        )}
+        
+        daily_data["temperature_2m_mean"] = daily_temperature_2m_mean
+        daily_data["temperature_2m_max"] = daily_temperature_2m_max
+        daily_data["temperature_2m_min"] = daily_temperature_2m_min
+        daily_data["shortwave_radiation_sum"] = daily_shortwave_radiation_sum
+        
+        daily_dataframe = pd.DataFrame(data = daily_data)
+        print(daily_dataframe)
+
+
     
     
     #%% Utilisation des projections de températures par zone climatique
@@ -326,7 +389,10 @@ def main():
         
         # telechargement sur le site de la DRIAS
         if False:
-            with open(os.path.join('data','Explore2','download_links.txt')) as f:
+            # with open(os.path.join('data','Explore2','download_links.txt')) as f:
+            #     dl_links = f.read().splitlines()
+                
+            with open(os.path.join('data','Explore2','download_links_adamont.txt')) as f:
                 dl_links = f.read().splitlines()
             
             for url in dl_links:
@@ -334,7 +400,7 @@ def main():
         
         
         # association des projections et modelisations historiques (temperature)
-        if True:
+        if False:
             zcl = Climat('H3')
             city = zcl.center_prefecture
             coords = get_coordinates(city)
@@ -432,7 +498,7 @@ def main():
                 plt.show()
     
         # comparaison avec les données ERA5
-        if True:
+        if False:
             zcl = Climat('H3')
             city = zcl.center_prefecture
             coords = get_coordinates(city)
@@ -468,7 +534,7 @@ def main():
                 
                 plt.show()
         
-    # Données de flux solaires
+    # CDF temperature moyenne et solaire 
     if False:
         
         if external_disk_connection:
@@ -479,14 +545,62 @@ def main():
         # association des projections et modelisations historiques (temperature)
         if True:
             zcl = Climat('H3')
+            zcl = Climat('H1b')
             city = zcl.center_prefecture
             coords = get_coordinates(city)
+            nmod = 0
+            # calib_method = 'CDFt'
+            calib_method = 'ADAMONT'
+            variable = 'rsds' # tas
+            variable = 'tas'
+            season = True
+    
+            if calib_method == 'CDFt':
+                models_dict = {0:{'historical':'Adjust_France_CNRM-CERFACS-CNRM-CM5_historical_r1i1p1_CNRM-ALADIN63_v2_LSCE-IPSL-CDFt-L-1V-0L-1976-2005_day_19510101-20051231.nc',
+                                  # 'rcp45':'Adjust_France_CNRM-CERFACS-CNRM-CM5_rcp45_r1i1p1_CNRM-ALADIN63_v2_LSCE-IPSL-CDFt-L-1V-0L-1976-2005_day_20060101-21001231.nc',
+                                  'rcp85':'Adjust_France_CNRM-CERFACS-CNRM-CM5_rcp85_r1i1p1_CNRM-ALADIN63_v2_LSCE-IPSL-CDFt-L-1V-0L-1976-2005_day_20060101-21001231.nc'},
+                               
+                               1:{'historical':'Adjust_France_CNRM-CERFACS-CNRM-CM5_historical_r1i1p1_MOHC-HadREM3-GA7-05_v2_LSCE-IPSL-CDFt-L-1V-0L-1976-2005_day_19520101-20051231.nc',
+                                  'rcp85':'Adjust_France_CNRM-CERFACS-CNRM-CM5_rcp85_r1i1p1_MOHC-HadREM3-GA7-05_v2_LSCE-IPSL-CDFt-L-1V-0L-1976-2005_day_20060101-21001230.nc'},
+                               
+                               2:{'historical':'Adjust_France_ICHEC-EC-EARTH_historical_r12i1p1_KNMI-RACMO22E_v1_LSCE-IPSL-CDFt-L-1V-0L-1976-2005_day_19500101-20051231.nc',
+                                  # 'rcp45':'Adjust_France_ICHEC-EC-EARTH_rcp45_r12i1p1_KNMI-RACMO22E_v1_LSCE-IPSL-CDFt-L-1V-0L-1976-2005_day_20060101-21001231.nc',
+                                  'rcp85':'Adjust_France_ICHEC-EC-EARTH_rcp85_r12i1p1_KNMI-RACMO22E_v1_LSCE-IPSL-CDFt-L-1V-0L-1976-2005_day_20060101-21001231.nc'},
+                               
+                               3:{'historical':'Adjust_France_ICHEC-EC-EARTH_historical_r12i1p1_MOHC-HadREM3-GA7-05_v1_LSCE-IPSL-CDFt-L-1V-0L-1976-2005_day_19520101-20051231.nc',
+                                  'rcp85':'Adjust_France_ICHEC-EC-EARTH_rcp85_r12i1p1_MOHC-HadREM3-GA7-05_v1_LSCE-IPSL-CDFt-L-1V-0L-1976-2005_day_20060101-21001231.nc'},
+                               
+                               4:{'historical':'Adjust_France_MOHC-HadGEM2-ES_historical_r1i1p1_MOHC-HadREM3-GA7-05_v1_LSCE-IPSL-CDFt-L-1V-0L-1976-2005_day_19520101-20051231.nc',
+                                  'rcp85':'Adjust_France_MOHC-HadGEM2-ES_rcp85_r1i1p1_MOHC-HadREM3-GA7-05_v1_LSCE-IPSL-CDFt-L-1V-0L-1976-2005_day_20060101-20991219.nc'},
+                               }
             
-            rsds_Explore2_hist = os.path.join(data_folder,"rsdsAdjust_France_CNRM-CERFACS-CNRM-CM5_historical_r1i1p1_CNRM-ALADIN63_v2_LSCE-IPSL-CDFt-L-1V-0L-1976-2005_day_19510101-20051231.nc")
-            # rlds_Explore2_hist = "/media/amounier/MPBE/heavy_data/Explore2/rldsAdjust_France_CNRM-CERFACS-CNRM-CM5_historical_r1i1p1_CNRM-ALADIN63_v2_LSCE-IPSL-CDFt-L-1V-0L-1976-2005_day_19510101-20051231.nc"
+            elif calib_method == 'ADAMONT':
+                models_dict = {0:{'historical':'Adjust_France_CNRM-CERFACS-CNRM-CM5_historical_r1i1p1_CNRM-ALADIN63_v2_MF-ADAMONT-SAFRAN-1980-2011_day_19510101-20051231.nc',
+                                  'rcp85':     'Adjust_France_CNRM-CERFACS-CNRM-CM5_rcp85_r1i1p1_CNRM-ALADIN63_v2_MF-ADAMONT-SAFRAN-1980-2011_day_20060101-21001231.nc'},
+                               
+                               1:{'historical':'Adjust_France_CNRM-CERFACS-CNRM-CM5_historical_r1i1p1_MOHC-HadREM3-GA7-05_v2_MF-ADAMONT-SAFRAN-1980-2011_day_19520101-20051231.nc',
+                                  'rcp85':     'Adjust_France_CNRM-CERFACS-CNRM-CM5_rcp85_r1i1p1_MOHC-HadREM3-GA7-05_v2_MF-ADAMONT-SAFRAN-1980-2011_day_20060101-21001230.nc'},
+                               
+                               2:{'historical':'Adjust_France_ICHEC-EC-EARTH_historical_r12i1p1_KNMI-RACMO22E_v1_MF-ADAMONT-SAFRAN-1980-2011_day_19500101-20051231.nc',
+                                  'rcp85':     'Adjust_France_ICHEC-EC-EARTH_rcp85_r12i1p1_KNMI-RACMO22E_v1_MF-ADAMONT-SAFRAN-1980-2011_day_20060101-21001231.nc'},
+                               
+                               3:{'historical':'Adjust_France_ICHEC-EC-EARTH_historical_r12i1p1_MOHC-HadREM3-GA7-05_v1_MF-ADAMONT-SAFRAN-1980-2011_day_19520101-20051231.nc',
+                                  'rcp85':     'Adjust_France_ICHEC-EC-EARTH_rcp85_r12i1p1_MOHC-HadREM3-GA7-05_v1_MF-ADAMONT-SAFRAN-1980-2011_day_20060101-21001231.nc'},
+                               
+                               4:{'historical':'Adjust_France_MOHC-HadGEM2-ES_historical_r1i1p1_MOHC-HadREM3-GA7-05_v1_MF-ADAMONT-SAFRAN-1980-2011_day_19520101-20051231.nc',
+                                  'rcp85':     'Adjust_France_MOHC-HadGEM2-ES_rcp85_r1i1p1_MOHC-HadREM3-GA7-05_v1_MF-ADAMONT-SAFRAN-1980-2011_day_20060101-20991219.nc'},
+                               }
+            
+            rsds_Explore2_hist = os.path.join(data_folder,variable+models_dict.get(nmod).get('historical'))
+            # rlds_Explore2_hist = os.path.join(data_folder,"rldsAdjust_France_CNRM-CERFACS-CNRM-CM5_historical_r1i1p1_CNRM-ALADIN63_v2_LSCE-IPSL-CDFt-L-1V-0L-1976-2005_day_19510101-20051231.nc")
             # rsds_Explore2_proj = "/media/amounier/MPBE/heavy_data/Explore2/rsdsAdjust_France_CNRM-CERFACS-CNRM-CM5_rcp85_r1i1p1_CNRM-ALADIN63_v2_LSCE-IPSL-CDFt-L-1V-0L-1976-2005_day_20060101-21001231.nc"
             
-            rsds_array_hist = xr.open_dataset(rsds_Explore2_hist).rsdsAdjust
+            if variable == 'rsds':
+                rsds_array_hist = xr.open_dataset(rsds_Explore2_hist).rsdsAdjust
+                
+            elif variable == 'tas':
+                rsds_array_hist = xr.open_dataset(rsds_Explore2_hist).tasAdjust
+                
             # rlds_array_hist = xr.open_dataset(rlds_Explore2_hist).rldsAdjust
             # rsds_array_proj = xr.open_dataset(rsds_Explore2_proj).rsdsAdjust
             
@@ -537,21 +651,183 @@ def main():
                 # # proj = tas_array_proj.sel(x=coords_transformed[0], y=coords_transformed[1], method='nearest')
                 # proj = proj.groupby('time.year').mean('time')
                 
-                data_hist_rsds = pd.DataFrame(index=hist_rsds.time, data=hist_rsds).rename(columns={0:'rsds'})
+                # data_hist_rsds = pd.DataFrame(index=hist_rsds.time, data=hist_rsds).rename(columns={0:'rsds'})
                 # data_hist_rlds = pd.DataFrame(index=hist_rlds.time, data=hist_rlds).rename(columns={0:'rlds'})
                 # data_proj = pd.DataFrame(index=proj.year, data=proj)
                 # data = data_hist_rsds.join(data_hist_rlds)
                 
                 # data['sum'] = data.rsds + data.rlds
                 
-                print(data_hist_rsds[data_hist_rsds.index.year==2001].sum())
+                # fig,ax = plt.subplots(figsize=(15,5),dpi=300)
+                # data_hist_rsds.plot(ax=ax)
+                # # data_hist_rlds.plot(ax=ax)
+                # # (data_hist_rsds.rsds+data_hist_rlds.rlds).plot(ax=ax)
+                # # ax.legend()
+                # ax.set_ylabel('rsdsAdjust')
+                # ax.set_xlim([pd.to_datetime('2001-01-01'), pd.to_datetime('2001-12-31')])
+                # plt.show()
+                test = 1
+                
+            
+            # comparaison des CDF entre ERA5 et explore2
+            if True:
+                # reanalysis = 'era5'
+                # reanalysis = 'safran'
+                
+                data_hist_rsds = pd.DataFrame()
+                for nmod in range(5):
                     
-                fig,ax = plt.subplots(figsize=(15,5),dpi=300)
-                data_hist_rsds.plot(ax=ax)
+                    if variable == 'rsds':
+                        rsds_Explore2_hist = os.path.join(data_folder,"rsds"+models_dict.get(nmod).get('historical'))
+                        rsds_array_hist = xr.open_dataset(rsds_Explore2_hist).rsdsAdjust
+                        
+                    elif variable == 'tas':
+                        rsds_Explore2_hist = os.path.join(data_folder,"tas"+models_dict.get(nmod).get('historical'))
+                        rsds_array_hist = xr.open_dataset(rsds_Explore2_hist).tasAdjust
+                        
+                    # rsds_array_hist = xr.open_dataset(rsds_Explore2_hist).rsdsAdjust
+                    rsds_array_hist.rio.write_crs('epsg:27572', inplace=True)
+                    transformer = pyproj.Transformer.from_crs("EPSG:4326", "EPSG:27572", always_xy=True)
+                    coords_transformed = transformer.transform(*coords)
+                    hist_rsds = rsds_array_hist.sel(x=coords_transformed[0], y=coords_transformed[1], method='nearest')
+                    
+                    if variable == 'tas':
+                        hist_rsds = hist_rsds - 273.15
+                        
+                    data_hist_rsds_mod = pd.DataFrame(index=hist_rsds.time, data=hist_rsds).rename(columns={0:'{}_{}'.format(variable,nmod)})
+                    data_hist_rsds = data_hist_rsds.join(data_hist_rsds_mod,how='outer')
+                
+                data_hist_rsds = data_hist_rsds.dropna()
+                
+                period_calibration = [1976,2005]
+                # period_calibration = [2000,2020]
+                data_hist_rsds = data_hist_rsds[data_hist_rsds.index.year.isin(list(range(period_calibration[0],period_calibration[1]+1)))]
+                
+                # if reanalysis == 'era5':
+                data_hist_era5 = get_meteo_data(city,[data_hist_rsds.index.year[0],data_hist_rsds.index.year[-1]],['shortwave_radiation_instant','temperature_2m'])
+                data_hist_era5 = aggregate_resolution(data_hist_era5,resolution='D',agg_method='mean')
+                
+                # data_hist_mf = 
+                    
+                # elif reanalysis == 'safran':
+                data_hist_safran = get_safran_weather_data(zcl.center_prefecture,[data_hist_rsds.index.year[0],data_hist_rsds.index.year[-1]],param=['SSI_Q','T_Q'])
+                data_hist_safran = data_hist_safran.rename(columns={'SSI_Q':'shortwave_radiation_instant','T_Q':'temperature_2m'})
+                data_hist_safran['shortwave_radiation_instant'] = data_hist_safran.shortwave_radiation_instant / 3600 / 1e-4 / 24 # from J.cm-2.day-1 to Wh.m-2.day-1
+                    
+                # # quantile001_era5 = np.quantile(data_hist,0.01)
+                # quantile05_era5 = np.quantile(data_hist,0.5)
+                # quantile099_era5 = np.quantile(data_hist,0.999)
+                
+                # # quantile001_explore2 = np.quantile(data_hist_rsds,0.01)
+                # quantile05_explore2 = np.quantile(data_hist_rsds,0.5)
+                # quantile099_explore2 = np.quantile(data_hist_rsds,0.999)
+                
+                # # val001 = 1 #quantile001_era5/quantile001_explore2
+                # val005 = quantile05_era5/quantile05_explore2
+                # val099 = quantile099_era5/quantile099_explore2
+                
+                # # print(val001,val099)
+                # print(quantile05_explore2, val005, val099)
+                
+                # fig,ax = plt.subplots(dpi=300,figsize=(5,5))
+                # for idx,c in enumerate(data_hist_rsds.columns):
+                #     if idx != 0:
+                #         continue
+                #     X = np.linspace(data_hist_rsds[c].min(),data_hist_rsds[c].max(),100)
+                #     corr = [min(1,((X[i]-quantile05_explore2)/(quantile099_explore2-quantile05_explore2)*(val099-val005)+val005)) if X[i] > quantile05_explore2 else 1. for i in range(len(X))]
+                #     ax.plot(X, corr,color='k')
+                # ax.set_ylim(bottom=0.)
+                # ax.set_ylabel('Solar correction function')
+                # ax.set_xlabel('Daily mean Explore2 solar radiation (W.m$^{-2}$)')
+                # plt.savefig(os.path.join(figs_folder,'solar_coorection_function_{}.png'.format(city)), bbox_inches='tight')
+                # plt.show()
+                
+                # for c in data_hist_rsds.columns:
+                #     corr = [min(1,((data_hist_rsds[c].values[i]-quantile05_explore2)/(quantile099_explore2-quantile05_explore2)*(val099-val005)+val005)) if data_hist_rsds[c].values[i] > quantile05_explore2 else 1. for i in range(len(data_hist_rsds))]
+                #     data_hist_rsds[c] = data_hist_rsds[c] * np.asarray(corr)
+                
+                
+                
+                cmap = matplotlib.colormaps.get_cmap('viridis')
+                
+                if season == False:
+                    for month in range(1,13):
+                        data_hist_rsds_month = data_hist_rsds[data_hist_rsds.index.month==month]
+                        data_hist_safran_month = data_hist_safran[data_hist_safran.index.month==month]
+                        data_hist_era5_month = data_hist_era5[data_hist_era5.index.month==month]
+                        
+                        # print(month, data_hist_month.max())
+                        
+                        x_var = {'rsds':'shortwave_radiation_instant','tas':'temperature_2m'}.get(variable)
+                        xlabel = {'rsds':'Daily mean shortwave solar radiation (W.m$^{-2}$)',
+                                  'tas':'Daily mean temperature (°C)'}.get(variable)
+                        
+                        fig,ax = plt.subplots(dpi=300,figsize=(5,5))
+                        sns.ecdfplot(data=data_hist_safran_month, x=x_var,ax=ax,color='k',label='SAFRAN',zorder=2)
+                        # sns.ecdfplot(data=data_hist_era5_month, x="shortwave_radiation_instant",ax=ax,color='tab:red',label='ERA5',zorder=2)
+                        for nmod in range(5):
+                            sns.ecdfplot(data=data_hist_rsds_month, x="{}_{}".format(variable, nmod),ax=ax,
+                                         color=cmap(nmod/5),label='Model {}'.format(nmod+1),ls=[':','--','-.',':','--'][nmod],zorder=1)
+                        ax.set_title('{} - {} ({}-{})'.format(city, pd.to_datetime('2000-{:02d}-01'.format(month)).strftime('%B'),data_hist_rsds.index.year[0],data_hist_rsds.index.year[-1]))
+                        ax.legend()
+                        ax.set_xlabel(xlabel)
+                        ax.set_ylabel('Cumulative distribution function')
+                        plt.savefig(os.path.join(figs_folder,'CDF_{}_{}_month{}_{}.png'.format(variable,city,month,calib_method.lower())), bbox_inches='tight')
+                        plt.show()
+                else:
+                    for seas in ['DJF','MAM','JJA','SON']:
+                        month_dict = {'DJF':[12,1,2],
+                                      'MAM':[3,4,5],
+                                      'JJA':[6,7,8],
+                                      'SON':[9,10,11],}
+                        
+                        data_hist_rsds_month = data_hist_rsds[data_hist_rsds.index.month.isin(month_dict.get(seas))]
+                        data_hist_safran_month = data_hist_safran[data_hist_safran.index.month.isin(month_dict.get(seas))]
+                        data_hist_era5_month = data_hist_era5[data_hist_era5.index.month.isin(month_dict.get(seas))]
+                        
+                        # print(month, data_hist_month.max())
+                        
+                        x_var = {'rsds':'shortwave_radiation_instant','tas':'temperature_2m'}.get(variable)
+                        xlabel = {'rsds':'Daily mean shortwave solar radiation (W.m$^{-2}$)',
+                                  'tas':'Daily mean temperature (°C)'}.get(variable)
+                        
+                        fig,ax = plt.subplots(dpi=300,figsize=(5,5))
+                        sns.ecdfplot(data=data_hist_safran_month, x=x_var,ax=ax,color='k',label='SAFRAN',zorder=2)
+                        # sns.ecdfplot(data=data_hist_era5_month, x="shortwave_radiation_instant",ax=ax,color='tab:red',label='ERA5',zorder=2)
+                        for nmod in range(5):
+                            sns.ecdfplot(data=data_hist_rsds_month, x="{}_{}".format(variable, nmod),ax=ax,
+                                         color=cmap(nmod/5),label='Model {}'.format(nmod+1),ls=[':','--','-.',':','--'][nmod],zorder=1)
+                        ax.set_title('{} - {} ({}-{})'.format(city, seas,data_hist_rsds.index.year[0],data_hist_rsds.index.year[-1]))
+                        ax.legend()
+                        ax.set_xlabel(xlabel)
+                        ax.set_ylabel('Cumulative distribution function')
+                        plt.savefig(os.path.join(figs_folder,'CDF_{}_{}_season{}_{}.png'.format(variable,city,seas,calib_method.lower())), bbox_inches='tight')
+                        plt.show()
+                
+                # data_hist_rsds_month = data_hist_rsds.copy()
+                # data_hist_month = data_hist.copy()
+                
+                # fig,ax = plt.subplots(dpi=300,figsize=(5,5))
+                # sns.ecdfplot(data=data_hist_month, x="shortwave_radiation_instant",ax=ax,color='k',label='ERA5')
+                # for nmod in range(5):
+                #     sns.ecdfplot(data=data_hist_rsds_month, x="rsds_{}".format(nmod),ax=ax,
+                #                  color=cmap(nmod/5),label='Model {}'.format(nmod),ls=[':','--','-.',':','--'][nmod])
+                # ax.set_title('{} ({}-{})'.format(city,data_hist_rsds.index.year[0],data_hist_rsds.index.year[-1]))
                 # ax.legend()
-                ax.set_ylabel('rsdsAdjust')
-                ax.set_xlim([pd.to_datetime('2001-01-01'), pd.to_datetime('2001-12-31')])
-                plt.show()
+                # ax.set_xlabel('Daily mean shortwave solar radiation (W.m$^{-2}$)')
+                # ax.set_ylabel('Cumulative distribution function')
+                # plt.savefig(os.path.join(figs_folder,'CDF_rsds_{}_year_adamont.png'.format(city)), bbox_inches='tight')
+                # plt.show()
+                    
+                    
+                    # fig,ax = plt.subplots(dpi=300,figsize=(5,5))
+                    # data_hist.plot(ax=ax,color='k')
+                    # data_hist_rsds.plot(ax=ax)
+                    # ax.set_xlim([pd.to_datetime('2001-{:02d}-01'.format(month)), pd.to_datetime('2001-{:02d}-28'.format(month))])
+                    # ax.set_xlabel('')
+                    # plt.show()
+                    
+                
                 
             if False:
                 # hist = rsds_array_hist.mean(('x','y'))
@@ -575,26 +851,47 @@ def main():
                 
     #%% Formatage des données de modèles climatiques 
     if False:
+    
+        # calib_method = 'CDFt'
+        calib_method = 'ADAMONT'
+
+        if calib_method == 'CDFt':
+            models_dict = {0:{'historical':'Adjust_France_CNRM-CERFACS-CNRM-CM5_historical_r1i1p1_CNRM-ALADIN63_v2_LSCE-IPSL-CDFt-L-1V-0L-1976-2005_day_19510101-20051231.nc',
+                              # 'rcp45':'Adjust_France_CNRM-CERFACS-CNRM-CM5_rcp45_r1i1p1_CNRM-ALADIN63_v2_LSCE-IPSL-CDFt-L-1V-0L-1976-2005_day_20060101-21001231.nc',
+                              'rcp85':'Adjust_France_CNRM-CERFACS-CNRM-CM5_rcp85_r1i1p1_CNRM-ALADIN63_v2_LSCE-IPSL-CDFt-L-1V-0L-1976-2005_day_20060101-21001231.nc'},
+                           
+                           1:{'historical':'Adjust_France_CNRM-CERFACS-CNRM-CM5_historical_r1i1p1_MOHC-HadREM3-GA7-05_v2_LSCE-IPSL-CDFt-L-1V-0L-1976-2005_day_19520101-20051231.nc',
+                              'rcp85':'Adjust_France_CNRM-CERFACS-CNRM-CM5_rcp85_r1i1p1_MOHC-HadREM3-GA7-05_v2_LSCE-IPSL-CDFt-L-1V-0L-1976-2005_day_20060101-21001230.nc'},
+                           
+                           2:{'historical':'Adjust_France_ICHEC-EC-EARTH_historical_r12i1p1_KNMI-RACMO22E_v1_LSCE-IPSL-CDFt-L-1V-0L-1976-2005_day_19500101-20051231.nc',
+                              # 'rcp45':'Adjust_France_ICHEC-EC-EARTH_rcp45_r12i1p1_KNMI-RACMO22E_v1_LSCE-IPSL-CDFt-L-1V-0L-1976-2005_day_20060101-21001231.nc',
+                              'rcp85':'Adjust_France_ICHEC-EC-EARTH_rcp85_r12i1p1_KNMI-RACMO22E_v1_LSCE-IPSL-CDFt-L-1V-0L-1976-2005_day_20060101-21001231.nc'},
+                           
+                           3:{'historical':'Adjust_France_ICHEC-EC-EARTH_historical_r12i1p1_MOHC-HadREM3-GA7-05_v1_LSCE-IPSL-CDFt-L-1V-0L-1976-2005_day_19520101-20051231.nc',
+                              'rcp85':'Adjust_France_ICHEC-EC-EARTH_rcp85_r12i1p1_MOHC-HadREM3-GA7-05_v1_LSCE-IPSL-CDFt-L-1V-0L-1976-2005_day_20060101-21001231.nc'},
+                           
+                           4:{'historical':'Adjust_France_MOHC-HadGEM2-ES_historical_r1i1p1_MOHC-HadREM3-GA7-05_v1_LSCE-IPSL-CDFt-L-1V-0L-1976-2005_day_19520101-20051231.nc',
+                              'rcp85':'Adjust_France_MOHC-HadGEM2-ES_rcp85_r1i1p1_MOHC-HadREM3-GA7-05_v1_LSCE-IPSL-CDFt-L-1V-0L-1976-2005_day_20060101-20991219.nc'},
+                           }
         
+        elif calib_method == 'ADAMONT':
+            models_dict = {0:{'historical':'Adjust_France_CNRM-CERFACS-CNRM-CM5_historical_r1i1p1_CNRM-ALADIN63_v2_MF-ADAMONT-SAFRAN-1980-2011_day_19510101-20051231.nc',
+                              'rcp85':     'Adjust_France_CNRM-CERFACS-CNRM-CM5_rcp85_r1i1p1_CNRM-ALADIN63_v2_MF-ADAMONT-SAFRAN-1980-2011_day_20060101-21001231.nc'},
+                           
+                           1:{'historical':'Adjust_France_CNRM-CERFACS-CNRM-CM5_historical_r1i1p1_MOHC-HadREM3-GA7-05_v2_MF-ADAMONT-SAFRAN-1980-2011_day_19520101-20051231.nc',
+                              'rcp85':     'Adjust_France_CNRM-CERFACS-CNRM-CM5_rcp85_r1i1p1_MOHC-HadREM3-GA7-05_v2_MF-ADAMONT-SAFRAN-1980-2011_day_20060101-21001230.nc'},
+                           
+                           2:{'historical':'Adjust_France_ICHEC-EC-EARTH_historical_r12i1p1_KNMI-RACMO22E_v1_MF-ADAMONT-SAFRAN-1980-2011_day_19500101-20051231.nc',
+                              'rcp85':     'Adjust_France_ICHEC-EC-EARTH_rcp85_r12i1p1_KNMI-RACMO22E_v1_MF-ADAMONT-SAFRAN-1980-2011_day_20060101-21001231.nc'},
+                           
+                           3:{'historical':'Adjust_France_ICHEC-EC-EARTH_historical_r12i1p1_MOHC-HadREM3-GA7-05_v1_MF-ADAMONT-SAFRAN-1980-2011_day_19520101-20051231.nc',
+                              'rcp85':     'Adjust_France_ICHEC-EC-EARTH_rcp85_r12i1p1_MOHC-HadREM3-GA7-05_v1_MF-ADAMONT-SAFRAN-1980-2011_day_20060101-21001231.nc'},
+                           
+                           4:{'historical':'Adjust_France_MOHC-HadGEM2-ES_historical_r1i1p1_MOHC-HadREM3-GA7-05_v1_MF-ADAMONT-SAFRAN-1980-2011_day_19520101-20051231.nc',
+                              'rcp85':     'Adjust_France_MOHC-HadGEM2-ES_rcp85_r1i1p1_MOHC-HadREM3-GA7-05_v1_MF-ADAMONT-SAFRAN-1980-2011_day_20060101-20991219.nc'},
+                           }
         
-        models_dict = {0:{'historical':'Adjust_France_CNRM-CERFACS-CNRM-CM5_historical_r1i1p1_CNRM-ALADIN63_v2_LSCE-IPSL-CDFt-L-1V-0L-1976-2005_day_19510101-20051231.nc',
-                          'rcp45':'Adjust_France_CNRM-CERFACS-CNRM-CM5_rcp45_r1i1p1_CNRM-ALADIN63_v2_LSCE-IPSL-CDFt-L-1V-0L-1976-2005_day_20060101-21001231.nc',
-                          'rcp85':'Adjust_France_CNRM-CERFACS-CNRM-CM5_rcp85_r1i1p1_CNRM-ALADIN63_v2_LSCE-IPSL-CDFt-L-1V-0L-1976-2005_day_20060101-21001231.nc'},
-                       
-                       1:{'historical':'Adjust_France_CNRM-CERFACS-CNRM-CM5_historical_r1i1p1_MOHC-HadREM3-GA7-05_v2_LSCE-IPSL-CDFt-L-1V-0L-1976-2005_day_19520101-20051231.nc',
-                          'rcp85':'Adjust_France_CNRM-CERFACS-CNRM-CM5_rcp85_r1i1p1_MOHC-HadREM3-GA7-05_v2_LSCE-IPSL-CDFt-L-1V-0L-1976-2005_day_20060101-21001230.nc'},
-                       
-                       2:{'historical':'Adjust_France_ICHEC-EC-EARTH_historical_r12i1p1_KNMI-RACMO22E_v1_LSCE-IPSL-CDFt-L-1V-0L-1976-2005_day_19500101-20051231.nc',
-                          'rcp45':'Adjust_France_ICHEC-EC-EARTH_rcp45_r12i1p1_KNMI-RACMO22E_v1_LSCE-IPSL-CDFt-L-1V-0L-1976-2005_day_20060101-21001231.nc',
-                          'rcp85':'Adjust_France_ICHEC-EC-EARTH_rcp85_r12i1p1_KNMI-RACMO22E_v1_LSCE-IPSL-CDFt-L-1V-0L-1976-2005_day_20060101-21001231.nc'},
-                       
-                       3:{'historical':'Adjust_France_ICHEC-EC-EARTH_historical_r12i1p1_MOHC-HadREM3-GA7-05_v1_LSCE-IPSL-CDFt-L-1V-0L-1976-2005_day_19520101-20051231.nc',
-                          'rcp85':'Adjust_France_ICHEC-EC-EARTH_rcp85_r12i1p1_MOHC-HadREM3-GA7-05_v1_LSCE-IPSL-CDFt-L-1V-0L-1976-2005_day_20060101-21001231.nc'},
-                       
-                       4:{'historical':'Adjust_France_MOHC-HadGEM2-ES_historical_r1i1p1_MOHC-HadREM3-GA7-05_v1_LSCE-IPSL-CDFt-L-1V-0L-1976-2005_day_19520101-20051231.nc',
-                          'rcp85':'Adjust_France_MOHC-HadGEM2-ES_rcp85_r1i1p1_MOHC-HadREM3-GA7-05_v1_LSCE-IPSL-CDFt-L-1V-0L-1976-2005_day_20060101-20991219.nc'},
-                       }
-        
+    
         
         if external_disk_connection:
             data_folder = '/media/amounier/MPBE/heavy_data/Explore2'
@@ -603,11 +900,13 @@ def main():
             
         
         climate_vars = ['tas','tasmax','tasmin','rsds']
-        climate_vars = ['rsds']
+        climate_vars = ['tas']
+        # climate_vars = ['rsds']
         for climate_var in climate_vars:
         # climate_var = 'rsds' #'tas','tasmax','tasmin','rsds'
         
             for mod in range(0,5):
+            # for mod in range(4,5):
                 
                 Explore2_hist = os.path.join(data_folder,climate_var+models_dict.get(mod).get('historical'))
                 array_hist = xr.open_dataset(Explore2_hist)
@@ -625,7 +924,7 @@ def main():
                 
                 
                 # concatenation des valeurs journalières
-                if True:
+                if False:
                     climats = France().climats
                     for zcl in climats:
                         zcl = Climat(zcl)
@@ -710,7 +1009,7 @@ def main():
                     data_proj = pd.DataFrame(index=proj.year, data=proj)
                     data = pd.concat([data_hist, data_proj]).rename(columns={0:'temperature'})
                     
-                    # data.to_csv(os.path.join(os.path.join(output, folder),'{}_mod{}.csv'.format(climate_var,mod)))
+                    data.to_csv(os.path.join(os.path.join(output, folder),'{}_mod{}.csv'.format(climate_var,mod)))
                         
                     fig,ax = plt.subplots(figsize=(5,5),dpi=300)
                     data.plot(ax=ax,color='k')
@@ -718,7 +1017,7 @@ def main():
                     ax.plot([data.index.min(),data.index.max()],[mean_yt_deg4]*2,color='tab:red',label='+4°C')
                     ax.legend()
                     ax.set_ylim([8,17])
-                    ax.set_title(mod)
+                    ax.set_title('Climate model n°{}'.format(mod+1))
                     ax.set_ylabel('Yearly mean temperature over France (°C)')
                     plt.savefig(os.path.join(figs_folder,'{}_mod{}_evolution.png'.format(climate_var,mod)),bbox_inches='tight')
                     plt.show()
@@ -745,7 +1044,7 @@ def main():
                     ax.plot([year_deg4],[mean_yt_deg4],color='tab:red',marker='o')
                     ax.legend()
                     ax.set_ylim([8,17])
-                    ax.set_title(mod)
+                    ax.set_title('Climate model n°{}'.format(mod+1))
                     ax.set_ylabel('Yearly mean temperature over 20 years (°C)')
                     ax.set_xlabel('Center year of mean period')
                     plt.savefig(os.path.join(figs_folder,'{}_mod{}_moving_mean_evolution.png'.format(climate_var,mod)),bbox_inches='tight')
@@ -757,34 +1056,56 @@ def main():
     # Réalisation des cartes 
     if False:
         
-        models_dict = {0:{'historical':'Adjust_France_CNRM-CERFACS-CNRM-CM5_historical_r1i1p1_CNRM-ALADIN63_v2_LSCE-IPSL-CDFt-L-1V-0L-1976-2005_day_19510101-20051231.nc',
-                          'rcp45':'Adjust_France_CNRM-CERFACS-CNRM-CM5_rcp45_r1i1p1_CNRM-ALADIN63_v2_LSCE-IPSL-CDFt-L-1V-0L-1976-2005_day_20060101-21001231.nc',
-                          'rcp85':'Adjust_France_CNRM-CERFACS-CNRM-CM5_rcp85_r1i1p1_CNRM-ALADIN63_v2_LSCE-IPSL-CDFt-L-1V-0L-1976-2005_day_20060101-21001231.nc'},
-                       
-                       1:{'historical':'Adjust_France_CNRM-CERFACS-CNRM-CM5_historical_r1i1p1_MOHC-HadREM3-GA7-05_v2_LSCE-IPSL-CDFt-L-1V-0L-1976-2005_day_19520101-20051231.nc',
-                          'rcp85':'Adjust_France_CNRM-CERFACS-CNRM-CM5_rcp85_r1i1p1_MOHC-HadREM3-GA7-05_v2_LSCE-IPSL-CDFt-L-1V-0L-1976-2005_day_20060101-21001230.nc'},
-                       
-                       2:{'historical':'Adjust_France_ICHEC-EC-EARTH_historical_r12i1p1_KNMI-RACMO22E_v1_LSCE-IPSL-CDFt-L-1V-0L-1976-2005_day_19500101-20051231.nc',
-                          'rcp45':'Adjust_France_ICHEC-EC-EARTH_rcp45_r12i1p1_KNMI-RACMO22E_v1_LSCE-IPSL-CDFt-L-1V-0L-1976-2005_day_20060101-21001231.nc',
-                          'rcp85':'Adjust_France_ICHEC-EC-EARTH_rcp85_r12i1p1_KNMI-RACMO22E_v1_LSCE-IPSL-CDFt-L-1V-0L-1976-2005_day_20060101-21001231.nc'},
-                       
-                       3:{'historical':'Adjust_France_ICHEC-EC-EARTH_historical_r12i1p1_MOHC-HadREM3-GA7-05_v1_LSCE-IPSL-CDFt-L-1V-0L-1976-2005_day_19520101-20051231.nc',
-                          'rcp85':'Adjust_France_ICHEC-EC-EARTH_rcp85_r12i1p1_MOHC-HadREM3-GA7-05_v1_LSCE-IPSL-CDFt-L-1V-0L-1976-2005_day_20060101-21001231.nc'},
-                       
-                       4:{'historical':'Adjust_France_MOHC-HadGEM2-ES_historical_r1i1p1_MOHC-HadREM3-GA7-05_v1_LSCE-IPSL-CDFt-L-1V-0L-1976-2005_day_19520101-20051231.nc',
-                          'rcp85':'Adjust_France_MOHC-HadGEM2-ES_rcp85_r1i1p1_MOHC-HadREM3-GA7-05_v1_LSCE-IPSL-CDFt-L-1V-0L-1976-2005_day_20060101-20991219.nc'},
-                       }
+        # calib_method = 'CDFt'
+        calib_method = 'ADAMONT'
+
+        if calib_method == 'CDFt':
+            models_dict = {0:{'historical':'Adjust_France_CNRM-CERFACS-CNRM-CM5_historical_r1i1p1_CNRM-ALADIN63_v2_LSCE-IPSL-CDFt-L-1V-0L-1976-2005_day_19510101-20051231.nc',
+                              # 'rcp45':'Adjust_France_CNRM-CERFACS-CNRM-CM5_rcp45_r1i1p1_CNRM-ALADIN63_v2_LSCE-IPSL-CDFt-L-1V-0L-1976-2005_day_20060101-21001231.nc',
+                              'rcp85':'Adjust_France_CNRM-CERFACS-CNRM-CM5_rcp85_r1i1p1_CNRM-ALADIN63_v2_LSCE-IPSL-CDFt-L-1V-0L-1976-2005_day_20060101-21001231.nc'},
+                           
+                           1:{'historical':'Adjust_France_CNRM-CERFACS-CNRM-CM5_historical_r1i1p1_MOHC-HadREM3-GA7-05_v2_LSCE-IPSL-CDFt-L-1V-0L-1976-2005_day_19520101-20051231.nc',
+                              'rcp85':'Adjust_France_CNRM-CERFACS-CNRM-CM5_rcp85_r1i1p1_MOHC-HadREM3-GA7-05_v2_LSCE-IPSL-CDFt-L-1V-0L-1976-2005_day_20060101-21001230.nc'},
+                           
+                           2:{'historical':'Adjust_France_ICHEC-EC-EARTH_historical_r12i1p1_KNMI-RACMO22E_v1_LSCE-IPSL-CDFt-L-1V-0L-1976-2005_day_19500101-20051231.nc',
+                              # 'rcp45':'Adjust_France_ICHEC-EC-EARTH_rcp45_r12i1p1_KNMI-RACMO22E_v1_LSCE-IPSL-CDFt-L-1V-0L-1976-2005_day_20060101-21001231.nc',
+                              'rcp85':'Adjust_France_ICHEC-EC-EARTH_rcp85_r12i1p1_KNMI-RACMO22E_v1_LSCE-IPSL-CDFt-L-1V-0L-1976-2005_day_20060101-21001231.nc'},
+                           
+                           3:{'historical':'Adjust_France_ICHEC-EC-EARTH_historical_r12i1p1_MOHC-HadREM3-GA7-05_v1_LSCE-IPSL-CDFt-L-1V-0L-1976-2005_day_19520101-20051231.nc',
+                              'rcp85':'Adjust_France_ICHEC-EC-EARTH_rcp85_r12i1p1_MOHC-HadREM3-GA7-05_v1_LSCE-IPSL-CDFt-L-1V-0L-1976-2005_day_20060101-21001231.nc'},
+                           
+                           4:{'historical':'Adjust_France_MOHC-HadGEM2-ES_historical_r1i1p1_MOHC-HadREM3-GA7-05_v1_LSCE-IPSL-CDFt-L-1V-0L-1976-2005_day_19520101-20051231.nc',
+                              'rcp85':'Adjust_France_MOHC-HadGEM2-ES_rcp85_r1i1p1_MOHC-HadREM3-GA7-05_v1_LSCE-IPSL-CDFt-L-1V-0L-1976-2005_day_20060101-20991219.nc'},
+                           }
         
-        models_period_dict = {0:{2:[2029,2049],
-                                 4:[2064,2084],},
-                              1:{2:[2018,2038],
-                                 4:[2056,2076],},
-                              2:{2:[2024,2044],
-                                 4:[2066,2086],},
-                              3:{2:[2013,2033],
-                                 4:[2056,2076],},
-                              4:{2:[2006,2024], # debut des projections en 2006
-                                 4:[2046,2066],},}
+        elif calib_method == 'ADAMONT':
+            models_dict = {0:{'historical':'Adjust_France_CNRM-CERFACS-CNRM-CM5_historical_r1i1p1_CNRM-ALADIN63_v2_MF-ADAMONT-SAFRAN-1980-2011_day_19510101-20051231.nc',
+                              'rcp85':     'Adjust_France_CNRM-CERFACS-CNRM-CM5_rcp85_r1i1p1_CNRM-ALADIN63_v2_MF-ADAMONT-SAFRAN-1980-2011_day_20060101-21001231.nc'},
+                           
+                           1:{'historical':'Adjust_France_CNRM-CERFACS-CNRM-CM5_historical_r1i1p1_MOHC-HadREM3-GA7-05_v2_MF-ADAMONT-SAFRAN-1980-2011_day_19520101-20051231.nc',
+                              'rcp85':     'Adjust_France_CNRM-CERFACS-CNRM-CM5_rcp85_r1i1p1_MOHC-HadREM3-GA7-05_v2_MF-ADAMONT-SAFRAN-1980-2011_day_20060101-21001230.nc'},
+                           
+                           2:{'historical':'Adjust_France_ICHEC-EC-EARTH_historical_r12i1p1_KNMI-RACMO22E_v1_MF-ADAMONT-SAFRAN-1980-2011_day_19500101-20051231.nc',
+                              'rcp85':     'Adjust_France_ICHEC-EC-EARTH_rcp85_r12i1p1_KNMI-RACMO22E_v1_MF-ADAMONT-SAFRAN-1980-2011_day_20060101-21001231.nc'},
+                           
+                           3:{'historical':'Adjust_France_ICHEC-EC-EARTH_historical_r12i1p1_MOHC-HadREM3-GA7-05_v1_MF-ADAMONT-SAFRAN-1980-2011_day_19520101-20051231.nc',
+                              'rcp85':     'Adjust_France_ICHEC-EC-EARTH_rcp85_r12i1p1_MOHC-HadREM3-GA7-05_v1_MF-ADAMONT-SAFRAN-1980-2011_day_20060101-21001231.nc'},
+                           
+                           4:{'historical':'Adjust_France_MOHC-HadGEM2-ES_historical_r1i1p1_MOHC-HadREM3-GA7-05_v1_MF-ADAMONT-SAFRAN-1980-2011_day_19520101-20051231.nc',
+                              'rcp85':     'Adjust_France_MOHC-HadGEM2-ES_rcp85_r1i1p1_MOHC-HadREM3-GA7-05_v1_MF-ADAMONT-SAFRAN-1980-2011_day_20060101-20991219.nc'},
+                           }
+        
+        models_period_dict = {0:{2:[2020,2040],
+                                 4:[2059,2079],},
+                              1:{2:[2013,2033],
+                                 4:[2054,2074],},
+                              2:{2:[2017,2037],
+                                 4:[2061,2081],},
+                              3:{2:[2006,2025],
+                                 4:[2047,2067],},
+                              4:{2:[2006,2021], # debut des projections en 2006
+                                 4:[2040,2060],},}
+        # print(pd.DataFrame().from_dict(models_period_dict).T.to_latex())
         
         if external_disk_connection:
             data_folder = '/media/amounier/MPBE/heavy_data/Explore2'
@@ -793,13 +1114,13 @@ def main():
             
         
         climate_vars = ['tas','tasmax','tasmin','rsds']
-        climate_vars = ['tas']
+        climate_vars = ['rsds']
         for climate_var in climate_vars:
         # climate_var = 'rsds' #'tas','tasmax','tasmin','rsds'
             
-            # for mod in range(0,5):
-            for mod in [3]:
-            # for mod in range(3,5):
+            # for idx,mod in enumerate(range(0,5)):
+            # for mod in [3]:
+            for idx,mod in enumerate(range(1,2)):
                 
                 Explore2_hist = os.path.join(data_folder,climate_var+models_dict.get(mod).get('historical'))
                 array_hist = xr.open_dataset(Explore2_hist)
@@ -840,10 +1161,17 @@ def main():
                 # carte de base
                 fig,ax = blank_national_map()
                 
-                img = hist.plot(ax=ax,transform=ccrs.epsg('27572'),add_colorbar=False,
-                               cmap=cmap,vmin=hist.min(),vmax=hist.max())
+                if idx == 0:
+                    vmin = hist.min()
+                    vmax = hist.max()
+                    
+                    max_val = max(np.abs(diff4.max()), np.abs(diff4.min()))
+                    
                 
-                ax.set_title('Model n°{} (2000-2020)'.format(mod))
+                img = hist.plot(ax=ax,transform=ccrs.epsg('27572'),add_colorbar=False,
+                               cmap=cmap,vmin=vmin,vmax=vmax)
+                
+                ax.set_title('Model n°{} (2000-2020)'.format(mod+1))
                 
                 ax_cb = fig.add_axes([0,0,0.1,0.1])
                 posn = ax.get_position()
@@ -872,11 +1200,11 @@ def main():
                 
                 fig,ax = blank_national_map()
                 
-                max_val = max(np.abs(diff4.max()), np.abs(diff4.min()))
+                
                 img = diff2.plot(ax=ax,transform=ccrs.epsg('27572'),add_colorbar=False,
                                  cmap=cmap,vmin=-max_val,vmax=max_val)
                 
-                ax.set_title('Model n°{} (+2°C)'.format(mod))
+                ax.set_title('Model n°{} (+2°C)'.format(mod+1))
                 
                 ax_cb = fig.add_axes([0,0,0.1,0.1])
                 posn = ax.get_position()
@@ -897,7 +1225,7 @@ def main():
                 img = diff4.plot(ax=ax,transform=ccrs.epsg('27572'),add_colorbar=False,
                                  cmap=cmap,vmin=-max_val,vmax=max_val)
                 
-                ax.set_title('Model n°{} (+4°C)'.format(mod))
+                ax.set_title('Model n°{} (+4°C)'.format(mod+1))
                 
                 ax_cb = fig.add_axes([0,0,0.1,0.1])
                 posn = ax.get_position()
@@ -1010,29 +1338,31 @@ def main():
         print(agg.direct_sun_radiation_H.plot())
     
     # caractérisation des évolutions de températures
-    if True:
+    if False:
         zcl = Climat('H1a')
-        var = 'temperature_2m'
-        # var = 'direct_sun_radiation_H'
+        # var = 'temperature_2m'
+        var = 'direct_sun_radiation_H'
+        period=[2000,2020]
+        agg_period = 'YS'
         
-        
-        data = get_historical_weather_data(zcl.center_prefecture, [1990,2020])
-        data = aggregate_resolution(data[[var]],resolution='YE',agg_method='mean')
+        data = get_historical_weather_data(zcl.center_prefecture, period)
+        data = aggregate_resolution(data[[var]],resolution=agg_period,agg_method='mean')
         data = data.rename(columns={var:'ERA5'})
         
         for nmod in range(5):
-            explore2 = get_projected_weather_data('H1a', [1990,2100],nmod=nmod)
-            explore2 = aggregate_resolution(explore2[[var]],resolution='YE',agg_method='mean')
+            explore2 = get_projected_weather_data('H1a', period,nmod=nmod)
+            explore2 = aggregate_resolution(explore2[[var]],resolution=agg_period,agg_method='mean')
             explore2 = explore2.rename(columns={var:'Explore2 - mod n°{}'.format(nmod)})
             data = data.join(explore2,how='outer')
         
         cmap = matplotlib.colormaps.get_cmap('viridis')
-        plot_timeserie(data, show=True,figsize=(10,5),
+        fig,ax = plot_timeserie(data, show=False,figsize=(8,5),
                        colors=['k']+[cmap(i/5) for i in range(5)],
                        linestyles=['-']+[':','--','-.',':','--'], 
                        ylabel=var)
+        plt.show()
         
-        # fort écart sur les flux solaire: à comparer avec les données d'observation MF # TODO
+        # fort écart sur les flux solaire: à comparer avec les données d'observation MF
         
         models_period_dict = {0:{'now':[2000,2020], 
                                  2:[2029,2049],

@@ -377,7 +377,7 @@ def download_MF_compressed_files():
 
 
 
-def get_safran_weather_data(city, period, param='SSI_Q',verbose=False):
+def get_safran_weather_data(city, period, param=['SSI_Q'],verbose=False):
     param_name = ','.join(param)
     city_coords = City(city).coordinates
     coord = "POINT({} {})".format(city_coords[0],city_coords[1])
@@ -426,6 +426,151 @@ def get_safran_weather_data(city, period, param='SSI_Q',verbose=False):
         df = df.set_index('date')
     return df
 
+
+def compute_safran_weather_data(zcl_code):
+    
+    zcl = Climat(zcl_code)
+    city = City(zcl.center_prefecture)
+    coordinates = city.coordinates
+
+    # print(daily_data.columns)
+    
+    if '{}.parquet'.format(zcl_code) not in os.listdir(os.path.join('data','SAFRAN','hourly')):
+        
+        daily_data = get_safran_weather_data(city.name, period=[2000,2020],param=['SSI_Q','TINF_H_Q','TSUP_H_Q','T_Q'])
+        daily_data = daily_data.rename(columns={'SSI_Q':'rsds','TINF_H_Q':'tasmin','TSUP_H_Q':'tasmax','T_Q':'tas'})
+        daily_data['rsds'] = daily_data['rsds'] / 3600 / 1e-4 / 24
+        
+        hourly_data = pd.DataFrame(index=pd.date_range(daily_data.index[0],'{}-01-01'.format(daily_data.index[-1].year+1),freq='h'))
+        hourly_data = hourly_data.drop(hourly_data.iloc[-1].name)
+        
+        dates = hourly_data.copy().index
+        dates = dates.tz_localize(tz='CET',ambiguous='NaT',nonexistent='NaT')
+        dates = dates.to_pydatetime()
+        altitude = [get_altitude_fast(coordinates[1],coordinates[0],t) if t is not pd.NaT else np.nan for t in tqdm.tqdm(dates, desc='altitude')]
+        azimuth = [float(get_azimuth_fast(coordinates[1],coordinates[0],t)) if t is not pd.NaT else np.nan for t in tqdm.tqdm(dates, desc='azimuth')]
+        
+        hourly_data['sun_azimuth'] = azimuth
+        hourly_data['sun_altitude'] = altitude
+        hourly_data['sunrise'] = hourly_data.sun_altitude.lt(0) & hourly_data.sun_altitude.shift(-1).ge(0)
+        
+        daily_data['hour_sunrise'] = hourly_data.index[hourly_data['sunrise']].hour.values[:len(daily_data)]
+        
+        # construction des données de temperature
+        hourly_data['temp'] = [np.nan]*len(hourly_data)
+        
+        hour_min_rel_sunrise = 0
+        hour_max = 15
+        
+        mask_max = hourly_data.index.hour == hour_max
+        hourly_data.loc[mask_max,'temp'] = list(daily_data.tasmax.values) + [np.nan]*(len(hourly_data.loc[mask_max,'temp'])-len(daily_data))
+        
+        mask_min = hourly_data.sunrise.shift(hour_min_rel_sunrise).infer_objects(copy=False).fillna(False)
+        hourly_data.loc[mask_min,'temp'] = list(daily_data.tasmin.values) + [np.nan]*(len(hourly_data.loc[mask_min,'temp'])-len(daily_data))
+        
+        # weather_data_modelled = weather_data_modelled[['temperature']]
+        
+        temperature_sin14R1 = [np.nan]*len(hourly_data)
+        prev_T, prev_t, next_T, next_t = [np.nan]*4
+        flag = False
+        
+        def get_previous_temperature(t, data=hourly_data):
+            try:
+                d = hourly_data[hourly_data.index<t].dropna().iloc[-1]
+                t = d.name
+                T = d.temp
+                return t, T
+            except IndexError:
+                return np.nan, np.nan
+            
+        
+        def get_next_temperature(t, data=hourly_data):
+            try:
+                d = hourly_data[hourly_data.index>t].dropna().iloc[0]
+                t = d.name
+                T = d.temp
+                return t, T
+            except IndexError:
+                return np.nan, np.nan
+        
+        def compute_temperature_sin14R1(t,prev_T,prev_t,next_T,next_t):
+            T = (next_T + prev_T)/2 - ((next_T-prev_T)/2 * np.cos(np.pi*(t-prev_t)/(next_t-prev_t)))
+            return T
+        
+            
+        for idx,t in tqdm.tqdm(enumerate(hourly_data.index),total=len(hourly_data), desc='temperature'):
+            T = hourly_data.loc[t].temp
+            if flag:
+                prev_t, prev_T = get_previous_temperature(t, hourly_data)
+                next_t, next_T = get_next_temperature(t, hourly_data)
+                flag = False
+            if not pd.isnull(T):
+                flag = True
+                temperature_sin14R1[idx] = T
+            else:
+                if pd.isnull(prev_t) or pd.isnull(next_t):
+                    continue
+                temperature_sin14R1[idx] = compute_temperature_sin14R1(t,prev_T,prev_t,next_T,next_t)
+            
+        hourly_data['temperature_2m'] = temperature_sin14R1
+        
+        hourly_data.to_parquet(os.path.join('data','SAFRAN','hourly','{}.parquet'.format(zcl_code)))
+        
+        hourly_data['rsds'] = np.cos(np.deg2rad(90-hourly_data.sun_altitude))
+        hourly_data['rsds'] = hourly_data['rsds'].clip(lower=0.)
+        
+        daily_data['rsds_model'] = aggregate_resolution(hourly_data[['rsds']],resolution='D', agg_method='mean')
+        daily_data['rsds_factor'] = daily_data.rsds/daily_data.rsds_model # *1.09 # caution
+        rsds_factor = np.asarray([[e]*24 for e in daily_data['rsds_factor']]).flatten()
+        rsds_factor = list(rsds_factor) + [np.nan]*(len(hourly_data)-len(rsds_factor))
+        
+        hourly_data['rsds'] = hourly_data['rsds']*np.asarray(rsds_factor)
+        
+        direct_ratio = 0.749
+        hourly_data['rsds_direct'] = hourly_data['rsds']*direct_ratio
+        hourly_data['diffuse_radiation_instant'] = hourly_data['rsds']*(1-direct_ratio)
+        
+        normal_ratio = np.sin(np.deg2rad(np.maximum(hourly_data['sun_altitude'],0)))
+        hourly_data['direct_normal_irradiance_instant'] = hourly_data['rsds_direct']/normal_ratio
+        
+        orientations = ['N','NE','E','SE','S','SW','W','NW','H']
+        
+        for ori in orientations:
+            col_coef_dri = 'coefficient_direct_{}_irradiance'.format(ori)
+            col_coef_dif = 'coefficient_diffuse_{}_irradiance'.format(ori)
+            col_dri = 'direct_sun_radiation_{}'.format(ori)
+            col_dif = 'diffuse_sun_radiation_{}'.format(ori)
+            
+            hourly_data[col_coef_dri] = get_direct_solar_irradiance_projection_ratio(ori, hourly_data.sun_azimuth, hourly_data.sun_altitude)
+            hourly_data[col_coef_dif] = get_diffuse_solar_irradiance_projection_ratio(ori)
+            hourly_data[col_dri] = hourly_data.direct_normal_irradiance_instant * hourly_data[col_coef_dri]
+            hourly_data[col_dif] = hourly_data.diffuse_radiation_instant * hourly_data[col_coef_dif]
+        
+        hourly_data = hourly_data[['temperature_2m', 'diffuse_radiation_instant',
+                                   'direct_normal_irradiance_instant', 'sun_altitude', 'sun_azimuth',
+                                   'direct_sun_radiation_N', 'diffuse_sun_radiation_N',
+                                   'direct_sun_radiation_NE', 'diffuse_sun_radiation_NE',
+                                   'direct_sun_radiation_E', 'diffuse_sun_radiation_E',
+                                   'direct_sun_radiation_SE', 'diffuse_sun_radiation_SE',
+                                   'direct_sun_radiation_S', 'diffuse_sun_radiation_S',
+                                   'direct_sun_radiation_SW', 'diffuse_sun_radiation_SW',
+                                   'direct_sun_radiation_W', 'diffuse_sun_radiation_W',
+                                   'direct_sun_radiation_NW', 'diffuse_sun_radiation_NW',
+                                   'direct_sun_radiation_H', 'diffuse_sun_radiation_H']]
+        
+        
+        hourly_data.to_parquet(os.path.join('data','SAFRAN','hourly','{}.parquet'.format(zcl_code)))
+    
+    hourly_data = pd.read_parquet(os.path.join('data','SAFRAN','hourly','{}.parquet'.format(zcl_code)))
+    hourly_data = hourly_data.fillna(0.)
+    return hourly_data
+
+
+def get_safran_hourly_weather_data(zcl_code,period=[2000,2020]):
+    hourly = compute_safran_weather_data(zcl_code)
+    hourly = hourly[hourly.index.year.isin(list(range(period[0],period[1]+1)))]
+    
+    return hourly
 
 
 #%% ===========================================================================
@@ -1610,6 +1755,34 @@ def main():
                     plt.show()
                 
         # print(test)
+        
+    #%% Données de référence SAFRAN
+    if False:
+        
+        # premier test 
+        if False:
+            zcl_list = France().climats
+            zcl = Climat(zcl_list[0])
+            
+            daily_data = get_safran_weather_data(zcl.center_prefecture, period=[2000,2020],param=['SSI_Q','TINF_H_Q','TSUP_H_Q','T_Q'])
+            daily_data = daily_data.rename(columns={'SSI_Q':'rsds','TINF_H_Q':'tasmin','TSUP_H_Q':'tasmax','T_Q':'tas'})
+            # print(daily_data)
+            
+            # test = compute_safran_weather_data(zcl.code)
+            test = get_safran_hourly_weather_data(zcl.code)
+            
+            plot_timeserie(test[['temperature_2m']])
+            plot_timeserie(test[['temperature_2m']])
+            print(test)
+            
+        # calcul pour toutes les régions climatiques
+        if True:
+            zcl_list = France().climats
+            
+            for zcl in zcl_list:
+                print(zcl)
+                test = get_safran_hourly_weather_data(zcl)
+
 
     tac = time.time()
     print('Done in {:.2f}s.'.format(tac-tic))
