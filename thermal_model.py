@@ -149,7 +149,8 @@ def get_P_vnat(Ti,Te,Tfr_cons,typology,behaviour):
     
     # Fracastoro 2022 (10.1016/S0378-7788(02)00099-3)
     if behaviour.nocturnal_ventilation:
-        if Ti > Tfr_cons and Ti > Te:
+        tolerance_cooler = 1#°C
+        if Ti > Tfr_cons-tolerance_cooler and Ti > Te:
             windows_surface = typology.w0_windows_surface + typology.w1_windows_surface + typology.w2_windows_surface + typology.w3_windows_surface
             half_windows_surface = windows_surface/2
             half_windows_height = typology.windows_height/2
@@ -158,7 +159,7 @@ def get_P_vnat(Ti,Te,Tfr_cons,typology,behaviour):
             air_flow = AIR_DENSITY * half_windows_surface * C_d * np.sqrt((GRAVITY_ACCELERATION * half_windows_height * np.abs(Ti-Te))/(Ti)) # kg/s
             U_air = air_flow * AIR_THERMAL_CAPACITY
             P_vnat = U_air * (Te-Ti)
-            
+    
     return P_vnat
 
 
@@ -1295,7 +1296,10 @@ def run_thermal_model(typology, behaviour, weather_data, progressbar=False, pmax
         heating_needs[i-1] = P_heater
         cooling_needs[i-1] = -P_cooler
         
-        U[i,11] = P_heater + P_cooler # i-1 ou i # à vérifier Rouchier, Madsen : peu de différence en tout cas
+        # print(cooling_needs)
+        # print(P_vnat)
+        
+        U[i,11] = P_heater + P_cooler
         U[i,13] = P_vmeca
         U[i,14] = P_vnat
         
@@ -1315,6 +1319,7 @@ def run_thermal_model(typology, behaviour, weather_data, progressbar=False, pmax
     
     weather_data['heating_needs'] = heating_needs
     weather_data['cooling_needs'] = cooling_needs
+    weather_data['Pvnat'] = U[:,14]
     
     return weather_data
 
@@ -2575,6 +2580,7 @@ def main():
     if True:
         # Génération du fichier météo
         zcl_code = 'H1a'
+        # zcl_code = 'H3'
         city = City(Climat(zcl_code).center_prefecture).name
         # period = [2010,2020]
         # period = [1990,2000]
@@ -2630,10 +2636,13 @@ def main():
         if False:
             # Définition de la typologie
             typo_name = 'FR.N.SFH.01.Gen'
+            # typo_name = 'FR.N.SFH.07.Gen'
             # typo_name = 'FR.N.AB.04.Gen'
             typo = Typology(typo_name)
             
             # print(typo.modelled_Upb)
+            # conventionnel.nocturnal_ventilation = True
+            # typo.cooler_maximum_power = 0
             
             t1 = time.time()
             simulation = run_thermal_model(typo, conventionnel, weather_data)
@@ -2642,7 +2651,7 @@ def main():
             print('{} an(s) de simulation : {:.2f}s.'.format(len(list(range(*period)))+1,t2-t1))
             
             # print(simulation_data.columns)
-            heating_cooling_modelling = aggregate_resolution(simulation[['heating_needs','cooling_needs']], resolution='YE',agg_method='sum')
+            heating_cooling_modelling = aggregate_resolution(simulation[['heating_needs','cooling_needs','Pvnat']], resolution='YE',agg_method='sum')
             heating_cooling_modelling = heating_cooling_modelling/1000
             heating_cooling_modelling = heating_cooling_modelling/typo.surface
             heating_cooling_modelling.index = heating_cooling_modelling.index.year
@@ -2651,11 +2660,17 @@ def main():
             
             plot_timeserie(simulation[['temperature_2m','internal_temperature']],figsize=(15,5),
                            ylabel='Temperature (°C)',
-                           xlim=[pd.to_datetime('{}-02-15'.format(period[0])), pd.to_datetime('{}-02-28'.format(period[1]))],)
+                           xlim=[pd.to_datetime('{}-07-15'.format(period[0])), pd.to_datetime('{}-07-28'.format(period[1]))],)
+            plt.show()
             
-            fig,ax = plot_timeserie(simulation[['heating_needs','cooling_needs']],figsize=(15,5),
+            # plot_timeserie(simulation[['temperature_2m','internal_temperature']],figsize=(15,5),
+            #                ylabel='Temperature (°C)',
+            #                xlim=[pd.to_datetime('{}-02-15'.format(period[0])), pd.to_datetime('{}-02-28'.format(period[1]))],)
+            # plt.show()
+            
+            fig,ax = plot_timeserie(simulation[['heating_needs','cooling_needs','Pvnat']],figsize=(15,5),
                                     ylabel='Energy needs (W)',show=False,
-                                    xlim=[pd.to_datetime('{}-02-15'.format(period[0])), pd.to_datetime('{}-02-28'.format(period[1]))],)
+                                    xlim=[pd.to_datetime('{}-07-15'.format(period[0])), pd.to_datetime('{}-07-28'.format(period[1]))],)
             # ax.plot([pd.to_datetime('{}-02-15'.format(period[0])), pd.to_datetime('{}-02-28'.format(period[1]))],[typo.heater_maximum_power]*2)
             plt.show()
             # print(typo.modelled_Upb)
@@ -2793,7 +2808,7 @@ def main():
                 
                 
                 # graphe pour les besoins de chauffage
-                fig,ax = plt.subplots(figsize=(15,5),dpi=300)
+                fig,ax = plt.subplots(figsize=(8,5),dpi=300)
                 for i in range(1,11):
                     code = 'FR.N.{}.{:02d}.Gen'.format(building_type,i)
                     
@@ -2811,12 +2826,21 @@ def main():
                             ax.boxplot(heating_needs_GENMOD[(code,level)],positions=[X[k]],widths=1, label='Model')
                         else:
                             ax.boxplot(heating_needs_GENMOD[(code,level)],positions=[X[k]],widths=1)
-                        
-                        
+                
+                
                 ax.set_ylim(bottom=0.)
                 ax.set_ylabel('Heating needs (kWh.m$^{-2}$.yr$^{-1}$)')
                 ax.legend()
                 ax.set_xticks([(i*7)+2 for i in range(1,11)],['{}.{:02d}'.format(building_type,i) for i in range(1,11)])
+                
+                ylims = ax.get_ylim()
+                xlims = ax.get_xlim()
+                for i in range(1,11):
+                    j = i*7
+                    X = [j-1.5,j+2,j+5.5]
+                    if i%2==0:
+                        ax.fill_between(X,[ylims[1]]*3,[ylims[0]]*3,color='lightgrey',alpha=0.37,zorder=-2)
+                ax.set_xlim(xlims)
                 
                 plt.savefig(os.path.join(figs_folder,'{}.png'.format('{}_TABULA_consumption'.format(building_type))),bbox_inches='tight')
             
