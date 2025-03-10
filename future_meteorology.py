@@ -30,7 +30,8 @@ from meteorology import (get_historical_weather_data,
                          get_direct_solar_irradiance_projection_ratio,
                          get_diffuse_solar_irradiance_projection_ratio,
                          get_meteo_data,
-                         get_safran_weather_data)
+                         get_safran_weather_data,
+                         get_safran_hourly_weather_data)
 from administrative import Climat, get_coordinates, France, City
 from climate_zone_characterisation import map_xarray
 from utils import blank_national_map, get_extent,plot_timeserie
@@ -1340,19 +1341,20 @@ def main():
     # caractérisation des évolutions de températures
     if False:
         zcl = Climat('H1a')
-        # var = 'temperature_2m'
-        var = 'direct_sun_radiation_H'
+        var = 'temperature_2m'
+        # var = 'direct_sun_radiation_H'
         period=[2000,2020]
         agg_period = 'YS'
         
-        data = get_historical_weather_data(zcl.center_prefecture, period)
+        # data = get_historical_weather_data(zcl.center_prefecture, period)
+        data = get_safran_hourly_weather_data(zcl.code,period)
         data = aggregate_resolution(data[[var]],resolution=agg_period,agg_method='mean')
-        data = data.rename(columns={var:'ERA5'})
+        data = data.rename(columns={var:'SAFRAN'})
         
         for nmod in range(5):
             explore2 = get_projected_weather_data('H1a', period,nmod=nmod)
             explore2 = aggregate_resolution(explore2[[var]],resolution=agg_period,agg_method='mean')
-            explore2 = explore2.rename(columns={var:'Explore2 - mod n°{}'.format(nmod)})
+            explore2 = explore2.rename(columns={var:'Explore2 - mod n°{}'.format(nmod+1)})
             data = data.join(explore2,how='outer')
         
         cmap = matplotlib.colormaps.get_cmap('viridis')
@@ -1364,22 +1366,22 @@ def main():
         
         # fort écart sur les flux solaire: à comparer avec les données d'observation MF
         
-        models_period_dict = {0:{'now':[2000,2020], 
-                                 2:[2029,2049],
-                                 4:[2064,2084],},
-                              1:{'now':[2000,2020], 
-                                 2:[2018,2038],
-                                 4:[2056,2076],},
-                              2:{'now':[2000,2020], 
-                                 2:[2024,2044],
-                                 4:[2066,2086],},
-                              3:{'now':[2000,2020], 
-                                 2:[2013,2033],
-                                 4:[2056,2076],},
-                              4:{'now':[2000,2020], 
-                                 2:[2006,2024], # debut des projections en 2006
-                                 4:[2046,2066],},}
-        period = 'now'
+        # models_period_dict = {0:{'now':[2000,2020], 
+        #                          2:[2029,2049],
+        #                          4:[2064,2084],},
+        #                       1:{'now':[2000,2020], 
+        #                          2:[2018,2038],
+        #                          4:[2056,2076],},
+        #                       2:{'now':[2000,2020], 
+        #                          2:[2024,2044],
+        #                          4:[2066,2086],},
+        #                       3:{'now':[2000,2020], 
+        #                          2:[2013,2033],
+        #                          4:[2056,2076],},
+        #                       4:{'now':[2000,2020], 
+        #                          2:[2006,2024], # debut des projections en 2006
+        #                          4:[2046,2066],},}
+        # period = 'now'
         
         
         
