@@ -18,8 +18,9 @@ class Behaviour():
     def __init__(self,name):
         self.name = name
         self.cst_internal_gains = None
-        self.nocturnal_ventilation = False # TODO: à intégrer
+        self.nocturnal_ventilation = False 
         self.closing_shutters = False # TODO: à intégrer
+        self.full_name = self.name
         
         if self.name == 'conventionnel_th-bce_2020':
             self.heating_rules = {1:[19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 16, 16, 16, 16, 16, 16, 16, 16, 19, 19, 19, 19, 19, 19],
@@ -64,10 +65,15 @@ class Behaviour():
             self.heating_rules = None
             self.cooling_rules = None
             self.presence_rules = None
+            
         
     def __str__(self):
-        return self.name
+        return self.full_name
     
+    def update_name(self):
+        if self.nocturnal_ventilation:
+            self.full_name = self.name + '_natnocvent'
+            
     
     def get_set_point_temperature(self, weather_data):
         
@@ -230,6 +236,7 @@ def main():
     if True:
         behaviour = 'conventionnel_th-bce_2020'
         conventionnel = Behaviour(behaviour)
+        
         
         # Affichage des règles de consommation conventionnelle
         if True:
