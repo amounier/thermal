@@ -806,7 +806,7 @@ def main():
     
     
     #%% Variation des paramètres d'isolation 
-    if False:
+    if True:
         
         # Caractérisation du temps de calcul
         if False:
@@ -1069,7 +1069,7 @@ def main():
                                      progressbar=True,model='era5')
             
             # parallelisation
-            if True:
+            if False:
                 zc_list = ['H1b','H3']
                 typo_list = ['FR.N.SFH.01.Gen','FR.N.TH.01.Gen','FR.N.MFH.01.Gen','FR.N.AB.03.Gen']
                 components = ['roof','walls','floor','albedo','ventilation','shading','windows']
@@ -1136,7 +1136,7 @@ def main():
                     
 
     #%% Changement de période climatique
-    if True:
+    if False:
         
         # models_period_dict = {0:{2:[2029,2049],
         #                          4:[2064,2084],},
@@ -1213,7 +1213,7 @@ def main():
         if True:
             
             # calcul des gains
-            if True:
+            if False:
                 # component = 'shading'
                 zcl_list = ['H1b','H3']
                 
@@ -1307,12 +1307,12 @@ def main():
                 output_path = os.path.join(output, folder)
     
 
-                # for component in ['shading','walls','floor','roof','albedo','windows','ventilation']:
-                for component in ['ventilation']:
+                for component in ['shading','walls','floor','roof','albedo','windows','ventilation']:
+                # for component in ['ventilation']:
                     for zcl_code in zcl_list:
                         zcl = Climat(zcl_code)
-                        # for building_type in ['SFH','TH','MFH','AB']:
-                        for building_type in ['SFH']:
+                        for building_type in ['SFH','TH','MFH','AB']:
+                        # for building_type in ['SFH']:
                             fig,ax = plt.subplots(figsize=(5,5),dpi=300)
                             max_Delta_x = 0
                             max_Delta_y = 0
@@ -1437,8 +1437,8 @@ def main():
                 
                 
                 
-                # for building_type in ['SFH','TH','MFH','AB']:
-                for building_type in ['SFH']:
+                for building_type in ['SFH','TH','MFH','AB']:
+                # for building_type in ['SFH']:
                     
                     fig,ax = plt.subplots(figsize=(5,5),dpi=300)
                     
@@ -1534,39 +1534,39 @@ def main():
                             max_max_Delta_x = max(max_Delta_x, max_max_Delta_x)
                          
                             
-                max_Delta = max(max_max_Delta_x*1.01, max_max_Delta_y*1.01)
-                ax.set_xlim([-max_Delta,max_Delta])
-                ax.set_ylim([-max_Delta,max_Delta])
-                
-                for idx_marker, marker in enumerate(marker_list):
-                    ax.plot([2*max_Delta],[2*max_Delta],color='k',marker=marker,
-                            label=component_list[idx_marker],mfc='w')
-                
-                ax2 = ax.twinx()
-                for zcl_code in zcl_list:
-                    ax2.plot([2*max_Delta],[2*max_Delta],color=cmap_dict.get(zcl_code)(0.33),
-                            label=zcl_code)
+                    max_Delta = max(max_max_Delta_x*1.01, max_max_Delta_y*1.01)
+                    ax.set_xlim([-max_Delta,max_Delta])
+                    ax.set_ylim([-max_Delta,max_Delta])
                     
-                
-                # title = '{} - {}'.format(dict_all_components.get(component).get('var_label'), zcl.code) 
-                ax.set_title(building_type)
-                
-                ax.plot([0,0],[-max_Delta,max_Delta],ls=':',color='k',zorder=-1)
-                ax.plot([-max_Delta,max_Delta],[0,0],ls=':',color='k',zorder=-1)
-                ax.fill_between([-max_Delta,max_Delta],[max_Delta,-max_Delta],[-max_Delta,-max_Delta],
-                                color='lightgrey',alpha=0.5,zorder=-2)
-                
-                ax.set_xlabel('Gains in cooling needs (kWh.yr$^{-1}$.m$^{-2}$)')
-                ax.set_ylabel('Gains in heating needs (kWh.yr$^{-1}$.m$^{-2}$)')
-                ax.legend(loc='lower left')
-                ax2.legend(loc='lower right')
-                plt.savefig(os.path.join(figs_folder,'interactions_aggregated_{}.png'.format(building_type)), bbox_inches='tight')
-                plt.show()
+                    for idx_marker, marker in enumerate(marker_list):
+                        ax.plot([2*max_Delta],[2*max_Delta],color='k',marker=marker,
+                                label=component_list[idx_marker],mfc='w')
+                    
+                    ax2 = ax.twinx()
+                    for zcl_code in zcl_list:
+                        ax2.plot([2*max_Delta],[2*max_Delta],color=cmap_dict.get(zcl_code)(0.33),
+                                label=zcl_code)
+                    ax2.set_yticks([])
+                    
+                    # title = '{} - {}'.format(dict_all_components.get(component).get('var_label'), zcl.code) 
+                    ax.set_title(building_type)
+                    
+                    ax.plot([0,0],[-max_Delta,max_Delta],ls=':',color='k',zorder=-1)
+                    ax.plot([-max_Delta,max_Delta],[0,0],ls=':',color='k',zorder=-1)
+                    ax.fill_between([-max_Delta,max_Delta],[max_Delta,-max_Delta],[-max_Delta,-max_Delta],
+                                    color='lightgrey',alpha=0.5,zorder=-2)
+                    
+                    ax.set_xlabel('Gains in cooling needs (kWh.yr$^{-1}$.m$^{-2}$)')
+                    ax.set_ylabel('Gains in heating needs (kWh.yr$^{-1}$.m$^{-2}$)')
+                    ax.legend(loc='lower left')
+                    ax2.legend(loc='lower right')
+                    plt.savefig(os.path.join(figs_folder,'interactions_aggregated_{}.png'.format(building_type)), bbox_inches='tight')
+                    plt.show()
                             
                 
             
     #%% Combinaisons de gestes de rénovations
-    if False:
+    if True:
         
         # first test 
         if False:
