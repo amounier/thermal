@@ -797,7 +797,7 @@ def main():
                 
         
         # représentativité et écarts par rapport à la distribution par étiquette
-        if True:
+        if False:
             # cartes 
             if True:
                 # TODO : representativity à recalculer
@@ -1064,7 +1064,7 @@ def main():
             typology_category_list = ['SFH','TH','MFH','AB']
             tabula_period_list = list(dict_tabula_period.keys())
             
-            if True:
+            if False:
                 dpe['group_typology_cat'] = pd.Categorical(dpe['group_typology'], typology_category_list)
                 # dpe['typology_cat'] = pd.Categorical(dpe['typology'], sorted(list(set(typo_list))))
                 dpe['periode_construction_tabula_cat'] = pd.Categorical(dpe['periode_construction_tabula'], tabula_period_list)
@@ -1102,27 +1102,29 @@ def main():
                 dict_sum_repartition_logements = df_typo_repartition_logements.sum(axis=1).to_dict()
                 dict_sum_repartition_batiments = df_typo_repartition_batiments.sum(axis=1).to_dict()
                 
-                fig,ax = plt.subplots(figsize=(5*(len(dict_tabula_period.keys())/4),5), dpi=300)
-                sns.heatmap(df_typo_repartition_logements, annot=True, fmt=".1f",cmap='viridis',cbar=False)
-                for j,typ in enumerate(typology_category_list):
-                    ax.text(len(tabula_period_list)+0.5,j+0.5,'{:.1f}%'.format(dict_sum_repartition_logements.get(typ)),
-                            ha='right',va='center')
-                ax.set_title('Distribution of households (%)')
-                plt.savefig(os.path.join(figs_folder,'distribution_tabula_households_ponderated.png'), bbox_inches='tight')
-                plt.show()
-                
-                fig,ax = plt.subplots(figsize=(5*(len(dict_tabula_period.keys())/4),5), dpi=300)
-                sns.heatmap(df_typo_repartition_batiments, annot=True, fmt=".1f",cmap='viridis',cbar=False)
-                for j,typ in enumerate(typology_category_list):
-                    ax.text(len(tabula_period_list)+0.5,j+0.5,'{:.1f}%'.format(dict_sum_repartition_batiments.get(typ)),
-                            ha='right',va='center')
-                ax.set_title('Distribution of buildings (%)')
-                plt.savefig(os.path.join(figs_folder,'distribution_tabula_buildings_ponderated.png'), bbox_inches='tight')
-                plt.show()
+                # heatmaps
+                if False:
+                    fig,ax = plt.subplots(figsize=(5*(len(dict_tabula_period.keys())/4),5), dpi=300)
+                    sns.heatmap(df_typo_repartition_logements, annot=True, fmt=".1f",cmap='viridis',cbar=False)
+                    for j,typ in enumerate(typology_category_list):
+                        ax.text(len(tabula_period_list)+0.5,j+0.5,'{:.1f}%'.format(dict_sum_repartition_logements.get(typ)),
+                                ha='right',va='center')
+                    ax.set_title('Distribution of households (%)')
+                    plt.savefig(os.path.join(figs_folder,'distribution_tabula_households_ponderated.png'), bbox_inches='tight')
+                    plt.show()
+                    
+                    fig,ax = plt.subplots(figsize=(5*(len(dict_tabula_period.keys())/4),5), dpi=300)
+                    sns.heatmap(df_typo_repartition_batiments, annot=True, fmt=".1f",cmap='viridis',cbar=False)
+                    for j,typ in enumerate(typology_category_list):
+                        ax.text(len(tabula_period_list)+0.5,j+0.5,'{:.1f}%'.format(dict_sum_repartition_batiments.get(typ)),
+                                ha='right',va='center')
+                    ax.set_title('Distribution of buildings (%)')
+                    plt.savefig(os.path.join(figs_folder,'distribution_tabula_buildings_ponderated.png'), bbox_inches='tight')
+                    plt.show()
 
 
             # statistiques sur les valeurs U par typologie
-            if True:
+            if False:
                 for typo_group in ['SFH', 'TH', 'MFH', 'AB']:
                 # typo_group = 'AB' # SFH, TH, MFH, AB
                     hue_order = ['FR.N.{}.{:02d}.Gen'.format(typo_group,n) for n in range(1,12)]
@@ -1166,7 +1168,8 @@ def main():
                         ax.set_ylabel('Density')
                         plt.savefig(os.path.join(figs_folder,'bdnb_distribution_{}_{}.png'.format(typo_group,var)), bbox_inches='tight')
                         plt.show()
-                    
+            
+            # densité cumulée inverse
             if False:
                 for typo_group in ['SFH', 'TH', 'MFH', 'AB']:
                 # typo_group = 'AB' # SFH, TH, MFH, AB
@@ -1199,9 +1202,135 @@ def main():
                         plt.show()
                 
                 # print(dpe[dpe.group_typology==typo_group].dpe_mix_arrete_epaisseur_isolation_mur_exterieur_estim.value_counts())
-                
-                
             
+            # statistiques sur les systèmes de chauffage par typologie
+            if True:
+                # for typo_group in ['SFH', 'TH', 'MFH', 'AB']:
+                for typo_group in ['SFH']:
+                # typo_group = 'AB' # SFH, TH, MFH, AB
+                    hue_order = ['FR.N.{}.{:02d}.Gen'.format(typo_group,n) for n in range(1,12)]
+                    
+                    cmap = matplotlib.colormaps.get_cmap('viridis')
+                    
+                    dpe['heating_system'] = ['{}-{}'.format(en,ty) for en,ty in zip(dpe.dpe_mix_arrete_type_energie_chauffage,dpe.dpe_mix_arrete_type_generateur_chauffage)]
+                    
+                    heating_systems_mapping = {'bois-chaudiere bois':'Wood fuel-Performance boiler',
+                                               'bois-chaudiere fioul standard':'Wood fuel-Performance boiler',
+                                               'bois-generateur air chaud combustion':'Wood fuel-Performance boiler',
+                                               'bois-poele ou insert bois':'Wood fuel-Performance boiler',
+                                               'charbon-chaudiere charbon basse temperature':'Oil fuel-Performance boiler',
+                                               'charbon-chaudiere charbon standard':'Oil fuel-Performance boiler',
+                                               'charbon-poele ou insert charbon':'Oil fuel-Performance boiler',
+                                               'electricite-chaudiere electrique':'Electricity-Direct electric',
+                                               'electricite-chaudiere fioul standard':'Electricity-Direct electric',
+                                               'electricite-generateur air chaud combustion':'Electricity-Direct electric',
+                                               'electricite-generateurs a effet joule':'Electricity-Direct electric',
+                                               'electricite-pac air/air':'Electricity-Heat pump air',
+                                               'electricite-pac air/eau':'Electricity-Heat pump water',
+                                               'electricite-pac eau/eau':'Electricity-Heat pump water',
+                                               'electricite-pac geothermique':'Electricity-Heat pump water',
+                                               'fioul-chaudiere fioul basse temperature':'Oil fuel-Performance boiler',
+                                               'fioul-chaudiere fioul condensation':'Oil fuel-Performance boiler',
+                                               'fioul-chaudiere fioul standard':'Oil fuel-Performance boiler',
+                                               'fioul-generateur air chaud combustion':'Oil fuel-Performance boiler',
+                                               'fioul-poele ou insert fioul':'Oil fuel-Performance boiler',
+                                               'gaz-chaudiere fioul standard':'Natural gas-Performance boiler',
+                                               'gaz-chaudiere gaz basse temperature':'Natural gas-Performance boiler',
+                                               'gaz-chaudiere gaz condensation':'Natural gas-Performance boiler',
+                                               'gaz-chaudiere gaz standard':'Natural gas-Performance boiler',
+                                               'gaz-generateur air chaud combustion':'Natural gas-Performance boiler',
+                                               'gaz-pac air/eau':'Natural gas-Performance boiler',
+                                               'gaz-radiateurs gaz':'Natural gas-Performance boiler',
+                                               'gpl/butane/propane-chaudiere fioul standard':'Natural gas-Performance boiler',
+                                               'gpl/butane/propane-chaudiere gaz basse temperature':'Natural gas-Performance boiler',
+                                               'gpl/butane/propane-chaudiere gaz condensation':'Natural gas-Performance boiler',
+                                               'gpl/butane/propane-chaudiere gaz standard':'Natural gas-Performance boiler',
+                                               'gpl/butane/propane-chaudiere gpl/butane/propane basse temperature':'Natural gas-Performance boiler',
+                                               'gpl/butane/propane-chaudiere gpl/butane/propane condensation':'Natural gas-Performance boiler',
+                                               'gpl/butane/propane-chaudiere gpl/butane/propane standard':'Natural gas-Performance boiler',
+                                               'gpl/butane/propane-generateur air chaud combustion':'Natural gas-Performance boiler',
+                                               'gpl/butane/propane-pac air/eau':'Natural gas-Performance boiler',
+                                               'gpl/butane/propane-poele ou insert gpl/butane/propane':'Natural gas-Performance boiler',
+                                               'gpl/butane/propane-radiateurs gaz':'Natural gas-Performance boiler',
+                                               'reseau de chaleur-chaudiere bois':'Heating-District heating',
+                                               'reseau de chaleur-chaudiere charbon standard':'Heating-District heating',
+                                               'reseau de chaleur-chaudiere fioul standard':'Heating-District heating',
+                                               'reseau de chaleur-chaudiere gaz standard':'Heating-District heating',
+                                               'reseau de chaleur-pac air/eau':'Heating-District heating',
+                                               'reseau de chaleur-reseau de chaleur':'Heating-District heating',
+                                               'solaire-chauffage solaire':'Heating-District heating'}
+                    
+                    dpe['heating_system'] = [heating_systems_mapping.get(e) for e in dpe.heating_system]
+                    
+                    heater_typologies = pd.DataFrame(dpe[['typology','heating_system']].value_counts()).reset_index()
+                    # print(heater_typologies)
+                    
+                    list_systems = ['Electricity-Direct electric','Electricity-Heat pump air','Electricity-Heat pump water','Heating-District heating','Natural gas-Performance boiler', 'Oil fuel-Performance boiler','Wood fuel-Performance boiler']
+                    
+                    heater_typologies_data = {'Energy systems':list_systems}
+                    # building_type = 'SFH'
+                    for building_type in ['SFH','TH','MFH','AB']:
+                        for i in range(1,12):
+                            typo = 'FR.N.{}.{:02d}.Gen'.format(building_type,i)
+                            
+                            heater_typology = heater_typologies[heater_typologies.typology==typo]
+                            total_count = heater_typology['count'].sum()
+                            
+                            list_syst = []
+                            for syst in list_systems:
+                                data_syst = heater_typology[heater_typology.heating_system==syst]
+                                if data_syst.empty:
+                                    list_syst.append(0)
+                                else:
+                                    syst_count = data_syst['count'].values[0]
+                                    list_syst.append(syst_count/total_count)
+                            heater_typologies_data[typo] = list_syst
+                                
+                    freq_heating_systems_typo = pd.DataFrame().from_dict(heater_typologies_data).set_index('Energy systems')
+                    freq_heating_systems_typo.to_csv(os.path.join(output, folder,'statistics_energy_systems_typologies.csv'))
+                    
+                    # heatmaps
+                    if False:
+                        for building_type in ['SFH','TH','MFH','AB']:
+                        
+                            cols = [e for e in freq_heating_systems_typo.columns if building_type in e]
+                            freq_heating_systems_typo_bt = freq_heating_systems_typo[cols]
+                            
+                            cols_name_dict = {e:'.'.join(e.split('.')[2:4]) for e in cols}
+                            freq_heating_systems_typo_bt = freq_heating_systems_typo_bt.rename(columns=cols_name_dict)
+                            
+                            idx_name_dict = {'Electricity-Direct electric':'Direct electric',
+                                             'Electricity-Heat pump air':'Heat pump air',
+                                             'Electricity-Heat pump water':'Heat pump water',
+                                             'Heating-District heating':'District heating',
+                                             'Natural gas-Performance boiler':'Gas boiler',
+                                             'Oil fuel-Performance boiler':'Oil boiler',
+                                             'Wood fuel-Performance boiler':'Wood boiler'}
+                            freq_heating_systems_typo_bt.index = [idx_name_dict.get(e) for e in freq_heating_systems_typo_bt.index]
+                            
+                           
+                            norm = matplotlib.colors.Normalize(vmin=0, vmax=1)
+                            mappable = matplotlib.cm.ScalarMappable(norm=norm, cmap=cmap)
+                            
+                            fig,ax = plt.subplots(dpi=300,figsize=(8,5))
+                            ax = sns.heatmap(freq_heating_systems_typo_bt,ax=ax,cbar=False,cmap=cmap,vmin=0.,vmax=1,annot=True,fmt=".2f")
+                            ax.set_title('')
+                            ax.set_ylabel('')
+                            ax.set_xlabel('')
+                            
+                            ylims = ax.get_ylim()
+                            for n in range(1,len(cols)):
+                                ax.plot([n]*2,ylims,color='w')
+                            
+                            ax_cb = fig.add_axes([0,0,0.1,0.1])
+                            posn = ax.get_position()
+                            ax_cb.set_position([posn.x0+posn.width+0.01, posn.y0, 0.03, posn.height])
+                            fig.add_axes(ax_cb)
+                            cbar = plt.colorbar(mappable, cax=ax_cb,extendfrac=0.02)
+                            cbar.set_label('Systems ratio')
+                            plt.savefig(os.path.join(figs_folder,'{}.png'.format('heater_statistics_{}'.format(building_type))),bbox_inches='tight')
+                            plt.show()
+                        
         # carte des alentours d'un batiment
         if False:
             neighbourhood_map('bdnb-bg-117G-LB5M-XT4U', path=None, save=False)
