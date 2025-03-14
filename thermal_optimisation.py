@@ -15,8 +15,10 @@ import tqdm
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
+import matplotlib as mpl
 from sklearn.metrics import r2_score
 import multiprocessing
+import seaborn as sns
 
 from meteorology import get_historical_weather_data, get_safran_hourly_weather_data
 from thermal_model import (refine_resolution, 
@@ -617,7 +619,8 @@ def get_components_dict_multi_actions(multi_action_idx):
         DESCRIPTION.
 
     """
-    actions_list = ['floor','walls','roof','albedo','ventilation','shading','windows']
+    # actions_list = ['floor','walls','roof','albedo','ventilation','shading','windows']
+    actions_list = ['walls','windows','roof','ventilation','shading','floor','albedo']
     
     multi_action_binary = '{0:07b}'.format(multi_action_idx)
     res_dict = {actions_list[idx]:bool(int(b)) for idx,b in enumerate(multi_action_binary)}
@@ -763,7 +766,7 @@ def compute_energy_needs_multi_actions(multi_action_idx,typo_code,zcl,output_pat
 def get_energy_needs_multi_actions(multi_action_idx,typo_code,zcl,output_path,
                                    behaviour='conventionnel',period=[2000,2020], 
                                    model='explore2', nmod=1,natnocvent=False):
-    
+    # TODO : à modifier pour prendre en compte tous les modèles climatiques 
     typo = Typology(typo_code)
     
     if behaviour == 'conventionnel':
@@ -1603,8 +1606,8 @@ def main():
                         zcl = Climat(zcl_code)
                         # for building_type in ['SFH','TH','MFH','AB']:
                         for building_type in ['SFH']:
-                            # for i in range(1,11):
-                            for i in range(1,2):
+                            for i in range(1,11):
+                            # for i in range(1,5):
                                 code = 'FR.N.{}.{:02d}.Gen'.format(building_type,i)
                                 
                                 run_list.append((ma_idx,
@@ -1614,16 +1617,18 @@ def main():
                                                  'conventionnel',
                                                  [2000,2020],
                                                  'explore2',
-                                                 mod))
+                                                 mod,
+                                                 nocturnal_natural_cooling))
                                 
-                                # run_list.append((ma_idx,
-                                #                  code,
-                                #                  zcl,
-                                #                  os.path.join(output, folder),
-                                #                  'conventionnel',
-                                #                  models_period_dict.get(mod).get(2),
-                                #                  'explore2',
-                                #                  mod))
+                                run_list.append((ma_idx,
+                                                 code,
+                                                 zcl,
+                                                 os.path.join(output, folder),
+                                                 'conventionnel',
+                                                 models_period_dict.get(mod).get(2),
+                                                 'explore2',
+                                                 mod,
+                                                 nocturnal_natural_cooling))
                                 
                                 run_list.append((ma_idx,
                                                  code,
@@ -1632,7 +1637,8 @@ def main():
                                                  'conventionnel',
                                                  models_period_dict.get(mod).get(4),
                                                  'explore2',
-                                                 mod))
+                                                 mod,
+                                                 nocturnal_natural_cooling))
             
             nb_cpu = multiprocessing.cpu_count()
             pool = multiprocessing.Pool(nb_cpu)
@@ -1642,13 +1648,20 @@ def main():
         # ouverture et affichage des données 
         if True:
             
-            # premier test : une seule typologie
+            # premier test 
             if True:
+                zcl_code = 'H1b'
+                zcl_code = 'H3'
+                building_type = 'SFH'
+                nocturnal_natural_cooling = True
+                nocturnal_natural_cooling = False
                 
-                Bch, Bfr = [],[]
                 
-                zcl_list = ['H1b']
-                # zcl_list = ['H3']
+                Bch, Bfr, Btot = {},{},{}
+                results_dict = {}
+                
+                
+                zcl_list = [zcl_code]
                 
                 run_list = []
                 # for mod in list(range(5)):
@@ -1657,30 +1670,165 @@ def main():
                         for zcl_code in zcl_list:
                             zcl = Climat(zcl_code)
                             # for building_type in ['SFH','TH','MFH','AB']:
-                            for building_type in ['SFH']:
-                                # for i in range(1,11):
-                                for i in range(1,2):
-                                    code = 'FR.N.{}.{:02d}.Gen'.format(building_type,i)
+                            for bt in [building_type]:
+                                for i in range(1,11):
+                                # for i in range(1,5):
+                                    code = 'FR.N.{}.{:02d}.Gen'.format(bt,i)
                                     
-                                    Bch_list, Bfr_list, Btot_list = get_energy_needs_multi_actions(ma_idx,code,zcl,os.path.join(output, folder),'conventionnel',[2000,2020],'explore2',mod)
-                                    # Bch_list, Bfr_list, Btot_list = get_energy_needs_multi_actions(ma_idx,code,zcl,os.path.join(output, folder),'conventionnel',models_period_dict.get(mod).get(4),'explore2',mod)
+                                    # REF
+                                    code_period = code + ' - ' + '2000-2020'
+                                    Bch_list, Bfr_list, Btot_list = get_energy_needs_multi_actions(ma_idx,code,zcl,os.path.join(output, folder),'conventionnel',[2000,2020],'explore2',mod,nocturnal_natural_cooling)
                                     
-                                    Bch.append(np.mean(np.asarray(Bch_list)))
-                                    Bfr.append(np.mean(np.asarray(Bfr_list)))
+                                    if code_period not in Bch.keys():
+                                        Bch[code_period] = []
+                                        
+                                    if code_period not in Bfr.keys():
+                                        Bfr[code_period] = []
+                                        
+                                    Bch[code_period].append(np.mean(np.asarray(Bch_list)))
+                                    Bfr[code_period].append(np.mean(np.asarray(Bfr_list)))
                 
-                Btot = np.asarray(Bfr)+np.asarray(Bch)
+                                    if code_period not in Btot.keys():
+                                        Btot[code_period] = []
                 
-                fig,ax = plt.subplots(dpi=300,figsize=(15,5))
-                ax.plot(list(range(128)),Bch,label='Bch',color='tab:red')
-                ax.plot(list(range(128)),Bfr,label='Bfr',color='tab:blue')
-                ax.plot(list(range(128)),Btot,label='Btot',color='k')
-                ax.legend()
-                plt.show()
-                           
-                ma_idx = Btot.argmin()
-                print(get_components_dict_multi_actions(ma_idx))
-    
-    
+                                    Btot[code_period] = np.asarray(Bfr[code_period])+np.asarray(Bch[code_period])
+                                    
+                                    # + 2
+                                    code_period = code + ' - ' + '+2°C'
+                                    Bch_list, Bfr_list, Btot_list = get_energy_needs_multi_actions(ma_idx,code,zcl,os.path.join(output, folder),'conventionnel',models_period_dict.get(mod).get(2),'explore2',mod,nocturnal_natural_cooling)
+                                    
+                                    if code_period not in Bch.keys():
+                                        Bch[code_period] = []
+                                        
+                                    if code_period not in Bfr.keys():
+                                        Bfr[code_period] = []
+                                        
+                                    Bch[code_period].append(np.mean(np.asarray(Bch_list)))
+                                    Bfr[code_period].append(np.mean(np.asarray(Bfr_list)))
+
+                                    if code_period not in Btot.keys():
+                                        Btot[code_period] = []
+                                        
+                                    Btot[code_period] = np.asarray(Bfr[code_period])+np.asarray(Bch[code_period])
+                                    
+                                    # + 4
+                                    code_period = code + ' - ' + '+4°C'
+                                    Bch_list, Bfr_list, Btot_list = get_energy_needs_multi_actions(ma_idx,code,zcl,os.path.join(output, folder),'conventionnel',models_period_dict.get(mod).get(4),'explore2',mod,nocturnal_natural_cooling)
+                                    
+                                    if code_period not in Bch.keys():
+                                        Bch[code_period] = []
+                                        
+                                    if code_period not in Bfr.keys():
+                                        Bfr[code_period] = []
+                                        
+                                    Bch[code_period].append(np.mean(np.asarray(Bch_list)))
+                                    Bfr[code_period].append(np.mean(np.asarray(Bfr_list)))
+                                    
+                                    if code_period not in Btot.keys():
+                                        Btot[code_period] = []
+                                        
+                                    Btot[code_period] = np.asarray(Bfr[code_period])+np.asarray(Bch[code_period])
+                
+                # graphe d'une typo
+                if False:
+                    code = 'FR.N.{}.{:02d}.Gen'.format('SFH',1)
+                    
+                    fig,ax = plt.subplots(dpi=300,figsize=(15,5))
+                    ax.plot(list(range(128)),Bch[code],label='Bch',color='tab:red')
+                    ax.plot(list(range(128)),Bfr[code],label='Bfr',color='tab:blue')
+                    ax.plot(list(range(128)),Btot[code],label='Btot',color='k')
+                    ax.legend()
+                    plt.show()
+                               
+                    ma_idx = Btot[code].argmin()
+                    print(get_components_dict_multi_actions(ma_idx))
+                
+                # sous forme d'heatmap
+                if True:
+                    # results_dict = {'Multi-actions index':list(range(128)),
+                    #                 'Energy needs':list(Btot)}
+                    results_dict = {'Typologies':['FR.N.{}.{:02d}.Gen'.format(building_type,i) + ' = ' + period for building_type in ['SFH'] for i in range(1,11) for period in ['2000-2020','+2°C','+4°C']]}
+                    for idx in range(128):
+                        for period in ['2000-2020','+2°C','+4°C']:
+                            code_period = code + ' = ' + period
+                            results_dict[idx] = [Btot[code_period.replace('=','-')][idx] for code_period in results_dict['Typologies']]
+                    dataset = pd.DataFrame().from_dict(results_dict)
+                    dataset['Period'] = [e.split('=')[-1] for e in dataset.Typologies]
+                    dataset['Typologies'] = [e.split('=')[0] for e in dataset.Typologies]
+                    # dataset = dataset.set_index(['Typologies', 'Period'])
+                    dataset = dataset.set_index('Period')
+                    
+                    # dataset.index = [ ]
+                    # dataset.index = dataset.index.set_levels(['\\phantom{'+e[0]+'}' if '+' in e[1] else e[0] for e in dataset.index], level=0)
+                    
+                    cmap = {'H1b':'Blues','H3':'Reds'}.get(zcl_list[0])
+                    vmax = dataset.drop(columns='Typologies').max().max()
+                    norm = mpl.colors.Normalize(vmin=0, vmax=vmax)
+                    mappable = mpl.cm.ScalarMappable(norm=norm, cmap=cmap)
+                    
+                    # fig,ax = plt.subplots(dpi=300,figsize=(15,len(results_dict['Typologies'])/2))
+                    fig,ax = plt.subplots(dpi=300,figsize=(10,10))
+                    ax = sns.heatmap(dataset.drop(columns='Typologies'),ax=ax,cbar=False,cmap=cmap,vmin=0.)
+                    ax.set_title(zcl_list[0])
+                    ax.set_ylabel('')
+                    ax.set_xlabel('Multi-actions combination index')
+                    
+                    xlims = ax.get_xlim()
+                    for n in range(0,int(len(dataset)/3)):
+                        # print(dataset['Typologies'].values[3*n],dataset[0].values[3*n],vmax)
+                        if dataset[0].values[3*n] < 0.5*vmax:
+                            color = 'k'
+                        else:
+                            color = 'w'
+                        ax.text(1,3*n+0.5,dataset['Typologies'].values[3*n],color=color,va='center')
+                    for n in range(1,int(len(dataset)/3)):
+                        ax.plot(xlims,[3*n]*2,color='w')
+                    
+                    min_idxs = dataset.drop(columns='Typologies').idxmin(axis=1)
+                    for line, idx_min in enumerate(min_idxs.values):
+                        ax.plot([idx_min,idx_min+1],[line,line],color='k')
+                        ax.plot([idx_min,idx_min],[line,line+1],color='k')
+                        ax.plot([idx_min+1,idx_min+1],[line,line+1],color='k')
+                        ax.plot([idx_min,idx_min+1],[line+1,line+1],color='k')
+                        
+                        # ax.text(idx_min,line,str(idx_min))
+                    
+                    
+
+                    ax_cb = fig.add_axes([0,0,0.1,0.1])
+                    posn = ax.get_position()
+                    ax_cb.set_position([posn.x0+posn.width+0.01, posn.y0, 0.03, posn.height])
+                    fig.add_axes(ax_cb)
+                    cbar = plt.colorbar(mappable, cax=ax_cb,extendfrac=0.02)
+                    cbar.set_label('Annual energy needs (kWh.m$^{-2}$.yr$^{-1}$)')
+                    plt.savefig(os.path.join(figs_folder,'{}.png'.format('multiactions_energy_needs_{}_{}'.format(building_type,zcl_code))),bbox_inches='tight')
+                    plt.show()
+            
+            
+            # calcul de l'optimum économique
+            if False:
+                
+                # passage des besoins aux consommations
+                
+                # passage des consommations aux couts
+                pass
+                
+            
+            # ordonnance de chaque composante
+            if False:
+                counter = 0
+                sum_dict = {k:{True:0,False:0} for k in get_components_dict_multi_actions(0).keys()}
+                for ma_idx in range(128):
+                    
+                    _, _, Btot_list = get_energy_needs_multi_actions(ma_idx,code,zcl,os.path.join(output, folder),'conventionnel',[2000,2020],'explore2',mod)
+                    dict_action = get_components_dict_multi_actions(ma_idx)
+                    
+                    for action,val in dict_action.items():
+                        sum_dict[action][val] += np.mean(np.asarray(Btot_list))
+                        
+                sns.heatmap(pd.DataFrame().from_dict(sum_dict))
+                    
+                    
     #%% Caractérisation de la part du refroidissement naturel
     if False:
         
