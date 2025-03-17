@@ -19,6 +19,7 @@ import matplotlib as mpl
 from sklearn.metrics import r2_score
 import multiprocessing
 import seaborn as sns
+import cmocean
 
 from meteorology import get_historical_weather_data, get_safran_hourly_weather_data
 from thermal_model import (refine_resolution, 
@@ -764,8 +765,8 @@ def compute_energy_needs_multi_actions(multi_action_idx,typo_code,zcl,output_pat
 
 
 def get_energy_needs_multi_actions(multi_action_idx,typo_code,zcl,output_path,
-                                   behaviour='conventionnel',period=[2000,2020], 
-                                   model='explore2', nmod=1,natnocvent=False):
+                                   behaviour='conventionnel',period_label='ref', 
+                                   model='explore2',natnocvent=False):
     # TODO : à modifier pour prendre en compte tous les modèles climatiques 
     typo = Typology(typo_code)
     
@@ -775,16 +776,109 @@ def get_energy_needs_multi_actions(multi_action_idx,typo_code,zcl,output_path,
             behaviour.nocturnal_ventilation = True
             behaviour.update_name()
     
-    var_saver = 'multiactions{}_{}_{}_{}_{}-{}_mod{}_reftest'.format(multi_action_idx,typo_code,zcl.code,behaviour.full_name,period[0],period[1],nmod)
-    
-    Bch_list,Bfr_list = pickle.load(open(os.path.join(os.path.join(output_path),'{}.pickle'.format(var_saver)), 'rb'))
-    
-    Bch_list = np.asarray(Bch_list)/(1e3 * typo.surface)
-    Bfr_list = np.asarray(Bfr_list)/(1e3 * typo.surface)
-    Btot_list = Bch_list + Bfr_list
+    Bch_list, Bfr_list, Btot_list = [],[],[]
+    for nmod in range(5):
+        if period_label == 'ref':
+            period = [2000,2020]
+        else:
+            period = models_period_dict.get(nmod).get(period_label)
+        var_saver = 'multiactions{}_{}_{}_{}_{}-{}_mod{}_reftest'.format(multi_action_idx,typo_code,zcl.code,behaviour.full_name,period[0],period[1],nmod)
+        
+        if nmod == 0:
+            Bch_list,Bfr_list = pickle.load(open(os.path.join(os.path.join(output_path),'{}.pickle'.format(var_saver)), 'rb'))
+            
+            Bch_list = np.asarray(Bch_list)/(1e3 * typo.surface)
+            Bfr_list = np.asarray(Bfr_list)/(1e3 * typo.surface)
+            Btot_list = Bch_list + Bfr_list
+            
+        else:
+            try:
+                Bch_list_n,Bfr_list_n = pickle.load(open(os.path.join(os.path.join(output_path),'{}.pickle'.format(var_saver)), 'rb'))
+                Bch_list_n = np.asarray(Bch_list_n)/(1e3 * typo.surface)
+                Bfr_list_n = np.asarray(Bfr_list_n)/(1e3 * typo.surface)
+                Btot_list_n = Bch_list_n + Bfr_list_n
+                
+                Bch_list = np.concatenate((Bch_list,Bch_list_n))
+                Bfr_list = np.concatenate((Bfr_list,Bfr_list_n))
+                Bfr_list = np.concatenate((Bfr_list,Btot_list_n))
+            except FileNotFoundError:
+                continue
     
     return Bch_list, Bfr_list, Btot_list
 
+
+def create_combination_results_dict(zcl_code,building_type,output_path, natnocvent=True,std=False):
+    Bch, Bfr, Btot = {},{},{}
+    
+    zcl_list = [zcl_code]
+    
+    for ma_idx in range(128):
+        for zcl_code in zcl_list:
+            zcl = Climat(zcl_code)
+            # for building_type in ['SFH','TH','MFH','AB']:
+            for bt in [building_type]:
+                for i in range(1,11):
+                # for i in range(1,5):
+                    code = 'FR.N.{}.{:02d}.Gen'.format(bt,i)
+                    
+                    # REF
+                    code_period = code + '-' + '2000-2020'
+                    Bch_list, Bfr_list, Btot_list = get_energy_needs_multi_actions(ma_idx,code,zcl,output_path,'conventionnel','ref','explore2',natnocvent)
+                    
+                    if code_period not in Bch.keys():
+                        Bch[code_period] = []
+                        
+                    if code_period not in Bfr.keys():
+                        Bfr[code_period] = []
+                    
+                    # if std:
+                    #     Bch[code_period].append(np.std(np.asarray(Bch_list)))
+                    #     Bfr[code_period].append(np.std(np.asarray(Bfr_list)))
+                    # else:
+                    Bch[code_period].append(np.mean(np.asarray(Bch_list)))
+                    Bfr[code_period].append(np.mean(np.asarray(Bfr_list)))
+
+                    if code_period not in Btot.keys():
+                        Btot[code_period] = []
+
+                    Btot[code_period] = np.asarray(Bfr[code_period])+np.asarray(Bch[code_period])
+                    
+                    # + 2
+                    code_period = code + '-' + '+2°C'
+                    Bch_list, Bfr_list, Btot_list = get_energy_needs_multi_actions(ma_idx,code,zcl,output_path,'conventionnel',2,'explore2',natnocvent)
+                    
+                    if code_period not in Bch.keys():
+                        Bch[code_period] = []
+                        
+                    if code_period not in Bfr.keys():
+                        Bfr[code_period] = []
+                        
+                    Bch[code_period].append(np.mean(np.asarray(Bch_list)))
+                    Bfr[code_period].append(np.mean(np.asarray(Bfr_list)))
+
+                    if code_period not in Btot.keys():
+                        Btot[code_period] = []
+                        
+                    Btot[code_period] = np.asarray(Bfr[code_period])+np.asarray(Bch[code_period])
+                    
+                    # + 4
+                    code_period = code + '-' + '+4°C'
+                    Bch_list, Bfr_list, Btot_list = get_energy_needs_multi_actions(ma_idx,code,zcl,output_path,'conventionnel',4,'explore2',natnocvent)
+                    
+                    if code_period not in Bch.keys():
+                        Bch[code_period] = []
+                        
+                    if code_period not in Bfr.keys():
+                        Bfr[code_period] = []
+                        
+                    Bch[code_period].append(np.mean(np.asarray(Bch_list)))
+                    Bfr[code_period].append(np.mean(np.asarray(Bfr_list)))
+                    
+                    if code_period not in Btot.keys():
+                        Btot[code_period] = []
+                        
+                    Btot[code_period] = np.asarray(Bfr[code_period])+np.asarray(Bch[code_period])
+    return Bch,Bfr,Btot
 
 #%% ===========================================================================
 # script principal
@@ -809,7 +903,7 @@ def main():
     
     
     #%% Variation des paramètres d'isolation 
-    if True:
+    if False:
         
         # Caractérisation du temps de calcul
         if False:
@@ -1578,16 +1672,14 @@ def main():
             typo_code = 'FR.N.SFH.09.Gen'
             # zcl = Climat('H1b')
             zcl = Climat('H3')
-            mod = 1
             
             compute_energy_needs_multi_actions(multi_action_idx=ma_idx,
                                                typo_code=typo_code,
                                                zcl=zcl,
                                                output_path=os.path.join(output, folder),
                                                behaviour='conventionnel',
-                                               period=[2000,2020],
+                                               period='ref',
                                                model='explore2',
-                                               nmod=mod,
                                                natnocvent=False)
             
             Bch_list, Bfr_list, Btot_list = get_energy_needs_multi_actions(ma_idx,typo_code,zcl,os.path.join(output, folder),'conventionnel',[2000,2020],'explore2',mod,False)
@@ -1600,7 +1692,7 @@ def main():
             
             run_list = []
             # for mod in list(range(5)):
-            for mod in [1]:
+            for mod in [0,1]:
                 for ma_idx in range(128):
                     for zcl_code in zcl_list:
                         zcl = Climat(zcl_code)
@@ -1649,89 +1741,19 @@ def main():
         if True:
             
             # premier test 
-            if True:
+            if False:
                 zcl_code = 'H1b'
-                zcl_code = 'H3'
+                # zcl_code = 'H3'
                 building_type = 'SFH'
                 nocturnal_natural_cooling = True
-                nocturnal_natural_cooling = False
+                # nocturnal_natural_cooling = False
                 
-                
-                Bch, Bfr, Btot = {},{},{}
-                results_dict = {}
-                
-                
-                zcl_list = [zcl_code]
-                
-                run_list = []
-                # for mod in list(range(5)):
-                for mod in [1]:
-                    for ma_idx in range(128):
-                        for zcl_code in zcl_list:
-                            zcl = Climat(zcl_code)
-                            # for building_type in ['SFH','TH','MFH','AB']:
-                            for bt in [building_type]:
-                                for i in range(1,11):
-                                # for i in range(1,5):
-                                    code = 'FR.N.{}.{:02d}.Gen'.format(bt,i)
-                                    
-                                    # REF
-                                    code_period = code + ' - ' + '2000-2020'
-                                    Bch_list, Bfr_list, Btot_list = get_energy_needs_multi_actions(ma_idx,code,zcl,os.path.join(output, folder),'conventionnel',[2000,2020],'explore2',mod,nocturnal_natural_cooling)
-                                    
-                                    if code_period not in Bch.keys():
-                                        Bch[code_period] = []
-                                        
-                                    if code_period not in Bfr.keys():
-                                        Bfr[code_period] = []
-                                        
-                                    Bch[code_period].append(np.mean(np.asarray(Bch_list)))
-                                    Bfr[code_period].append(np.mean(np.asarray(Bfr_list)))
-                
-                                    if code_period not in Btot.keys():
-                                        Btot[code_period] = []
-                
-                                    Btot[code_period] = np.asarray(Bfr[code_period])+np.asarray(Bch[code_period])
-                                    
-                                    # + 2
-                                    code_period = code + ' - ' + '+2°C'
-                                    Bch_list, Bfr_list, Btot_list = get_energy_needs_multi_actions(ma_idx,code,zcl,os.path.join(output, folder),'conventionnel',models_period_dict.get(mod).get(2),'explore2',mod,nocturnal_natural_cooling)
-                                    
-                                    if code_period not in Bch.keys():
-                                        Bch[code_period] = []
-                                        
-                                    if code_period not in Bfr.keys():
-                                        Bfr[code_period] = []
-                                        
-                                    Bch[code_period].append(np.mean(np.asarray(Bch_list)))
-                                    Bfr[code_period].append(np.mean(np.asarray(Bfr_list)))
-
-                                    if code_period not in Btot.keys():
-                                        Btot[code_period] = []
-                                        
-                                    Btot[code_period] = np.asarray(Bfr[code_period])+np.asarray(Bch[code_period])
-                                    
-                                    # + 4
-                                    code_period = code + ' - ' + '+4°C'
-                                    Bch_list, Bfr_list, Btot_list = get_energy_needs_multi_actions(ma_idx,code,zcl,os.path.join(output, folder),'conventionnel',models_period_dict.get(mod).get(4),'explore2',mod,nocturnal_natural_cooling)
-                                    
-                                    if code_period not in Bch.keys():
-                                        Bch[code_period] = []
-                                        
-                                    if code_period not in Bfr.keys():
-                                        Bfr[code_period] = []
-                                        
-                                    Bch[code_period].append(np.mean(np.asarray(Bch_list)))
-                                    Bfr[code_period].append(np.mean(np.asarray(Bfr_list)))
-                                    
-                                    if code_period not in Btot.keys():
-                                        Btot[code_period] = []
-                                        
-                                    Btot[code_period] = np.asarray(Bfr[code_period])+np.asarray(Bch[code_period])
                 
                 # graphe d'une typo
                 if False:
                     code = 'FR.N.{}.{:02d}.Gen'.format('SFH',1)
+                    
+                    Bch,Bfr,Btot = create_combination_results_dict('H3', 'SFH', os.path.join(output, folder))
                     
                     fig,ax = plt.subplots(dpi=300,figsize=(15,5))
                     ax.plot(list(range(128)),Bch[code],label='Bch',color='tab:red')
@@ -1745,12 +1767,12 @@ def main():
                 
                 # sous forme d'heatmap
                 if True:
-                    # results_dict = {'Multi-actions index':list(range(128)),
-                    #                 'Energy needs':list(Btot)}
-                    results_dict = {'Typologies':['FR.N.{}.{:02d}.Gen'.format(building_type,i) + ' = ' + period for building_type in ['SFH'] for i in range(1,11) for period in ['2000-2020','+2°C','+4°C']]}
+                    Bch,Bfr,Btot = create_combination_results_dict(zcl_code, building_type, os.path.join(output, folder))
+                    
+                    results_dict = {'Typologies':['FR.N.{}.{:02d}.Gen'.format(building_type,i) + '=' + period for building_type in ['SFH'] for i in range(1,11) for period in ['2000-2020','+2°C','+4°C']]}
                     for idx in range(128):
                         for period in ['2000-2020','+2°C','+4°C']:
-                            code_period = code + ' = ' + period
+                            # code_period = code + '=' + period
                             results_dict[idx] = [Btot[code_period.replace('=','-')][idx] for code_period in results_dict['Typologies']]
                     dataset = pd.DataFrame().from_dict(results_dict)
                     dataset['Period'] = [e.split('=')[-1] for e in dataset.Typologies]
@@ -1806,12 +1828,290 @@ def main():
             
             
             # calcul de l'optimum économique
-            if False:
+            if True:
+                zcl_code = 'H1b'
+                zcl_code = 'H3'
+                building_type = 'SFH'
+                nocturnal_natural_cooling = True
                 
                 # passage des besoins aux consommations
                 
+                Bch,Bfr,Btot = create_combination_results_dict(zcl_code, building_type, os.path.join(output, folder))
+                
+                results_dict_heating = {'Typologies':['FR.N.{}.{:02d}.Gen'.format(building_type,i) + '=' + period for building_type in ['SFH'] for i in range(1,11) for period in ['2000-2020','+2°C','+4°C']]}
+                results_dict_cooling = {'Typologies':['FR.N.{}.{:02d}.Gen'.format(building_type,i) + '=' + period for building_type in ['SFH'] for i in range(1,11) for period in ['2000-2020','+2°C','+4°C']]}
+                for idx in range(128):
+                    for period in ['2000-2020','+2°C','+4°C']:
+                        # code_period = code + '=' + period
+                        results_dict_heating[idx] = [Bch[code_period.replace('=','-')][idx] for code_period in results_dict_heating['Typologies']]
+                        results_dict_cooling[idx] = [Bfr[code_period.replace('=','-')][idx] for code_period in results_dict_cooling['Typologies']]
+                
+                dataset_needs_heating = pd.DataFrame().from_dict(results_dict_heating)
+                dataset_needs_heating['Period'] = [e.split('=')[-1] for e in dataset_needs_heating.Typologies]
+                dataset_needs_heating['Typologies'] = [e.split('=')[0] for e in dataset_needs_heating.Typologies]
+                dataset_needs_heating = dataset_needs_heating.set_index('Period')
+                
+                dataset_needs_cooling = pd.DataFrame().from_dict(results_dict_cooling)
+                dataset_needs_cooling['Period'] = [e.split('=')[-1] for e in dataset_needs_cooling.Typologies]
+                dataset_needs_cooling['Typologies'] = [e.split('=')[0] for e in dataset_needs_cooling.Typologies]
+                dataset_needs_cooling = dataset_needs_cooling.set_index('Period')
+                
+                dataset_energy_systems = pd.read_csv(os.path.join('data','TABULA','statistics_energy_systems_typologies.csv')).set_index('Energy systems')
+                
+                dict_energy_efficiency = {'Electricity-Direct electric':0.95, 
+                                          'Electricity-Heat pump air':2,
+                                          'Electricity-Heat pump water':2.5, 
+                                          'Heating-District heating':0.76,
+                                          'Natural gas-Performance boiler':0.76, 
+                                          'Oil fuel-Performance boiler':0.76,
+                                          'Wood fuel-Performance boiler':0.76}
+                
+                dataset_consumption_heating_dict = {e:dataset_needs_heating.copy() for e in dict_energy_efficiency.keys()}
+                dataset_consumption_cooling = dataset_needs_cooling.copy()
+                
+                def get_ponderated_efficiency(typo_code):
+                    ponderations = dataset_energy_systems[typo_code].to_dict()
+                    efficiency = 0
+                    for energy_type,energy_effi in dict_energy_efficiency.items():
+                        efficiency += energy_effi * ponderations.get(energy_type)
+                    return efficiency
+                
+                # heatmap des efficacité de chauffage
+                if False:
+                    dataset_efficiency = {'SFH':[],'TH':[],'MFH':[],'AB':[]}
+                    for bt in dataset_efficiency.keys():
+                        for i in range(1,12):
+                            code = 'FR.N.{}.{:02d}.Gen'.format(bt,i)
+                            dataset_efficiency[bt].append(get_ponderated_efficiency(code))
+                    dataset_efficiency = pd.DataFrame().from_dict(dataset_efficiency).T
+                    dataset_efficiency = dataset_efficiency.rename(columns={i:'{:02d}'.format(i+1) for i in dataset_efficiency.columns})
+                                               
+                    fig,ax = plt.subplots(figsize=(5*(10/4),5), dpi=300)
+                    sns.heatmap(dataset_efficiency, annot=True, fmt=".1f",cmap='viridis',cbar=False)
+                    # for j,typ in enumerate(typology_category_list):
+                    #     ax.text(len(tabula_period_list)+0.5,j+0.5,'{:.1f}%'.format(dict_sum_repartition_logements.get(typ)),
+                    #             ha='right',va='center')
+                    ax.set_title('Weighted average efficiency of heating systems')
+                    plt.savefig(os.path.join(figs_folder,'heating_efficiency_typologies.png'), bbox_inches='tight')
+                    plt.show()
+                
+                typology_list = [Typology(c) for c in dataset_consumption_cooling.Typologies]
+                surface_list = np.asarray([t.surface for t in typology_list])
+                # efficiency_list = np.asarray([get_ponderated_efficiency(e.strip()) for e in dataset_needs_heating.Typologies])
+                ponderation_list = {e:np.asarray([dataset_energy_systems[typo.code].to_dict().get(e) for typo in typology_list]) for e in dict_energy_efficiency.keys()}
+                
+                for idx in range(128):
+                    dataset_consumption_cooling[idx] = dataset_consumption_cooling[idx] / dict_energy_efficiency.get('Electricity-Heat pump air') * surface_list
+                    for e in dict_energy_efficiency.keys():
+                        dataset_consumption_heating_dict[e][idx] = dataset_consumption_heating_dict[e][idx] * ponderation_list.get(e) / dict_energy_efficiency.get(e) * surface_list
+                
+                
+                
                 # passage des consommations aux couts
-                pass
+                
+                # cout de la renovation
+                
+                dict_components_costs = {'walls': 160, #€/m2
+                                         'windows': 540, #€/m2,
+                                         'roof': 80, #€/m2,
+                                         'ventilation': 4400, #€/unit,
+                                         'shading': 400, #€/m,
+                                         'floor': 50, #€/m2,
+                                         'albedo': 40, #€/m2
+                                         }
+                
+                dataset_multiactions_costs = dataset_consumption_cooling.copy()
+                
+                
+                renovation_surface_dict = {'walls': np.asarray([t.w0_surface*int(not t.w0_adiabatic) for t in typology_list]) + np.asarray([t.w1_surface*int(not t.w1_adiabatic) for t in typology_list])+ np.asarray([t.w2_surface*int(not t.w2_adiabatic) for t in typology_list])+ np.asarray([t.w3_surface*int(not t.w3_adiabatic) for t in typology_list]),
+                                           'windows': np.asarray([t.w0_windows_surface for t in typology_list]) + np.asarray([t.w1_windows_surface for t in typology_list])+ np.asarray([t.w2_windows_surface for t in typology_list])+ np.asarray([t.w3_windows_surface for t in typology_list]),
+                                           'roof': np.asarray([t.roof_surface for t in typology_list]),
+                                           'ventilation': np.asarray([1 for t in typology_list]), #€/unit,
+                                           'shading': np.asarray([t.w0_windows_surface/t.windows_height*(not t.w0_orientation == 'N') for t in typology_list])+np.asarray([t.w1_windows_surface/t.windows_height*(not t.w1_orientation == 'N') for t in typology_list])+np.asarray([t.w2_windows_surface/t.windows_height*(not t.w2_orientation == 'N') for t in typology_list])+np.asarray([t.w3_windows_surface/t.windows_height*(not t.w3_orientation == 'N') for t in typology_list]),
+                                           'floor': np.asarray([t.ground_surface for t in typology_list]),
+                                           'albedo': np.asarray([t.w0_surface*int(not t.w0_adiabatic) for t in typology_list]) + np.asarray([t.w1_surface*int(not t.w1_adiabatic) for t in typology_list])+ np.asarray([t.w2_surface*int(not t.w2_adiabatic) for t in typology_list])+ np.asarray([t.w3_surface*int(not t.w3_adiabatic) for t in typology_list])+np.asarray([t.roof_surface for t in typology_list]),
+                                           }
+                
+                for idx in range(128):
+                    dict_works = get_components_dict_multi_actions(idx)
+                    list_costs = np.asarray([0]*len(dataset_multiactions_costs))
+                    for component,work in dict_works.items():
+                        if work:
+                            list_costs = list_costs + renovation_surface_dict.get(component) * dict_components_costs.get(component)
+                    dataset_multiactions_costs[idx] = list_costs
+                    
+                    
+                # affichage en heatmap des couts
+                if True:
+                    cmap = 'viridis'
+                    vmax = dataset_multiactions_costs.drop(columns='Typologies').max().max()
+                    norm = mpl.colors.Normalize(vmin=0, vmax=vmax)
+                    mappable = mpl.cm.ScalarMappable(norm=norm, cmap=cmap)
+                    
+                    # fig,ax = plt.subplots(dpi=300,figsize=(15,len(results_dict['Typologies'])/2))
+                    fig,ax = plt.subplots(dpi=300,figsize=(10,10))
+                    ax = sns.heatmap(dataset_multiactions_costs.drop(columns='Typologies'),ax=ax,cbar=False,cmap=cmap,vmin=0.)
+                    ax.set_title('')
+                    ax.set_ylabel('')
+                    ax.set_xlabel('Multi-actions combination index')
+                    
+                    xlims = ax.get_xlim()
+                    for n in range(0,int(len(dataset_multiactions_costs)/3)):
+                        if dataset_multiactions_costs[0].values[3*n] > 0.5*vmax:
+                            color = 'k'
+                        else:
+                            color = 'w'
+                        ax.text(1,3*n+0.5,dataset_multiactions_costs['Typologies'].values[3*n],color=color,va='center')
+                    for n in range(1,int(len(dataset_multiactions_costs)/3)):
+                        ax.plot(xlims,[3*n]*2,color='w')
+                    
+                    # min_idxs = dataset_multiactions_costs.drop(columns='Typologies').idxmin(axis=1)
+                    # for line, idx_min in enumerate(min_idxs.values):
+                    #     ax.plot([idx_min,idx_min+1],[line,line],color='k')
+                    #     ax.plot([idx_min,idx_min],[line,line+1],color='k')
+                    #     ax.plot([idx_min+1,idx_min+1],[line,line+1],color='k')
+                    #     ax.plot([idx_min,idx_min+1],[line+1,line+1],color='k')
+                        
+                        # ax.text(idx_min,line,str(idx_min))
+                
+                    ax_cb = fig.add_axes([0,0,0.1,0.1])
+                    posn = ax.get_position()
+                    ax_cb.set_position([posn.x0+posn.width+0.01, posn.y0, 0.03, posn.height])
+                    fig.add_axes(ax_cb)
+                    cbar = plt.colorbar(mappable, cax=ax_cb,extendfrac=0.02)
+                    cbar.set_label('Renovation costs (€)')
+                    plt.savefig(os.path.join(figs_folder,'{}.png'.format('multiactions_renovation_costs_{}'.format(building_type))),bbox_inches='tight')
+                    plt.show()
+                
+                
+                # cout de l'énergie
+                
+                dict_energy_costs = {'Electricity-Direct electric':0.171374, #€/kWh
+                                     'Electricity-Heat pump air':0.171374,  #€/kWh
+                                     'Electricity-Heat pump water':0.171374,  #€/kWh
+                                     'Heating-District heating':0.074600, #€/kWh
+                                     'Natural gas-Performance boiler':0.087524, #€/kWh
+                                     'Oil fuel-Performance boiler':0.100072,#€/kWh
+                                     'Wood fuel-Performance boiler':0.061600 #€/kWh
+                                     }
+                
+                duration = 30 # cf BAR-TH-145
+                # duration = 30 # cf BAR-TH-145
+                dataset_energy_cost = dataset_multiactions_costs.copy()
+                for idx in range(128):
+                    dataset_energy_cost[idx] = duration*dataset_consumption_cooling[idx] * dict_energy_costs.get('Electricity-Heat pump air')
+                    
+                for e in dict_energy_costs.keys():
+                    for idx in range(128): 
+                        dataset_energy_cost[idx] = dataset_energy_cost[idx] + duration*dataset_consumption_heating_dict[e][idx] * dict_energy_costs.get(e)
+                
+                
+                # affichage en heatmap des couts de l'énergie
+                if True:
+                    cmap = {'H1b':'Blues','H3':'Reds'}.get(zcl_code)
+                    vmax = dataset_energy_cost.drop(columns='Typologies').max().max()
+                    norm = mpl.colors.Normalize(vmin=0, vmax=vmax)
+                    mappable = mpl.cm.ScalarMappable(norm=norm, cmap=cmap)
+                    
+                    # fig,ax = plt.subplots(dpi=300,figsize=(15,len(results_dict['Typologies'])/2))
+                    fig,ax = plt.subplots(dpi=300,figsize=(10,10))
+                    ax = sns.heatmap(dataset_energy_cost.drop(columns='Typologies'),ax=ax,cbar=False,cmap=cmap,vmin=0.)
+                    ax.set_title(zcl_code)
+                    ax.set_ylabel('')
+                    ax.set_xlabel('Multi-actions combination index')
+                    
+                    xlims = ax.get_xlim()
+                    for n in range(0,int(len(dataset_energy_cost)/3)):
+                        if dataset_energy_cost[0].values[3*n] > 0.5*vmax:
+                            color = 'k'
+                        else:
+                            color = 'w'
+                        ax.text(1,3*n+0.5,dataset_energy_cost['Typologies'].values[3*n],color=color,va='center')
+                    for n in range(1,int(len(dataset_energy_cost)/3)):
+                        ax.plot(xlims,[3*n]*2,color='w')
+                    
+                    # min_idxs = dataset_multiactions_costs.drop(columns='Typologies').idxmin(axis=1)
+                    # for line, idx_min in enumerate(min_idxs.values):
+                    #     ax.plot([idx_min,idx_min+1],[line,line],color='k')
+                    #     ax.plot([idx_min,idx_min],[line,line+1],color='k')
+                    #     ax.plot([idx_min+1,idx_min+1],[line,line+1],color='k')
+                    #     ax.plot([idx_min,idx_min+1],[line+1,line+1],color='k')
+                        
+                        # ax.text(idx_min,line,str(idx_min))
+                
+                    ax_cb = fig.add_axes([0,0,0.1,0.1])
+                    posn = ax.get_position()
+                    ax_cb.set_position([posn.x0+posn.width+0.01, posn.y0, 0.03, posn.height])
+                    fig.add_axes(ax_cb)
+                    cbar = plt.colorbar(mappable, cax=ax_cb,extendfrac=0.02)
+                    cbar.set_label('Energy costs (€)')
+                    plt.savefig(os.path.join(figs_folder,'{}.png'.format('multiactions_energy_costs_{}_{}'.format(building_type,zcl_code))),bbox_inches='tight')
+                    plt.show()
+            
+                
+                # calcul des rentabilités relatives à la situation initiale
+                
+                dataset_total_costs = dataset_multiactions_costs.copy()
+                for idx in range(128):
+                    dataset_total_costs[idx] = dataset_total_costs[idx] + dataset_energy_cost[idx]
+                
+                relative_gains = True
+                
+                if relative_gains:
+                    for idx in range(1,128):
+                        dataset_total_costs[idx] = dataset_total_costs[idx] - dataset_total_costs[0]
+                    dataset_total_costs[0] = dataset_total_costs[0] - dataset_total_costs[0]
+                
+                
+                # heat map des rentabilités totales
+                if True:
+                    cmap = {'H1b':'Blues','H3':'Reds'}.get(zcl_code)
+                    if relative_gains:
+                        cmap = cmocean.cm.balance
+                    vmax = dataset_total_costs.drop(columns='Typologies').max().max()
+                    if relative_gains:
+                        vmin = dataset_total_costs.drop(columns='Typologies').min().min()
+                        vmax = np.max((np.abs(vmin),np.abs(vmax)))
+                        vmin = - vmax
+                    else:
+                        vmin = 0.
+                    norm = mpl.colors.Normalize(vmin=vmin, vmax=vmax)
+                    mappable = mpl.cm.ScalarMappable(norm=norm, cmap=cmap)
+                    
+                    # fig,ax = plt.subplots(dpi=300,figsize=(15,len(results_dict['Typologies'])/2))
+                    fig,ax = plt.subplots(dpi=300,figsize=(10,10))
+                    ax = sns.heatmap(dataset_total_costs.drop(columns='Typologies'),ax=ax,cbar=False,cmap=cmap,vmin=vmin,vmax=vmax)
+                    ax.set_title(zcl_code)
+                    ax.set_ylabel('')
+                    ax.set_xlabel('Multi-actions combination index')
+                    
+                    xlims = ax.get_xlim()
+                    for n in range(0,int(len(dataset_total_costs)/3)):
+                        if np.abs(dataset_total_costs[0].values[3*n]) < 0.66*vmax:
+                            color = 'k'
+                        else:
+                            color = 'w'
+                        ax.text(1,3*n+0.5,dataset_total_costs['Typologies'].values[3*n],color=color,va='center')
+                    for n in range(1,int(len(dataset_total_costs)/3)):
+                        ax.plot(xlims,[3*n]*2,color='w')
+                    
+                    min_idxs = dataset_total_costs.drop(columns='Typologies').idxmin(axis=1)
+                    for line, idx_min in enumerate(min_idxs.values):
+                        ax.plot([idx_min,idx_min+1],[line,line],color='k')
+                        ax.plot([idx_min,idx_min],[line,line+1],color='k')
+                        ax.plot([idx_min+1,idx_min+1],[line,line+1],color='k')
+                        ax.plot([idx_min,idx_min+1],[line+1,line+1],color='k')
+                        
+                        # ax.text(idx_min,line,str(idx_min))
+                
+                    ax_cb = fig.add_axes([0,0,0.1,0.1])
+                    posn = ax.get_position()
+                    ax_cb.set_position([posn.x0+posn.width+0.01, posn.y0, 0.03, posn.height])
+                    fig.add_axes(ax_cb)
+                    cbar = plt.colorbar(mappable, cax=ax_cb,extendfrac=0.02)
+                    cbar.set_label('Total gains compared to no actions (€)')
+                    plt.savefig(os.path.join(figs_folder,'{}.png'.format('multiactions_total_costs_{}_{}_relative{}'.format(building_type,zcl_code,relative_gains))),bbox_inches='tight')
+                    plt.show()
                 
             
             # ordonnance de chaque composante
