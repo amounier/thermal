@@ -1233,7 +1233,7 @@ def main():
                     
 
     #%% Changement de période climatique
-    if False:
+    if True:
         
         # models_period_dict = {0:{2:[2029,2049],
         #                          4:[2064,2084],},
@@ -1307,7 +1307,7 @@ def main():
         
         
         # cadran des rénovations par gestes
-        if True:
+        if False:
             
             # calcul des gains
             if False:
@@ -1352,7 +1352,7 @@ def main():
                 pool.starmap(compute_energy_needs_single_actions, run_list)
                 
             # affichage du cadran
-            if False:
+            if True:
                 
                 # def find_nearest(array, value):
                 #     array = np.asarray(array)
@@ -1521,7 +1521,7 @@ def main():
                             plt.show()
                         
             # aggregation des cadrans
-            if False:
+            if True:
                 marker_list = list(Line2D.filled_markers)[1:]
                 marker_list = ['o','^','s','*','d','P','X']
                 cmap_dict = {'H3':plt.colormaps.get_cmap('Reds_r'),
@@ -1691,8 +1691,8 @@ def main():
             nocturnal_natural_cooling = True
             
             run_list = []
-            # for mod in list(range(5)):
-            for mod in [0,1]:
+            for mod in list(range(5)):
+            # for mod in [0,1]:
                 for ma_idx in range(128):
                     for zcl_code in zcl_list:
                         zcl = Climat(zcl_code)
@@ -1743,7 +1743,7 @@ def main():
             # premier test 
             if False:
                 zcl_code = 'H1b'
-                # zcl_code = 'H3'
+                zcl_code = 'H3'
                 building_type = 'SFH'
                 nocturnal_natural_cooling = True
                 # nocturnal_natural_cooling = False
@@ -1783,7 +1783,7 @@ def main():
                     # dataset.index = [ ]
                     # dataset.index = dataset.index.set_levels(['\\phantom{'+e[0]+'}' if '+' in e[1] else e[0] for e in dataset.index], level=0)
                     
-                    cmap = {'H1b':'Blues','H3':'Reds'}.get(zcl_list[0])
+                    cmap = {'H1b':'Blues','H3':'Reds'}.get(zcl_code)
                     vmax = dataset.drop(columns='Typologies').max().max()
                     norm = mpl.colors.Normalize(vmin=0, vmax=vmax)
                     mappable = mpl.cm.ScalarMappable(norm=norm, cmap=cmap)
@@ -1791,7 +1791,7 @@ def main():
                     # fig,ax = plt.subplots(dpi=300,figsize=(15,len(results_dict['Typologies'])/2))
                     fig,ax = plt.subplots(dpi=300,figsize=(10,10))
                     ax = sns.heatmap(dataset.drop(columns='Typologies'),ax=ax,cbar=False,cmap=cmap,vmin=0.)
-                    ax.set_title(zcl_list[0])
+                    ax.set_title(zcl_code)
                     ax.set_ylabel('')
                     ax.set_xlabel('Multi-actions combination index')
                     
@@ -1942,7 +1942,7 @@ def main():
                     
                     
                 # affichage en heatmap des couts
-                if True:
+                if False:
                     cmap = 'viridis'
                     vmax = dataset_multiactions_costs.drop(columns='Typologies').max().max()
                     norm = mpl.colors.Normalize(vmin=0, vmax=vmax)
@@ -2007,7 +2007,7 @@ def main():
                 
                 
                 # affichage en heatmap des couts de l'énergie
-                if True:
+                if False:
                     cmap = {'H1b':'Blues','H3':'Reds'}.get(zcl_code)
                     vmax = dataset_energy_cost.drop(columns='Typologies').max().max()
                     norm = mpl.colors.Normalize(vmin=0, vmax=vmax)
@@ -2109,11 +2109,23 @@ def main():
                     ax_cb.set_position([posn.x0+posn.width+0.01, posn.y0, 0.03, posn.height])
                     fig.add_axes(ax_cb)
                     cbar = plt.colorbar(mappable, cax=ax_cb,extendfrac=0.02)
-                    cbar.set_label('Total gains compared to no actions (€)')
+                    if relative_gains:
+                        cbar.set_label('Total gains compared to no actions (€)')
+                    else:
+                        cbar.set_label('Total costs (€)')
                     plt.savefig(os.path.join(figs_folder,'{}.png'.format('multiactions_total_costs_{}_{}_relative{}'.format(building_type,zcl_code,relative_gains))),bbox_inches='tight')
                     plt.show()
                 
-            
+                    # calcul des effets du climat sur la rentabilité de l'optimum en période de référence
+                    optimal_gains = pd.DataFrame(min_idxs).rename(columns={0:'min_idx'})
+                    optimal_gains['Typologies'] = dataset_total_costs.Typologies
+                    optimal_gains = optimal_gains.reset_index()
+                    optimal_gains['idx'] = [optimal_gains[(optimal_gains.Period=='2000-2020')&(optimal_gains.Typologies==bt)]['min_idx'].values[0] for bt in optimal_gains.Typologies]
+                    optimal_gains['gain_2000-2020'] = [dataset_total_costs[(dataset_total_costs.index=='2000-2020')&(dataset_total_costs.Typologies==bt)][idx].values[0] for bt,idx in zip(optimal_gains.Typologies,optimal_gains.idx)]
+                    optimal_gains['gain_4°C'] = [dataset_total_costs[(dataset_total_costs.index=='+4°C')&(dataset_total_costs.Typologies==bt)][idx].values[0] for bt,idx in zip(optimal_gains.Typologies,optimal_gains.idx)]
+                    optimal_gains['yield_losses'] = 1-(optimal_gains['gain_4°C']/optimal_gains['gain_2000-2020'])
+                    optimal_gains.to_csv(os.path.join(output, folder,'{}.csv'.format('multiactions_total_costs_{}_{}'.format(building_type,zcl_code))),index=False)
+                    
             # ordonnance de chaque composante
             if False:
                 counter = 0
