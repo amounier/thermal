@@ -1233,7 +1233,7 @@ def main():
                     
 
     #%% Changement de période climatique
-    if True:
+    if False:
         
         # models_period_dict = {0:{2:[2029,2049],
         #                          4:[2064,2084],},
@@ -1830,7 +1830,7 @@ def main():
             # calcul de l'optimum économique
             if True:
                 zcl_code = 'H1b'
-                zcl_code = 'H3'
+                # zcl_code = 'H3'
                 building_type = 'SFH'
                 nocturnal_natural_cooling = True
                 
@@ -1997,13 +1997,32 @@ def main():
                 
                 duration = 30 # cf BAR-TH-145
                 # duration = 30 # cf BAR-TH-145
+                
+                discount_factor = 3.2 
+                
+                year_list = np.arange(31)
+                discount_list = 1/(1+discount_factor/100)**year_list
+                
+                # graphe du facteur avec le taux d'actualisation
+                if True:
+                    fig,ax = plt.subplots(figsize=(5,5),dpi=300)
+                    ax.plot(year_list, discount_list,label='$\\gamma$ = {}%'.format(discount_factor))
+                    ax.set_xlabel('Years')
+                    ax.set_ylabel('Discount factor')
+                    ax.set_ylim(bottom=0.)
+                    plt.savefig(os.path.join(figs_folder,'{}.png'.format('discount_factor')),bbox_inches='tight')
+                    plt.show()
+                
+                
                 dataset_energy_cost = dataset_multiactions_costs.copy()
                 for idx in range(128):
-                    dataset_energy_cost[idx] = duration*dataset_consumption_cooling[idx] * dict_energy_costs.get('Electricity-Heat pump air')
+                    # dataset_energy_cost[idx] = duration * dataset_consumption_cooling[idx] * dict_energy_costs.get('Electricity-Heat pump air')
+                    dataset_energy_cost[idx] = [sum([r * v * dict_energy_costs.get('Electricity-Heat pump air') for r in discount_list]) for v in dataset_consumption_cooling[idx]]
                     
                 for e in dict_energy_costs.keys():
                     for idx in range(128): 
-                        dataset_energy_cost[idx] = dataset_energy_cost[idx] + duration*dataset_consumption_heating_dict[e][idx] * dict_energy_costs.get(e)
+                        # dataset_energy_cost[idx] = dataset_energy_cost[idx] + duration * dataset_consumption_heating_dict[e][idx] * dict_energy_costs.get(e)
+                        dataset_energy_cost[idx] = dataset_energy_cost[idx] + np.asarray([sum([r * v * dict_energy_costs.get(e) for r in discount_list]) for v in dataset_consumption_heating_dict[e][idx]])
                 
                 
                 # affichage en heatmap des couts de l'énergie

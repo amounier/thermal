@@ -306,10 +306,13 @@ class France:
 
 def draw_departement_map(dict_dep,figs_folder,cbar_min=0,cbar_max=1.,
                          automatic_cbar_values=False, cbar_label=None, 
-                         map_title=None,save=None):
+                         map_title=None,save=None,cmap=None):
     fig,ax = blank_national_map()
     
-    cmap = matplotlib.colormaps.get_cmap('viridis')
+    if cmap is None:
+        cmap = matplotlib.colormaps.get_cmap('viridis')
+    else:
+        cmap = matplotlib.colormaps.get_cmap(cmap)
     
     plotter = pd.DataFrame().from_dict({'departements':dict_dep.keys(),'vals':dict_dep.values()})
     plotter['geometry'] = [d.geometry for d in plotter.departements]
@@ -447,6 +450,22 @@ def main():
         dep = zcl.center_departement
         # print(dep)
         draw_departement_map({dep:None}, figs_folder=figs_folder, save='dep_{}'.format(dep.code))
+    
+    # autre test, pour Alice
+    if False:
+        data = pd.read_excel(os.path.join('data','autres','Délais moyen Départements (Copy).xlsx'))
+        data['dep_code'] = [e.split(' - ')[0] for e in data.Département]
+        data = data.set_index('dep_code')
+        # data = data.replace('en cours', np.nan)
+        
+        for yr in [2019, 2024]:
+            var = 'Délai moyen ' + str(yr)
+            dep_dict = data[var].to_dict()
+            dep_dict = {Departement(k):v for k,v in dep_dict.items() if k in list_dep_code}
+            draw_departement_map(dep_dict, figs_folder=figs_folder, save='{}'.format(var),
+                                 cbar_label='Délai moyen (mois)',map_title=yr,
+                                 cmap='RdYlGn_r',cbar_max=12)
+            
     
     # zone climatique 8
     if False:
