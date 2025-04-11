@@ -126,7 +126,7 @@ def get_P_vmeca(Ti,Te,Tch_cons,Tfr_cons,typology):
     minimal_ventilation_air_flow = get_ventilation_minimum_air_flow(typology)
     
     # s'il n'y a pas de ventilation (efficacite nulle), flux réduit à 0 [ie ventilation naturelle]
-    # TODO à retirer ?
+    # à retirer ?
     # if typology.ventilation_efficiency == 0.0:
     #     minimal_ventilation_air_flow = 0
         
@@ -174,6 +174,7 @@ def get_ventilation_minimum_air_flow(typology, plot=False, figs_folder=None):
 
     """
     ventilation_minimum_air_flow = typology.surface * 0.8 + 24.3 # m3/h
+    # ventilation_minimum_air_flow = typology.surface * typology.height *0.4 # m3/h # dans TABULA
     ventilation_minimum_air_flow = AIR_DENSITY*ventilation_minimum_air_flow/3600 # kg/s
     
     # Affichage des données légales et de la modélisation associée
@@ -627,7 +628,7 @@ def compute_external_Phi(typology, weather_data, wall):
 
 def get_solar_transmission_factor(typology,weather_data,wall):
     # Dans les règles Th-bat : voir norme NF P50 777, puis norme NF EN 410 
-    # TODO à raffiner selon le nombre de couches principalement (et peut-être l'angle d'incidence ?)
+    # à raffiner selon le nombre de couches principalement (et peut-être l'angle d'incidence ?)
 
     wall_orientation = {0:typology.w0_orientation,
                         1:typology.w1_orientation,
@@ -645,7 +646,8 @@ def get_solar_transmission_factor(typology,weather_data,wall):
     sun_angle = np.where(sun_alt==0, 90,sun_angle)
     
     solar_factor = np.maximum(np.cos(np.deg2rad(sun_angle)),0)
-    solar_factor = 1
+    solar_factor = solar_factor*typology.windows_Ug
+    # solar_factor = 1
     return solar_factor
 
 
@@ -700,7 +702,7 @@ def get_elements_masking(typology,weather_data,wall,plot=False,output=None):
 
 
 def get_environment_masking(typology,weather_data,wall,minimal_altitude=10):
-    # TODO : masquage de l'environnement
+    #  masquage de l'environnement
     sun_alt = np.asarray([max(e,0) for e in weather_data.sun_altitude.values])
     env_mask = np.where(sun_alt>minimal_altitude, 1,0)
     
@@ -945,6 +947,70 @@ def SFH_test_model(typology, behaviour, weather_data, progressbar=False):
     weather_data['cooling_needs'] = cooling_needs
     
     return weather_data
+
+
+def compute_U_values(typology):
+    
+    # Variables thermiques vers le haut
+    R_uih = compute_R_uih(typology)
+    R_ueh = compute_R_ueh(typology)
+    R_uhceiling = R_uih
+    R_uhroof = R_uih
+    
+    R_ucr = 1/(typology.ceiling_U * typology.roof_surface)# + 1/(typology.roof_U * typology.roof_surface))
+    R_usupp = compute_Ru_supplementary(typology)
+    R_ucr = R_ucr + R_usupp
+    # retrait des resistances thermiques superficielles aux données TABULA
+    if typology.converted_attic:
+        R_ucr = R_ucr - R_uih - R_ueh
+    else:
+        R_ucr = R_ucr - R_uih - R_ueh - R_uhceiling - R_uhroof
+        
+    R_uceiling = R_ucr/2
+    R_uroof = R_ucr/2
+    
+    # Variables thermiques des murs latéraux 
+    R_w0w = 1/(typology.windows_U * typology.w0_windows_surface)
+    R_w0i = compute_Rw0i(typology)
+    R_w0e = compute_Rw0e(typology)
+    R_w0eh = compute_R_w0eh(typology)
+    
+    R_w1w = 1/(typology.windows_U * typology.w1_windows_surface)
+    R_w1i = compute_Rw1i(typology)
+    R_w1e = compute_Rw1e(typology)
+    R_w1eh = compute_R_w1eh(typology)
+    
+    R_w2w = 1/(typology.windows_U * typology.w2_windows_surface)
+    R_w2i = compute_Rw2i(typology)
+    R_w2e = compute_Rw2e(typology)
+    R_w2eh = compute_R_w2eh(typology)
+    
+    R_w3w = 1/(typology.windows_U * typology.w3_windows_surface)
+    R_w3i = compute_Rw3i(typology)
+    R_w3e = compute_Rw3e(typology)
+    R_w3eh = compute_R_w3eh(typology)
+    
+    # Variables thermiques vers le bas
+    R_fi = compute_Rfi(typology)
+    R_fg = compute_Rfg(typology)
+    
+    # calcul des valeurs U des quatres composantes
+    if typology.converted_attic:
+        typology.modelled_Uph = (1/(R_uih + R_uceiling + R_uroof + R_ueh))/(typology.roof_surface)
+    else:
+        typology.modelled_Uph = (1/(R_uih + R_uceiling + R_uroof + R_ueh + R_uhceiling + R_uhroof))/(typology.roof_surface)
+    
+    walls_surface = typology.w0_surface + typology.w1_surface + typology.w2_surface + typology.w3_surface
+    typology.modelled_Umur = (1/(R_w0i + R_w0e + R_w0eh) + 1/(R_w1i + R_w1e + R_w1eh) + 1/(R_w2i + R_w2e + R_w2eh) + 1/(R_w3i + R_w3e + R_w3eh))/walls_surface
+    
+    windows_surface = typology.w0_windows_surface + typology.w1_windows_surface + typology.w2_windows_surface + typology.w3_windows_surface
+    typology.modelled_Uw = (1/R_w0w + 1/R_w1w + 1/R_w2w + 1/R_w3w)/windows_surface
+    
+    if typology.basement:
+        typology.modelled_Upb = 1/((R_fg + R_fi)*typology.ground_surface)
+    else:
+        typology.modelled_Upb = 1/((R_fg + R_fi)*typology.ground_surface)
+    return 
 
 
 def run_thermal_model(typology, behaviour, weather_data, progressbar=False, pmax_warning=True):
@@ -2625,11 +2691,12 @@ def main():
             
         # Définition des habitudes
         conventionnel = Behaviour('conventionnel_th-bce_2020')
-        conventionnel.heating_rules = {i:[19]*24 for i in range(1,8)}
+        conventionnel.heating_rules = {i:[20]*24 for i in range(1,8)}
         conventionnel.cooling_rules = {i:[26]*24 for i in range(1,8)}
         
         # Dans le rapport de Pougets, apports internes constants, de 4.17 W/m2
-        conventionnel.cst_internal_gains = 4.17 # W/m2
+        # conventionnel.cst_internal_gains = 4.17 # W/m2
+        conventionnel.cst_internal_gains = 3.0 # W/m2 # 3 dans les données TABULA
         
         
         # Premier test du modèle général
@@ -2733,7 +2800,7 @@ def main():
         if False:
             
             for building_type in ['SFH','TH','MFH','AB']:
-            # for building_type in ['SFH']:
+            # for building_type in ['TH']:
             
                 heating_needs_TABULA = {}
                 Uph_TABULA = {}
@@ -2758,14 +2825,18 @@ def main():
                         # "Facteur de réduction de température nocturne pour des locaux partiellement chauffés"
                         nocturnal_hours = list(range(7)) + [22,23]
                         if typo.w0_insulation_thickness == 0.:
-                            nocturnal_ratio = 0.85
+                            nocturnal_ratio = 0.8
+                            if typo.type in ['MFH','AB']:
+                                nocturnal_ratio += 0.05
                         else:
-                            nocturnal_ratio = 0.95
-                        conventionnel.heating_rules = {i:[19]*24 for i in range(1,8)}
-                        conventionnel.heating_rules = {i:[e*nocturnal_ratio if h in nocturnal_hours else e for h,e in enumerate(conventionnel.heating_rules.get(i))] for i in range(1,8)}
+                            nocturnal_ratio = 0.9
+                            if typo.type in ['MFH','AB']:
+                                nocturnal_ratio += 0.05
+                        conventionnel.heating_rules = {i:[20]*24 for i in range(1,8)}
+                        # conventionnel.heating_rules = {i:[e*nocturnal_ratio if h in nocturnal_hours else e for h,e in enumerate(conventionnel.heating_rules.get(i))] for i in range(1,8)}
                         
                         # graphe des températures de consigne 
-                        if False:
+                        if True:
                             if building_type == 'SFH' and i == 1 and level == 'initial':
                                 conventionnel.plot_rules(figs_folder=figs_folder)
                         
@@ -2843,10 +2914,10 @@ def main():
                 ax.set_xlim(xlims)
                 
                 plt.savefig(os.path.join(figs_folder,'{}.png'.format('{}_TABULA_consumption'.format(building_type))),bbox_inches='tight')
-            
+                plt.show()
 
                 # graphe pour les valeurs U
-                if False:
+                if True:
                     element_GENMOD_dict = {'Umur':Umur_GENMOD,
                                            'Uph':Uph_GENMOD,
                                            'Upb':Upb_GENMOD,
@@ -2898,7 +2969,7 @@ def main():
                         ax.set_xticks([(i*7)+2 for i in range(1,11)],['{}.{:02d}'.format(building_type,i) for i in range(1,11)])
                         
                         plt.savefig(os.path.join(figs_folder,'{}.png'.format('{}_TABULA_{}'.format(building_type,element))),bbox_inches='tight')
-
+                        plt.show()
 
             
         

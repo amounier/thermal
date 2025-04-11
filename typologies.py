@@ -110,11 +110,11 @@ class Typology():
         
         # je considère les RDC LNC comme des caves
         if self.type in ['SFH'] and not self.rdc:
-            self.levels = self.levels - 0.5
+            # self.levels = self.levels - 0.5
             self.basement = True
         
         if self.type in ['TH'] and not self.rdc:
-            self.levels = self.levels + 1 
+            # self.levels = self.levels + 1 
             self.basement = True
             
         # caractérisation de la mitoyenneté
@@ -183,12 +183,13 @@ class Typology():
         self.ceiling_structure_thickness = params.get('building_ceiling_structure_thickness')
         
         # caractéristiques des vitrages
-        self.h_windows_surface = params.get('building_horizontal_windows_surface')
-        self.w0_windows_surface = params.get('building_wall0_windows_surface')+0.001
-        self.w1_windows_surface = params.get('building_wall1_windows_surface')+0.001
-        self.w2_windows_surface = params.get('building_wall2_windows_surface')+0.001
-        self.w3_windows_surface = params.get('building_wall3_windows_surface')+0.001
-        self.windows_U = params.get('{}_windows_U'.format(level))
+        self.windows_frame_ratio = 0.3
+        self.h_windows_surface = params.get('building_horizontal_windows_surface')*self.windows_frame_ratio
+        self.w0_windows_surface = (params.get('building_wall0_windows_surface')+0.001)*self.windows_frame_ratio
+        self.w1_windows_surface = (params.get('building_wall1_windows_surface')+0.001)*self.windows_frame_ratio
+        self.w2_windows_surface = (params.get('building_wall2_windows_surface')+0.001)*self.windows_frame_ratio
+        self.w3_windows_surface = (params.get('building_wall3_windows_surface')+0.001)*self.windows_frame_ratio
+        self.windows_U = params.get('{}_Uw'.format(level))
         self.windows_Ug = params.get('{}_windows_Ug'.format(level))
         
         self.windows_height = 1.5 #m
@@ -254,12 +255,24 @@ class Typology():
         self.floor_insulation_thickness = params.get('{}_floor_insulation_thickness'.format(level))
         self.floor_insulation_position = params.get('{}_floor_insulation_position'.format(level))
         
+        # ajout des "défauts de rénovation" de la base TABULA (pour les niveaux standard et advanced)
+        self.defects_U = params.get('{}_retrofit_defects'.format(level))
+        
+        if self.defects_U > 0.:
+            self.roof_U += self.defects_U
+            self.ceiling_U += self.defects_U
+            self.w0_insulation_thickness = max(0,(self.w0_insulation_material.thermal_conductivity*self.w0_insulation_thickness)/(self.w0_insulation_thickness*self.defects_U + self.w0_insulation_material.thermal_conductivity))
+            self.w1_insulation_thickness = max(0,(self.w1_insulation_material.thermal_conductivity*self.w1_insulation_thickness)/(self.w1_insulation_thickness*self.defects_U + self.w1_insulation_material.thermal_conductivity))
+            self.w2_insulation_thickness = max(0,(self.w2_insulation_material.thermal_conductivity*self.w2_insulation_thickness)/(self.w2_insulation_thickness*self.defects_U + self.w2_insulation_material.thermal_conductivity))
+            self.w3_insulation_thickness = max(0,(self.w3_insulation_material.thermal_conductivity*self.w3_insulation_thickness)/(self.w3_insulation_thickness*self.defects_U + self.w3_insulation_material.thermal_conductivity))
+            self.floor_insulation_thickness = max(0,(self.floor_insulation_material.thermal_conductivity*self.floor_insulation_thickness)/(self.floor_insulation_thickness*self.defects_U + self.floor_insulation_material.thermal_conductivity))
+        
         # puissance maximale des émetteurs
         self.heater_maximum_power = 10000*self.households # W
         self.cooler_maximum_power = 10000*self.households # W
         
         # besoins de chauffage TABULA
-        self.tabula_heating_needs = params.get('{}_heating_needs'.format(level)) # kWh/m2/yr
+        self.tabula_heating_needs = params.get('{}_heating_needs_tabula'.format(level)) # kWh/m2/yr
         
         # comparaison des valeurs U
         self.tabula_Uph = params.get('{}_Uph'.format(level)) # W/m2/K
