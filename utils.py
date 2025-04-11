@@ -79,6 +79,7 @@ def blank_national_map():
     ax.set_extent(get_extent())
     
     ax.add_feature(cfeature.OCEAN, color='lightgrey',zorder=2)
+    ax.add_feature(cfeature.LAND, color='w',zorder=1)
     ax.add_feature(cfeature.COASTLINE,zorder=5)
     ax.add_feature(cfeature.BORDERS,zorder=3)
     

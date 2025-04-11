@@ -32,7 +32,7 @@ from meteorology import (get_historical_weather_data,
                          get_meteo_data,
                          get_safran_weather_data,
                          get_safran_hourly_weather_data)
-from administrative import Climat, get_coordinates, France, City
+from administrative import Climat, get_coordinates, France, City, draw_climat_map, Climat_winter
 from climate_zone_characterisation import map_xarray
 from utils import blank_national_map, get_extent,plot_timeserie
 
@@ -1055,7 +1055,7 @@ def main():
                 array_proj.close()
                 
     # Réalisation des cartes 
-    if False:
+    if True:
         
         # calib_method = 'CDFt'
         calib_method = 'ADAMONT'
@@ -1114,65 +1114,197 @@ def main():
             data_folder = os.path.join('data','Explore2')
             
         
-        climate_vars = ['tas','tasmax','tasmin','rsds']
-        climate_vars = ['rsds']
-        for climate_var in climate_vars:
-        # climate_var = 'rsds' #'tas','tasmax','tasmin','rsds'
-            
-            # for idx,mod in enumerate(range(0,5)):
-            # for mod in [3]:
-            for idx,mod in enumerate(range(1,2)):
+        # carte par modèle climatique
+        if False:
+            climate_vars = ['tas','tasmax','tasmin','rsds']
+            climate_vars = ['rsds']
+            for climate_var in climate_vars:
+            # climate_var = 'rsds' #'tas','tasmax','tasmin','rsds'
                 
-                Explore2_hist = os.path.join(data_folder,climate_var+models_dict.get(mod).get('historical'))
-                array_hist = xr.open_dataset(Explore2_hist)
-                array_hist = array_hist[list(array_hist.data_vars)[-1]]
-                if 'tas' in climate_var:
-                    array_hist = array_hist - 273.15
+                # for idx,mod in enumerate(range(0,5)):
+                # for mod in [3]:
+                for idx,mod in enumerate(range(1,2)):
+                    
+                    Explore2_hist = os.path.join(data_folder,climate_var+models_dict.get(mod).get('historical'))
+                    array_hist = xr.open_dataset(Explore2_hist)
+                    array_hist = array_hist[list(array_hist.data_vars)[-1]]
+                    if 'tas' in climate_var:
+                        array_hist = array_hist - 273.15
+                    array_hist.rio.write_crs('epsg:27572', inplace=True)
+                    
+                    Explore2_proj = os.path.join(data_folder,climate_var+models_dict.get(mod).get('rcp85'))
+                    array_proj = xr.open_dataset(Explore2_proj)
+                    array_proj = array_proj[list(array_proj.data_vars)[-1]]
+                    if 'tas' in climate_var:
+                        array_proj = array_proj - 273.15
+                    array_proj.rio.write_crs('epsg:27572', inplace=True)
+                    
+                    geom = pd.Series(France().geometry).apply(mapping)
+                    array_hist = array_hist.rio.clip(geom, 'epsg:4326', drop=False)
+                    array_proj = array_proj.rio.clip(geom, 'epsg:4326', drop=False)
+                    
+                    
+                    hist = array_hist.sel(time=slice("2000-01-01", "2020-12-31")).mean('time')
+                    
+                    proj2_period = models_period_dict.get(mod).get(2)
+                    proj4_period = models_period_dict.get(mod).get(4)
+                    
+                    proj2 = array_proj.sel(time=slice("{}-01-01".format(proj2_period[0]), "{}-12-31".format(proj2_period[1]))).mean('time')
+                    proj4 = array_proj.sel(time=slice("{}-01-01".format(proj4_period[0]), "{}-12-31".format(proj4_period[1]))).mean('time')
+                    
+                    diff2 = proj2 - hist
+                    diff4 = proj4 - hist
+                    
+                    # etat de base
+                    if 'tas' in climate_var:
+                        cmap = cmocean.cm.thermal
+                    else:
+                        cmap = cmocean.cm.solar
+        
+                    # carte de base
+                    fig,ax = blank_national_map()
+                    
+                    if idx == 0:
+                        vmin = hist.min()
+                        vmax = hist.max()
+                        
+                        max_val = max(np.abs(diff4.max()), np.abs(diff4.min()))
+                        
+                    
+                    img = hist.plot(ax=ax,transform=ccrs.epsg('27572'),add_colorbar=False,
+                                   cmap=cmap,vmin=vmin,vmax=vmax)
+                    
+                    ax.set_title('Model n°{} (2000-2020)'.format(mod+1))
+                    
+                    ax_cb = fig.add_axes([0,0,0.1,0.1])
+                    posn = ax.get_position()
+                    ax_cb.set_position([posn.x0+posn.width+0.02, posn.y0, 0.04, posn.height])
+                    fig.add_axes(ax_cb)
+                    cbar = plt.colorbar(img,cax=ax_cb,extendfrac=0.02)
+                    
+                    cbar_label_dict = {'tas':'Mean daily temperature (°C)',
+                                       'tasmax':'Mean of daily maximal temperature (°C)',
+                                       'tasmin':'Mean of daily minimal temperature (°C)',
+                                       'rsds':'Surface downwelling shortwave radiation (W.m$^{-2}$)'}
+                    cbar.set_label(cbar_label_dict.get(climate_var))
+                    
+                    ax.set_extent(get_extent())
+                    plt.savefig(os.path.join(figs_folder,'map_{}_mod{}_2000-2020.png'.format(climate_var,mod)),bbox_inches='tight')
+                    plt.show()
+                    plt.close()
+                    
+                    # difference sur les periode 2 et 4
+                    cbar_label_diff_dict = {'tas':'Difference of daily temperature (°C)',
+                                            'tasmax':'Difference of daily maximal temperature (°C)',
+                                            'tasmin':'Difference of daily minimal temperature (°C)',
+                                            'rsds':'RSDS difference (W.m$^{-2}$)'}
+                    
+                    cmap = cmocean.cm.balance
+                    
+                    fig,ax = blank_national_map()
+                    
+                    
+                    img = diff2.plot(ax=ax,transform=ccrs.epsg('27572'),add_colorbar=False,
+                                     cmap=cmap,vmin=-max_val,vmax=max_val)
+                    
+                    ax.set_title('Model n°{} (+2°C)'.format(mod+1))
+                    
+                    ax_cb = fig.add_axes([0,0,0.1,0.1])
+                    posn = ax.get_position()
+                    ax_cb.set_position([posn.x0+posn.width+0.02, posn.y0, 0.04, posn.height])
+                    fig.add_axes(ax_cb)
+                    cbar = plt.colorbar(img,cax=ax_cb,extendfrac=0.02)
+                    cbar.set_label(cbar_label_diff_dict.get(climate_var))
+                    
+                    ax.set_extent(get_extent())
+                    plt.savefig(os.path.join(figs_folder,'map_{}_mod{}_2deg.png'.format(climate_var,mod)),bbox_inches='tight')
+                    plt.show()
+                    plt.close()
+                    
+                    cmap = cmocean.cm.balance
+                    
+                    fig,ax = blank_national_map()
+                    
+                    img = diff4.plot(ax=ax,transform=ccrs.epsg('27572'),add_colorbar=False,
+                                     cmap=cmap,vmin=-max_val,vmax=max_val)
+                    
+                    ax.set_title('Model n°{} (+4°C)'.format(mod+1))
+                    
+                    ax_cb = fig.add_axes([0,0,0.1,0.1])
+                    posn = ax.get_position()
+                    ax_cb.set_position([posn.x0+posn.width+0.02, posn.y0, 0.04, posn.height])
+                    fig.add_axes(ax_cb)
+                    cbar = plt.colorbar(img,cax=ax_cb,extendfrac=0.02)
+                    cbar.set_label(cbar_label_diff_dict.get(climate_var))
+                    
+                    ax.set_extent(get_extent())
+                    plt.savefig(os.path.join(figs_folder,'map_{}_mod{}_4deg.png'.format(climate_var,mod)),bbox_inches='tight')
+                    plt.show()
+                    plt.close()
+                    
+                    array_hist.close()
+                    array_proj.close()
+                    
+                    del array_hist
+                    del array_proj
+                
+                
+        # carte moyenne des 5 modèles
+        if True:
+            climate_vars = ['tas']
+            for climate_var in climate_vars:
+                
+                array_hist = None
+                for idx,mod in enumerate(range(0,5)):
+                    
+                    if array_hist is None:
+                        Explore2_hist = os.path.join(data_folder,climate_var+models_dict.get(mod).get('historical'))
+                        array_hist = xr.open_dataset(Explore2_hist)
+                        array_hist = array_hist[list(array_hist.data_vars)[-1]]
+                        if 'tas' in climate_var:
+                            array_hist = array_hist - 273.15
+                        
+                    else:
+                        Explore2_hist = os.path.join(data_folder,climate_var+models_dict.get(mod).get('historical'))
+                        array_hist_new = xr.open_dataset(Explore2_hist)
+                        array_hist_new = array_hist_new[list(array_hist_new.data_vars)[-1]]
+                        if 'tas' in climate_var:
+                            array_hist_new = array_hist_new - 273.15
+                    
+                        array_hist = array_hist + array_hist_new
+                        
+                        del array_hist_new
+                
+                array_hist = array_hist/5
                 array_hist.rio.write_crs('epsg:27572', inplace=True)
-                
-                Explore2_proj = os.path.join(data_folder,climate_var+models_dict.get(mod).get('rcp85'))
-                array_proj = xr.open_dataset(Explore2_proj)
-                array_proj = array_proj[list(array_proj.data_vars)[-1]]
-                if 'tas' in climate_var:
-                    array_proj = array_proj - 273.15
-                array_proj.rio.write_crs('epsg:27572', inplace=True)
+            
                 
                 geom = pd.Series(France().geometry).apply(mapping)
                 array_hist = array_hist.rio.clip(geom, 'epsg:4326', drop=False)
-                array_proj = array_proj.rio.clip(geom, 'epsg:4326', drop=False)
                 
                 
                 hist = array_hist.sel(time=slice("2000-01-01", "2020-12-31")).mean('time')
-                
-                proj2_period = models_period_dict.get(mod).get(2)
-                proj4_period = models_period_dict.get(mod).get(4)
-                
-                proj2 = array_proj.sel(time=slice("{}-01-01".format(proj2_period[0]), "{}-12-31".format(proj2_period[1]))).mean('time')
-                proj4 = array_proj.sel(time=slice("{}-01-01".format(proj4_period[0]), "{}-12-31".format(proj4_period[1]))).mean('time')
-                
-                diff2 = proj2 - hist
-                diff4 = proj4 - hist
                 
                 # etat de base
                 if 'tas' in climate_var:
                     cmap = cmocean.cm.thermal
                 else:
                     cmap = cmocean.cm.solar
-    
+        
                 # carte de base
-                fig,ax = blank_national_map()
+                # fig,ax = blank_national_map()
+                climats = [Climat_winter(e) for e in France().climats_winter]
+                fig,ax = draw_climat_map({c:None for c in climats}, figs_folder=figs_folder,
+                                         border_color='w',lw=1.,add_legend=False)
                 
-                if idx == 0:
-                    vmin = hist.min()
-                    vmax = hist.max()
-                    
-                    max_val = max(np.abs(diff4.max()), np.abs(diff4.min()))
+                vmin = hist.min()
+                vmax = hist.max()
                     
                 
                 img = hist.plot(ax=ax,transform=ccrs.epsg('27572'),add_colorbar=False,
                                cmap=cmap,vmin=vmin,vmax=vmax)
                 
-                ax.set_title('Model n°{} (2000-2020)'.format(mod+1))
+                ax.set_title('')
                 
                 ax_cb = fig.add_axes([0,0,0.1,0.1])
                 posn = ax.get_position()
@@ -1180,71 +1312,19 @@ def main():
                 fig.add_axes(ax_cb)
                 cbar = plt.colorbar(img,cax=ax_cb,extendfrac=0.02)
                 
-                cbar_label_dict = {'tas':'Mean daily temperature (°C)',
+                cbar_label_dict = {'tas':'Annual average of daily mean temperature (°C) $-$ 2000-2020',
                                    'tasmax':'Mean of daily maximal temperature (°C)',
                                    'tasmin':'Mean of daily minimal temperature (°C)',
                                    'rsds':'Surface downwelling shortwave radiation (W.m$^{-2}$)'}
                 cbar.set_label(cbar_label_dict.get(climate_var))
                 
                 ax.set_extent(get_extent())
-                plt.savefig(os.path.join(figs_folder,'map_{}_mod{}_2000-2020.png'.format(climate_var,mod)),bbox_inches='tight')
+                plt.savefig(os.path.join(figs_folder,'map_{}_2000-2020.png'.format(climate_var)),bbox_inches='tight')
                 plt.show()
                 plt.close()
                 
-                # difference sur les periode 2 et 4
-                cbar_label_diff_dict = {'tas':'Difference of daily temperature (°C)',
-                                        'tasmax':'Difference of daily maximal temperature (°C)',
-                                        'tasmin':'Difference of daily minimal temperature (°C)',
-                                        'rsds':'RSDS difference (W.m$^{-2}$)'}
-                
-                cmap = cmocean.cm.balance
-                
-                fig,ax = blank_national_map()
-                
-                
-                img = diff2.plot(ax=ax,transform=ccrs.epsg('27572'),add_colorbar=False,
-                                 cmap=cmap,vmin=-max_val,vmax=max_val)
-                
-                ax.set_title('Model n°{} (+2°C)'.format(mod+1))
-                
-                ax_cb = fig.add_axes([0,0,0.1,0.1])
-                posn = ax.get_position()
-                ax_cb.set_position([posn.x0+posn.width+0.02, posn.y0, 0.04, posn.height])
-                fig.add_axes(ax_cb)
-                cbar = plt.colorbar(img,cax=ax_cb,extendfrac=0.02)
-                cbar.set_label(cbar_label_diff_dict.get(climate_var))
-                
-                ax.set_extent(get_extent())
-                plt.savefig(os.path.join(figs_folder,'map_{}_mod{}_2deg.png'.format(climate_var,mod)),bbox_inches='tight')
-                plt.show()
-                plt.close()
-                
-                cmap = cmocean.cm.balance
-                
-                fig,ax = blank_national_map()
-                
-                img = diff4.plot(ax=ax,transform=ccrs.epsg('27572'),add_colorbar=False,
-                                 cmap=cmap,vmin=-max_val,vmax=max_val)
-                
-                ax.set_title('Model n°{} (+4°C)'.format(mod+1))
-                
-                ax_cb = fig.add_axes([0,0,0.1,0.1])
-                posn = ax.get_position()
-                ax_cb.set_position([posn.x0+posn.width+0.02, posn.y0, 0.04, posn.height])
-                fig.add_axes(ax_cb)
-                cbar = plt.colorbar(img,cax=ax_cb,extendfrac=0.02)
-                cbar.set_label(cbar_label_diff_dict.get(climate_var))
-                
-                ax.set_extent(get_extent())
-                plt.savefig(os.path.join(figs_folder,'map_{}_mod{}_4deg.png'.format(climate_var,mod)),bbox_inches='tight')
-                plt.show()
-                plt.close()
-                
-                array_hist.close()
-                array_proj.close()
                 
                 del array_hist
-                del array_proj
                 
             
     #%% Détermination des périodes de +2, +4 degrés d'après les données de l'atlas interactif

@@ -11,6 +11,7 @@ import os
 import pandas as pd
 import geopandas as gpd
 import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
 from datetime import date
 import matplotlib
 import cartopy.crs as ccrs
@@ -19,6 +20,7 @@ from geopy.geocoders import Nominatim
 from geopy.exc import GeocoderUnavailable
 from scipy.spatial.distance import euclidean
 import numpy as np
+import cmocean
 
 from utils import blank_national_map
 
@@ -306,8 +308,12 @@ class France:
 
 def draw_departement_map(dict_dep,figs_folder,cbar_min=0,cbar_max=1.,
                          automatic_cbar_values=False, cbar_label=None, 
-                         map_title=None,save=None,cmap=None):
-    fig,ax = blank_national_map()
+                         map_title=None,save=None,cmap=None,figax=None):
+    
+    if figax is not None:
+        fig,ax = figax
+    else:
+        fig,ax = blank_national_map()
     
     if cmap is None:
         cmap = matplotlib.colormaps.get_cmap('viridis')
@@ -331,15 +337,17 @@ def draw_departement_map(dict_dep,figs_folder,cbar_min=0,cbar_max=1.,
     plotter.plot(color=plotter.color, ax=ax, transform=ccrs.PlateCarree(),)
     plotter.boundary.plot(ax=ax, transform=ccrs.PlateCarree(), color='k',lw=0.5)
     
-    cbar_ax = fig.add_axes([0, 0, 0.1, 0.1])
-    posn = ax.get_position()
-    cbar_ax.set_position([posn.x0+posn.width+0.02, posn.y0, 0.04, posn.height])
-    norm = matplotlib.colors.Normalize(vmin=cbar_min, vmax=cbar_max)
-    mappable = matplotlib.cm.ScalarMappable(norm=norm, cmap=cmap)
+    if not all(plotter.color==(0.0, 0.0, 0.0, 0.0)):
+        cbar_ax = fig.add_axes([0, 0, 0.1, 0.1])
+        posn = ax.get_position()
+        cbar_ax.set_position([posn.x0+posn.width+0.02, posn.y0, 0.04, posn.height])
+        norm = matplotlib.colors.Normalize(vmin=cbar_min, vmax=cbar_max)
+        mappable = matplotlib.cm.ScalarMappable(norm=norm, cmap=cmap)
+        
+        cbar_label_var = cbar_label
+        _ = plt.colorbar(mappable, cax=cbar_ax, label=cbar_label_var, extend=cbar_extend, extendfrac=0.02)
     
-    cbar_label_var = cbar_label
-    _ = plt.colorbar(mappable, cax=cbar_ax, label=cbar_label_var, extend=cbar_extend, extendfrac=0.02)
-    
+
     ax.set_title(map_title)
     if save is not None:
         plt.savefig(os.path.join(figs_folder,'{}.png'.format(save)),bbox_inches='tight')
@@ -347,11 +355,15 @@ def draw_departement_map(dict_dep,figs_folder,cbar_min=0,cbar_max=1.,
 
 
 def draw_climat_map(dict_dep,figs_folder,cbar_min=0,cbar_max=1.,
-                    automatic_cbar_values=False, cbar_label=None, 
-                    map_title=None,save=None, cmap=None,zcl_label=False,
-                    add_city_points=None, add_legend=True,lw=None):
+                    automatic_cbar_values=False, cbar_label=None, no_cbar=False,
+                    map_title=None,save=None, cmap=None,zcl_label=False,alpha=None,
+                    add_city_points=None, add_legend=True,lw=None,figax=None,
+                    border_color='k'):
     
-    fig,ax = blank_national_map()
+    if figax is not None:
+        fig,ax = figax
+    else:
+        fig,ax = blank_national_map()
     
     if cmap is None:
         cmap = matplotlib.colormaps.get_cmap('viridis')
@@ -371,9 +383,8 @@ def draw_climat_map(dict_dep,figs_folder,cbar_min=0,cbar_max=1.,
     plotter['color'] = plotter['color'].apply(cmap)
     
     # print(plotter.color)
-    
-    plotter.plot(color=plotter.color, ax=ax, transform=ccrs.PlateCarree(),)
-    plotter.boundary.plot(ax=ax, transform=ccrs.PlateCarree(), color='k',lw=lw)
+    plotter.plot(color=plotter.color, ax=ax, transform=ccrs.PlateCarree(),alpha=alpha)
+    plotter.boundary.plot(ax=ax, transform=ccrs.PlateCarree(), color=border_color,lw=lw)
     
     if zcl_label:
         for zcl in dict_dep.keys():
@@ -404,8 +415,7 @@ def draw_climat_map(dict_dep,figs_folder,cbar_min=0,cbar_max=1.,
                         transform=ccrs.PlateCarree(), color=color,ls='',
                         marker='o',label=city.name,mec='k',zorder=5)
         
-    
-    if not all(plotter.color==(0.0, 0.0, 0.0, 0.0)):
+    if not all(plotter.color==(0.0, 0.0, 0.0, 0.0)) and not no_cbar:
         cbar_ax = fig.add_axes([0, 0, 0.1, 0.1])
         posn = ax.get_position()
         cbar_ax.set_position([posn.x0+posn.width+0.02, posn.y0, 0.04, posn.height])
@@ -499,6 +509,35 @@ def main():
        # draw_climat_map({c:None for c in climats},zcl_label=True, 
        #                 figs_folder=figs_folder, save='zcl',
        #                 add_legend=False,lw=0.7)
+       
+    
+    # Pour Pille: zcl winter + departements
+    if True:
+        france = France()
+        
+        fig,ax = draw_departement_map({dep:None for dep in france.departements}, 
+                                      figs_folder=figs_folder, save=None)
+        
+        climats_winter = [Climat_winter(e) for e in france.climats_winter]
+        fig,ax = draw_climat_map({c:i/2 for i,c in enumerate(climats_winter)},zcl_label=False, 
+                                 figs_folder=figs_folder, save=None,no_cbar=True,cmap=cmocean.cm.thermal,
+                                 add_legend=False,lw=0., figax=(fig,ax),alpha=0.4)
+        
+        
+        leg_handles = []
+        for i,zcl in enumerate(climats_winter):
+            lon, lat = climats_winter[0].geometry.centroid.x, climats_winter[0].geometry.centroid.y
+            color = cmocean.cm.thermal(i/2)
+            patch = mpatches.Patch(color=color, label=zcl.code)
+            leg_handles.append(patch)
+            # ax.plot([lon],[lat], 
+            #         transform=ccrs.PlateCarree(), color=color,ls='',marker='s',
+            #         label='{}'.format(zcl.code),zorder=-100)
+            
+        ax.legend(loc='upper right', handles=leg_handles)
+        plt.savefig(os.path.join(figs_folder,'{}.png'.format('winter_zcl_admin')), bbox_inches='tight')
+        plt.show()
+        
         
     #%% Téléchargement des préfectures pour intégratiuon à département
     if False:
