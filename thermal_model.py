@@ -627,7 +627,7 @@ def compute_external_Phi(typology, weather_data, wall):
 
 
 def get_solar_transmission_factor(typology,weather_data,wall):
-    # Dans les règles Th-bat : voir norme NF P50 777, puis norme NF EN 410 
+    # Dans les règles Th-bat (p51) : voir norme NF P50 777, puis norme NF EN 410 
     # à raffiner selon le nombre de couches principalement (et peut-être l'angle d'incidence ?)
 
     wall_orientation = {0:typology.w0_orientation,
@@ -646,7 +646,6 @@ def get_solar_transmission_factor(typology,weather_data,wall):
     sun_angle = np.where(sun_alt==0, 90,sun_angle)
     
     solar_factor = np.maximum(np.cos(np.deg2rad(sun_angle)),0)
-    solar_factor = solar_factor*typology.windows_Ug
     # solar_factor = 1
     return solar_factor
 
@@ -2797,7 +2796,7 @@ def main():
         
         
         # Comparaison entre typologies (consommations et U-values)
-        if False:
+        if True:
             
             for building_type in ['SFH','TH','MFH','AB']:
             # for building_type in ['TH']:
