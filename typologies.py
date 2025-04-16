@@ -184,11 +184,12 @@ class Typology():
         
         # caractéristiques des vitrages
         self.windows_frame_ratio = 0.3 # valeur tabula
-        self.h_windows_surface = params.get('building_horizontal_windows_surface')*(1-self.windows_frame_ratio)
-        self.w0_windows_surface = (params.get('building_wall0_windows_surface')+0.001)*(1-self.windows_frame_ratio)
-        self.w1_windows_surface = (params.get('building_wall1_windows_surface')+0.001)*(1-self.windows_frame_ratio)
-        self.w2_windows_surface = (params.get('building_wall2_windows_surface')+0.001)*(1-self.windows_frame_ratio)
-        self.w3_windows_surface = (params.get('building_wall3_windows_surface')+0.001)*(1-self.windows_frame_ratio)
+        # self.windows_frame_ratio = 0. 
+        self.h_windows_surface = params.get('building_horizontal_windows_surface')
+        self.w0_windows_surface = (params.get('building_wall0_windows_surface')+0.001)
+        self.w1_windows_surface = (params.get('building_wall1_windows_surface')+0.001)
+        self.w2_windows_surface = (params.get('building_wall2_windows_surface')+0.001)
+        self.w3_windows_surface = (params.get('building_wall3_windows_surface')+0.001)
         self.windows_U = params.get('{}_Uw'.format(level))
         self.windows_Ug = None
         

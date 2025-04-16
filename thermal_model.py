@@ -646,6 +646,7 @@ def get_solar_transmission_factor(typology,weather_data,wall):
     sun_angle = np.where(sun_alt==0, 90,sun_angle)
     
     solar_factor = np.maximum(np.cos(np.deg2rad(sun_angle)),0)
+    solar_factor = solar_factor * (1-typology.windows_frame_ratio)
     # solar_factor = 1
     return solar_factor
 
@@ -999,8 +1000,19 @@ def compute_U_values(typology):
     else:
         typology.modelled_Uph = (1/(R_uih + R_uceiling + R_uroof + R_ueh + R_uhceiling + R_uhroof))/(typology.roof_surface)
     
-    walls_surface = typology.w0_surface + typology.w1_surface + typology.w2_surface + typology.w3_surface
-    typology.modelled_Umur = (1/(R_w0i + R_w0e + R_w0eh) + 1/(R_w1i + R_w1e + R_w1eh) + 1/(R_w2i + R_w2e + R_w2eh) + 1/(R_w3i + R_w3e + R_w3eh))/walls_surface
+    walls_surface = typology.w0_surface
+    numerator = 1/(R_w0i + R_w0e + R_w0eh)
+    if not typology.w3_adiabatic:
+        walls_surface +=  typology.w3_surface
+        numerator += 1/(R_w3i + R_w3e + R_w3eh)
+    if not typology.w2_adiabatic:
+        walls_surface +=  typology.w2_surface
+        numerator += 1/(R_w2i + R_w2e + R_w2eh)
+    if not typology.w1_adiabatic:
+        walls_surface +=  typology.w1_surface
+        numerator += 1/(R_w1i + R_w1e + R_w1eh)
+        
+    typology.modelled_Umur = (numerator)/walls_surface
     
     windows_surface = typology.w0_windows_surface + typology.w1_windows_surface + typology.w2_windows_surface + typology.w3_windows_surface
     typology.modelled_Uw = (1/R_w0w + 1/R_w1w + 1/R_w2w + 1/R_w3w)/windows_surface
@@ -1118,8 +1130,19 @@ def run_thermal_model(typology, behaviour, weather_data, progressbar=False, pmax
     else:
         typology.modelled_Uph = (1/(R_uih + R_uceiling + R_uroof + R_ueh + R_uhceiling + R_uhroof))/(typology.roof_surface)
     
-    walls_surface = typology.w0_surface + typology.w1_surface + typology.w2_surface + typology.w3_surface
-    typology.modelled_Umur = (1/(R_w0i + R_w0e + R_w0eh) + 1/(R_w1i + R_w1e + R_w1eh) + 1/(R_w2i + R_w2e + R_w2eh) + 1/(R_w3i + R_w3e + R_w3eh))/walls_surface
+    walls_surface = typology.w0_surface
+    numerator = 1/(R_w0i + R_w0e + R_w0eh)
+    if not typology.w3_adiabatic:
+        walls_surface +=  typology.w3_surface
+        numerator += 1/(R_w3i + R_w3e + R_w3eh)
+    if not typology.w2_adiabatic:
+        walls_surface +=  typology.w2_surface
+        numerator += 1/(R_w2i + R_w2e + R_w2eh)
+    if not typology.w1_adiabatic:
+        walls_surface +=  typology.w1_surface
+        numerator += 1/(R_w1i + R_w1e + R_w1eh)
+        
+    typology.modelled_Umur = (numerator)/walls_surface
     
     windows_surface = typology.w0_windows_surface + typology.w1_windows_surface + typology.w2_windows_surface + typology.w3_windows_surface
     typology.modelled_Uw = (1/R_w0w + 1/R_w1w + 1/R_w2w + 1/R_w3w)/windows_surface
