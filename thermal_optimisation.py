@@ -1296,10 +1296,10 @@ def main():
         
         
         # cadran des rénovations par gestes
-        if False:
+        if True:
             
             # calcul des gains
-            if False:
+            if True:
                 # component = 'shading'
                 zcl_list = ['H1b','H3']
                 
@@ -1310,8 +1310,8 @@ def main():
                     # for component in ['floor']:
                         for zcl_code in zcl_list:
                             zcl = Climat(zcl_code)
-                            # for building_type in ['SFH','TH','MFH','AB']:
-                            for building_type in ['SFH']:
+                            for building_type in ['SFH','TH','MFH','AB']:
+                            # for building_type in ['SFH']:
                                 for i in range(1,11):
                                     code = 'FR.N.{}.{:02d}.Gen'.format(building_type,i)
                                     
@@ -1515,10 +1515,10 @@ def main():
                 output_path = os.path.join(output, folder)
                 component_list = ['shading','walls','floor','roof','albedo','windows','ventilation']
                 
-                zoom = True
+                zoom = False
                 
-                # for building_type in ['SFH','TH','MFH','AB']:
-                for building_type in ['SFH']:
+                for building_type in ['SFH','TH','MFH','AB']:
+                # for building_type in ['SFH']:
                     
                     fig,ax = plt.subplots(figsize=(5,5),dpi=300)
                     
@@ -1662,7 +1662,7 @@ def main():
                 
             
     #%% Combinaisons de gestes de rénovations
-    if True:
+    if False:
         
         # folder = '20250331_thermal_optimisation'
         # figs_folder = os.path.join(output, folder, 'figs')
