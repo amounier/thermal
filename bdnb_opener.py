@@ -1226,7 +1226,7 @@ def plot_dpe_distribution(path, dep='75', save=True, max_xlim=600, external_disk
         ax.bar(list(counter_dict_eti.keys()), list(counter_dict_eti.values()), width=1., color=color, label=eti)
     
     ax.set_xlim([0,max_xlim])
-    ax.set_ylabel("Nombre d'observations ({})".format(Departement(dep).name))
+    ax.set_ylabel("Nombre d'observations ({} - {})".format(Departement(dep).name,dep))
     ax.legend()
     ax.set_xlabel("Consommation annuelle en énergie primaire (kWh.m$^{-2}$)")
     ax.set_xticks(ticks=[int(x) for x in list(set(list(np.asarray(list(etiquette_ep_dict.values())).flatten()))) if not np.isinf(x)] + [max_xlim])
@@ -1512,7 +1512,13 @@ def main():
     #%% graphe des distribution des DPE présents dans la BDNB (paris pour l'instant)
     if False:
         # uniquement cette fonction a été mise à jour pour le changement le département 
-        plot_dpe_distribution(dep=departement, path=output_path,max_xlim=600, external_disk=False)
+        # plot_dpe_distribution(dep=departement, path=output_path,max_xlim=600, external_disk=True)
+        
+        plot_dpe_distribution(dep='38', path=output_path,max_xlim=600, external_disk=True)
+        plot_dpe_distribution(dep='26', path=output_path,max_xlim=600, external_disk=True)
+        
+        plot_dpe_distribution(dep='84', path=output_path,max_xlim=600, external_disk=True)
+        plot_dpe_distribution(dep='13', path=output_path,max_xlim=600, external_disk=True)
     
     #%% plot des diagnostics suspects
     if False:
