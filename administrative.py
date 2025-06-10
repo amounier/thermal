@@ -89,6 +89,7 @@ def get_coordinates(city,max_attempt=10):
                         "Foix":(1.605381, 42.9639),
                         "Troyes":(4.074626, 48.297163),
                         "Carcassonne":(2.349107, 43.213036),
+                        "Carpentras":(5.048768, 44.055404),
                         "Rodez":(2.572849, 44.351141),
                         "Marseille":(5.369953, 43.296174),
                         "Caen":(-0.363561, 49.18134),
@@ -154,6 +155,7 @@ def get_coordinates(city,max_attempt=10):
                         "Chambéry":(5.920364, 45.566267),
                         "Annecy":(6.128885, 45.899235),
                         "Paris":(2.320041, 48.85889),
+                        "Trappes":(1.998836, 48.776096),
                         "Rouen":(1.093966, 49.440459),
                         "Melun":(2.660817, 48.539927),
                         "Versailles":(2.126689, 48.80354),
@@ -173,7 +175,8 @@ def get_coordinates(city,max_attempt=10):
                         "Nanterre":(2.207127, 48.892427),
                         "Bobigny":(2.445223, 48.906387),
                         "Créteil":(2.453073, 48.777149),
-                        "Cergy":(2.038874, 49.052753),}
+                        "Cergy":(2.038874, 49.052753),
+                        "Marignane":(5.214627, 43.416273)}
         
     if city in coordinates_dict.keys():
         longitude, latitude = coordinates_dict[city]
@@ -196,6 +199,13 @@ class City:
         self.name = name
         self.coordinates = get_coordinates(self.name)
         self.departement_name = {v:k for k,v in dict_name_dep_name_prf.items()}.get(self.name)
+        
+        if self.departement_name is None:
+            other_cities_dict = {'Trappes':'Yvelines',
+                                 'Carpentras':'Vaucluse',
+                                 'Marignane':'Bouches-du-Rhône'}
+            self.departement_name = other_cities_dict.get(self.name)
+            
         self.departement = Departement(dict_name_dep_code_dep.get(self.departement_name))
         
     def __str__(self):
@@ -243,15 +253,14 @@ class Climat:
         if self.codint<100:
             self.codint *= 10
             
-        # TODO : ville centrale de la zone
-        # (prefecture du departement dont le centroid est le plus proche du centroid du climat)
-        self.center_departement = self.get_center_departement()
+        # self.center_departement = self.get_center_departement()
         self.center_prefecture = self.get_center_prefecture()
         
     def __str__(self):
         return self.code
     
     def get_center_departement(self):
+        # TODO : à changer
         distance_list = [np.nan]*len(self.departements)
         for i,dep in enumerate(self.departements):
             distance_list[i] = euclidean(self.geometry.centroid.coords[0], dep.geometry.centroid.coords[0],)
@@ -259,14 +268,26 @@ class Climat:
         center_departement = self.departements[np.argmin(distance_list)]
         return center_departement
     
-    def get_center_prefecture(self):
-        distance_list = [np.nan]*len(self.departements)
-        for i,dep in enumerate(self.departements):
-            prefecture = dep.prefecture
-            coords_prefecture = get_coordinates(prefecture)
-            distance_list[i] = euclidean(self.geometry.centroid.coords[0], coords_prefecture)
-            
-        center_prefecture = self.departements[np.argmin(distance_list)].prefecture
+    def get_center_prefecture(self, geographic=False):
+        # TODO : à changer cf villes standards p145 carnet
+        if geographic:
+            distance_list = [np.nan]*len(self.departements)
+            for i,dep in enumerate(self.departements):
+                prefecture = dep.prefecture
+                coords_prefecture = get_coordinates(prefecture)
+                distance_list[i] = euclidean(self.geometry.centroid.coords[0], coords_prefecture)
+                
+            center_prefecture = self.departements[np.argmin(distance_list)].prefecture
+        else:
+            dict_center_city = {'H1a':'Trappes', 
+                                'H1b':'Nancy', 
+                                'H1c':'Mâcon', 
+                                'H2a':'Rennes', 
+                                'H2b':'Tours', 
+                                'H2c':'Agen', 
+                                'H2d':'Carpentras', 
+                                'H3':'Marignane'}
+            center_prefecture = dict_center_city.get(self.code)
         return center_prefecture
     
     
@@ -308,7 +329,8 @@ class France:
 
 def draw_departement_map(dict_dep,figs_folder,cbar_min=0,cbar_max=1.,
                          automatic_cbar_values=False, cbar_label=None, 
-                         map_title=None,save=None,cmap=None,figax=None):
+                         map_title=None,save=None,cmap=None,figax=None,
+                         hide_cbar=False,alpha=None):
     
     if figax is not None:
         fig,ax = figax
@@ -334,10 +356,10 @@ def draw_departement_map(dict_dep,figs_folder,cbar_min=0,cbar_max=1.,
     plotter['color'] = (plotter.vals-cbar_min)/(cbar_max-cbar_min)
     plotter['color'] = plotter['color'].apply(cmap)
     
-    plotter.plot(color=plotter.color, ax=ax, transform=ccrs.PlateCarree(),)
+    plotter.plot(color=plotter.color, ax=ax, transform=ccrs.PlateCarree(),alpha=alpha)
     plotter.boundary.plot(ax=ax, transform=ccrs.PlateCarree(), color='k',lw=0.5)
     
-    if not all(plotter.color==(0.0, 0.0, 0.0, 0.0)):
+    if not all(plotter.color==(0.0, 0.0, 0.0, 0.0)) and not hide_cbar:
         cbar_ax = fig.add_axes([0, 0, 0.1, 0.1])
         posn = ax.get_position()
         cbar_ax.set_position([posn.x0+posn.width+0.02, posn.y0, 0.04, posn.height])

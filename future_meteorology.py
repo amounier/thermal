@@ -22,8 +22,9 @@ import geopandas as gpd
 from shapely.geometry import mapping
 import cmocean
 from pysolar.solar import get_altitude, get_altitude_fast, get_azimuth, get_azimuth_fast
-# import multiprocessing
+import multiprocessing
 import seaborn as sns
+import pickle
 
 from meteorology import (get_historical_weather_data, 
                          aggregate_resolution, 
@@ -107,7 +108,7 @@ def get_projected_weather_data_old(city,zcl_codint,nmod,rcp,future_period,ref_ye
 
 
 def compute_projected_weather_data(zcl_code,nmod):
-    
+    # Accéléré 72 fois grace aux bfill et ffill 
     zcl = Climat(zcl_code)
     city = City(zcl.center_prefecture)
     coordinates = city.coordinates
@@ -154,20 +155,22 @@ def compute_projected_weather_data(zcl_code,nmod):
         prev_T, prev_t, next_T, next_t = [np.nan]*4
         flag = False
         
-        def get_previous_temperature(t, data=hourly_data):
+        def get_previous_temperature(t, data):
             try:
-                d = hourly_data[hourly_data.index<t].dropna().iloc[-1]
-                t = d.name
+                # d = data[data.index<t].dropna().iloc[-1]
+                d = data.loc[t]
+                t = d.date
                 T = d.temp
                 return t, T
             except IndexError:
                 return np.nan, np.nan
             
         
-        def get_next_temperature(t, data=hourly_data):
+        def get_next_temperature(t, data):
             try:
-                d = hourly_data[hourly_data.index>t].dropna().iloc[0]
-                t = d.name
+                # d = data[data.index>t].dropna().iloc[0]
+                d = data.loc[t]
+                t = d.date
                 T = d.temp
                 return t, T
             except IndexError:
@@ -177,12 +180,23 @@ def compute_projected_weather_data(zcl_code,nmod):
             T = (next_T + prev_T)/2 - ((next_T-prev_T)/2 * np.cos(np.pi*(t-prev_t)/(next_t-prev_t)))
             return T
         
-            
+        # define bfill with temp and date
+        hourly_bfill = hourly_data.copy()
+        hourly_bfill['date'] = [pd.NaT]*len(hourly_bfill)
+        hourly_bfill.loc[~hourly_bfill.temp.isnull(),'date'] = hourly_bfill.loc[~hourly_bfill.temp.isnull()].index
+        hourly_bfill = hourly_bfill.bfill()
+        
+        # same for ffill
+        hourly_ffill = hourly_data.copy()
+        hourly_ffill['date'] = [pd.NaT]*len(hourly_ffill)
+        hourly_ffill.loc[~hourly_ffill.temp.isnull(),'date'] = hourly_ffill.loc[~hourly_ffill.temp.isnull()].index
+        hourly_ffill = hourly_ffill.ffill()
+        
         for idx,t in tqdm.tqdm(enumerate(hourly_data.index),total=len(hourly_data), desc='temperature'):
             T = hourly_data.loc[t].temp
             if flag:
-                prev_t, prev_T = get_previous_temperature(t, hourly_data)
-                next_t, next_T = get_next_temperature(t, hourly_data)
+                prev_t, prev_T = get_previous_temperature(t, hourly_ffill)
+                next_t, next_T = get_next_temperature(t, hourly_bfill)
                 flag = False
             if not pd.isnull(T):
                 flag = True
@@ -247,6 +261,24 @@ def compute_projected_weather_data(zcl_code,nmod):
 
 
 def get_projected_weather_data(zcl_code,period,nmod=3):
+    """
+    Récupération des données climatiques projetées
+
+    Parameters
+    ----------
+    zcl_code : str
+        code de la zone climatique zcl8.
+    period : list
+        list de deux éléments : année de départ, année de fin (inclues). Comprises entre 1951 et 2100
+    nmod : int, optional
+        Numéro du modèle climatique. The default is 3.
+
+    Returns
+    -------
+    hourly : pandas DataFrame
+        données climatiques.
+
+    """
     hourly = compute_projected_weather_data(zcl_code, nmod=nmod)
     hourly = hourly[hourly.index.year.isin(list(range(period[0],period[1]+1)))]
     
@@ -577,19 +609,24 @@ def main():
             
             elif calib_method == 'ADAMONT':
                 models_dict = {0:{'historical':'Adjust_France_CNRM-CERFACS-CNRM-CM5_historical_r1i1p1_CNRM-ALADIN63_v2_MF-ADAMONT-SAFRAN-1980-2011_day_19510101-20051231.nc',
-                                  'rcp85':     'Adjust_France_CNRM-CERFACS-CNRM-CM5_rcp85_r1i1p1_CNRM-ALADIN63_v2_MF-ADAMONT-SAFRAN-1980-2011_day_20060101-21001231.nc'},
+                                  'rcp85':     'Adjust_France_CNRM-CERFACS-CNRM-CM5_rcp85_r1i1p1_CNRM-ALADIN63_v2_MF-ADAMONT-SAFRAN-1980-2011_day_20060101-21001231.nc',
+                                  'historical_rcp85':'Adjust_France_CNRM-CERFACS-CNRM-CM5_rcp85_r1i1p1_CNRM-ALADIN63_v2_MF-ADAMONT-SAFRAN-1980-2011_day_19510101-21001231.nc'},
                                
                                1:{'historical':'Adjust_France_CNRM-CERFACS-CNRM-CM5_historical_r1i1p1_MOHC-HadREM3-GA7-05_v2_MF-ADAMONT-SAFRAN-1980-2011_day_19520101-20051231.nc',
-                                  'rcp85':     'Adjust_France_CNRM-CERFACS-CNRM-CM5_rcp85_r1i1p1_MOHC-HadREM3-GA7-05_v2_MF-ADAMONT-SAFRAN-1980-2011_day_20060101-21001230.nc'},
+                                  'rcp85':     'Adjust_France_CNRM-CERFACS-CNRM-CM5_rcp85_r1i1p1_MOHC-HadREM3-GA7-05_v2_MF-ADAMONT-SAFRAN-1980-2011_day_20060101-21001230.nc',
+                                  'historical_rcp85':     'Adjust_France_CNRM-CERFACS-CNRM-CM5_rcp85_r1i1p1_MOHC-HadREM3-GA7-05_v2_MF-ADAMONT-SAFRAN-1980-2011_day_19520101-21001230.nc'},
                                
                                2:{'historical':'Adjust_France_ICHEC-EC-EARTH_historical_r12i1p1_KNMI-RACMO22E_v1_MF-ADAMONT-SAFRAN-1980-2011_day_19500101-20051231.nc',
-                                  'rcp85':     'Adjust_France_ICHEC-EC-EARTH_rcp85_r12i1p1_KNMI-RACMO22E_v1_MF-ADAMONT-SAFRAN-1980-2011_day_20060101-21001231.nc'},
+                                  'rcp85':     'Adjust_France_ICHEC-EC-EARTH_rcp85_r12i1p1_KNMI-RACMO22E_v1_MF-ADAMONT-SAFRAN-1980-2011_day_20060101-21001231.nc',
+                                  'historical_rcp85':     'Adjust_France_ICHEC-EC-EARTH_rcp85_r12i1p1_KNMI-RACMO22E_v1_MF-ADAMONT-SAFRAN-1980-2011_day_19500101-21001231.nc'},
                                
                                3:{'historical':'Adjust_France_ICHEC-EC-EARTH_historical_r12i1p1_MOHC-HadREM3-GA7-05_v1_MF-ADAMONT-SAFRAN-1980-2011_day_19520101-20051231.nc',
-                                  'rcp85':     'Adjust_France_ICHEC-EC-EARTH_rcp85_r12i1p1_MOHC-HadREM3-GA7-05_v1_MF-ADAMONT-SAFRAN-1980-2011_day_20060101-21001231.nc'},
+                                  'rcp85':     'Adjust_France_ICHEC-EC-EARTH_rcp85_r12i1p1_MOHC-HadREM3-GA7-05_v1_MF-ADAMONT-SAFRAN-1980-2011_day_20060101-21001231.nc',
+                                  'historical_rcp85':     'Adjust_France_ICHEC-EC-EARTH_rcp85_r12i1p1_MOHC-HadREM3-GA7-05_v1_MF-ADAMONT-SAFRAN-1980-2011_day_19520101-21001231.nc'},
                                
                                4:{'historical':'Adjust_France_MOHC-HadGEM2-ES_historical_r1i1p1_MOHC-HadREM3-GA7-05_v1_MF-ADAMONT-SAFRAN-1980-2011_day_19520101-20051231.nc',
-                                  'rcp85':     'Adjust_France_MOHC-HadGEM2-ES_rcp85_r1i1p1_MOHC-HadREM3-GA7-05_v1_MF-ADAMONT-SAFRAN-1980-2011_day_20060101-20991219.nc'},
+                                  'rcp85':     'Adjust_France_MOHC-HadGEM2-ES_rcp85_r1i1p1_MOHC-HadREM3-GA7-05_v1_MF-ADAMONT-SAFRAN-1980-2011_day_20060101-20991219.nc',
+                                  'historical_rcp85':     'Adjust_France_MOHC-HadGEM2-ES_rcp85_r1i1p1_MOHC-HadREM3-GA7-05_v1_MF-ADAMONT-SAFRAN-1980-2011_day_19520101-20991219.nc'},
                                }
             
             rsds_Explore2_hist = os.path.join(data_folder,variable+models_dict.get(nmod).get('historical'))
@@ -877,19 +914,24 @@ def main():
         
         elif calib_method == 'ADAMONT':
             models_dict = {0:{'historical':'Adjust_France_CNRM-CERFACS-CNRM-CM5_historical_r1i1p1_CNRM-ALADIN63_v2_MF-ADAMONT-SAFRAN-1980-2011_day_19510101-20051231.nc',
-                              'rcp85':     'Adjust_France_CNRM-CERFACS-CNRM-CM5_rcp85_r1i1p1_CNRM-ALADIN63_v2_MF-ADAMONT-SAFRAN-1980-2011_day_20060101-21001231.nc'},
+                              'rcp85':     'Adjust_France_CNRM-CERFACS-CNRM-CM5_rcp85_r1i1p1_CNRM-ALADIN63_v2_MF-ADAMONT-SAFRAN-1980-2011_day_20060101-21001231.nc',
+                              'historical_rcp85':'Adjust_France_CNRM-CERFACS-CNRM-CM5_rcp85_r1i1p1_CNRM-ALADIN63_v2_MF-ADAMONT-SAFRAN-1980-2011_day_19510101-21001231.nc'},
                            
                            1:{'historical':'Adjust_France_CNRM-CERFACS-CNRM-CM5_historical_r1i1p1_MOHC-HadREM3-GA7-05_v2_MF-ADAMONT-SAFRAN-1980-2011_day_19520101-20051231.nc',
-                              'rcp85':     'Adjust_France_CNRM-CERFACS-CNRM-CM5_rcp85_r1i1p1_MOHC-HadREM3-GA7-05_v2_MF-ADAMONT-SAFRAN-1980-2011_day_20060101-21001230.nc'},
+                              'rcp85':     'Adjust_France_CNRM-CERFACS-CNRM-CM5_rcp85_r1i1p1_MOHC-HadREM3-GA7-05_v2_MF-ADAMONT-SAFRAN-1980-2011_day_20060101-21001230.nc',
+                              'historical_rcp85':     'Adjust_France_CNRM-CERFACS-CNRM-CM5_rcp85_r1i1p1_MOHC-HadREM3-GA7-05_v2_MF-ADAMONT-SAFRAN-1980-2011_day_19520101-21001230.nc'},
                            
                            2:{'historical':'Adjust_France_ICHEC-EC-EARTH_historical_r12i1p1_KNMI-RACMO22E_v1_MF-ADAMONT-SAFRAN-1980-2011_day_19500101-20051231.nc',
-                              'rcp85':     'Adjust_France_ICHEC-EC-EARTH_rcp85_r12i1p1_KNMI-RACMO22E_v1_MF-ADAMONT-SAFRAN-1980-2011_day_20060101-21001231.nc'},
+                              'rcp85':     'Adjust_France_ICHEC-EC-EARTH_rcp85_r12i1p1_KNMI-RACMO22E_v1_MF-ADAMONT-SAFRAN-1980-2011_day_20060101-21001231.nc',
+                              'historical_rcp85':     'Adjust_France_ICHEC-EC-EARTH_rcp85_r12i1p1_KNMI-RACMO22E_v1_MF-ADAMONT-SAFRAN-1980-2011_day_19500101-21001231.nc'},
                            
                            3:{'historical':'Adjust_France_ICHEC-EC-EARTH_historical_r12i1p1_MOHC-HadREM3-GA7-05_v1_MF-ADAMONT-SAFRAN-1980-2011_day_19520101-20051231.nc',
-                              'rcp85':     'Adjust_France_ICHEC-EC-EARTH_rcp85_r12i1p1_MOHC-HadREM3-GA7-05_v1_MF-ADAMONT-SAFRAN-1980-2011_day_20060101-21001231.nc'},
+                              'rcp85':     'Adjust_France_ICHEC-EC-EARTH_rcp85_r12i1p1_MOHC-HadREM3-GA7-05_v1_MF-ADAMONT-SAFRAN-1980-2011_day_20060101-21001231.nc',
+                              'historical_rcp85':     'Adjust_France_ICHEC-EC-EARTH_rcp85_r12i1p1_MOHC-HadREM3-GA7-05_v1_MF-ADAMONT-SAFRAN-1980-2011_day_19520101-21001231.nc'},
                            
                            4:{'historical':'Adjust_France_MOHC-HadGEM2-ES_historical_r1i1p1_MOHC-HadREM3-GA7-05_v1_MF-ADAMONT-SAFRAN-1980-2011_day_19520101-20051231.nc',
-                              'rcp85':     'Adjust_France_MOHC-HadGEM2-ES_rcp85_r1i1p1_MOHC-HadREM3-GA7-05_v1_MF-ADAMONT-SAFRAN-1980-2011_day_20060101-20991219.nc'},
+                              'rcp85':     'Adjust_France_MOHC-HadGEM2-ES_rcp85_r1i1p1_MOHC-HadREM3-GA7-05_v1_MF-ADAMONT-SAFRAN-1980-2011_day_20060101-20991219.nc',
+                              'historical_rcp85':     'Adjust_France_MOHC-HadGEM2-ES_rcp85_r1i1p1_MOHC-HadREM3-GA7-05_v1_MF-ADAMONT-SAFRAN-1980-2011_day_19520101-20991219.nc'},
                            }
         
     
@@ -898,36 +940,44 @@ def main():
             data_folder = '/media/amounier/MPBE/heavy_data/Explore2'
         else:
             data_folder = os.path.join('data','Explore2')
-            
         
         climate_vars = ['tas','tasmax','tasmin','rsds']
         climate_vars = ['tas']
         # climate_vars = ['rsds']
         for climate_var in climate_vars:
+            # print('climate var',climate_var)
         # climate_var = 'rsds' #'tas','tasmax','tasmin','rsds'
         
             for mod in range(0,5):
+                # print('\tmodel',mod)
             # for mod in range(4,5):
                 
-                Explore2_hist = os.path.join(data_folder,climate_var+models_dict.get(mod).get('historical'))
-                array_hist = xr.open_dataset(Explore2_hist)
-                array_hist = array_hist[list(array_hist.data_vars)[-1]]
-                if 'tas' in climate_var:
-                    array_hist = array_hist - 273.15
-                array_hist.rio.write_crs('epsg:27572', inplace=True)
+                # Explore2_hist = os.path.join(data_folder,climate_var+models_dict.get(mod).get('historical'))
+                # array_hist = xr.open_dataset(Explore2_hist)
+                # array_hist = array_hist[list(array_hist.data_vars)[-1]]
+                # if 'tas' in climate_var:
+                #     array_hist = array_hist - 273.15
+                # array_hist.rio.write_crs('epsg:27572', inplace=True)
                 
-                Explore2_proj = os.path.join(data_folder,climate_var+models_dict.get(mod).get('rcp85'))
-                array_proj = xr.open_dataset(Explore2_proj)
-                array_proj = array_proj[list(array_proj.data_vars)[-1]]
-                if 'tas' in climate_var:
-                    array_proj = array_proj - 273.15
-                array_proj.rio.write_crs('epsg:27572', inplace=True)
+                # Explore2_proj = os.path.join(data_folder,climate_var+models_dict.get(mod).get('rcp85'))
+                # array_proj = xr.open_dataset(Explore2_proj)
+                # array_proj = array_proj[list(array_proj.data_vars)[-1]]
+                # if 'tas' in climate_var:
+                #     array_proj = array_proj - 273.15
+                # array_proj.rio.write_crs('epsg:27572', inplace=True)
+                
+                Explore2 = os.path.join(data_folder,climate_var+models_dict.get(mod).get('historical_rcp85'))
+                array = xr.open_dataset(Explore2)
+                array = array[list(array.data_vars)[-1]]
+                array.rio.write_crs('epsg:27572', inplace=True)
                 
                 
                 # concatenation des valeurs journalières
                 if False:
                     climats = France().climats
                     for zcl in climats:
+                        # TODO : changer les villes des zcl
+                        # TODO : vérifier de que ça marche
                         zcl = Climat(zcl)
                         city = zcl.center_prefecture
                         coords = get_coordinates(city)
@@ -939,11 +989,8 @@ def main():
                         transformer = pyproj.Transformer.from_crs("EPSG:4326", "EPSG:27572", always_xy=True)
                         coords_transformed = transformer.transform(*coords)
                         
-                        hist = array_hist.sel(x=coords_transformed[0], y=coords_transformed[1], method='nearest')
-                        proj = array_proj.sel(x=coords_transformed[0], y=coords_transformed[1], method='nearest')
-                        data_hist = pd.DataFrame(index=hist.time, data=hist).rename(columns={0:climate_var})
-                        data_proj = pd.DataFrame(index=proj.time, data=proj).rename(columns={0:climate_var})
-                        data = pd.concat([data_hist, data_proj]).rename(columns={0:climate_var})
+                        point_data = array.sel(x=coords_transformed[0], y=coords_transformed[1], method='nearest')
+                        data = pd.DataFrame(index=point_data.time, data=point_data).rename(columns={0:climate_var})
                         
                         print('saving {}_mod{}_{}'.format(climate_var,mod,zcl.code))
                         data.to_csv(os.path.join(os.path.join(output, folder),save_name))
@@ -952,7 +999,7 @@ def main():
                 # affichage des données journalieres 
                 if False:
                     zcl = Climat('H3')
-                    city = zcl.center_prefecture
+                    city = zcl.center_prefecture # TODO : idem , à remplacer
                     coords = get_coordinates(city)
                     
                     transformer = pyproj.Transformer.from_crs("EPSG:4326", "EPSG:27572", always_xy=True)
@@ -974,15 +1021,9 @@ def main():
                 # concatenation des valeurs annuelles
                 if False and climate_var != 'tas':
     
-                    hist = array_hist.mean(('x','y'))
-                    hist = hist.groupby('time.year').mean('time')
-                    
-                    proj = array_proj.mean(('x','y'))
-                    proj = proj.groupby('time.year').mean('time')
-                    
-                    data_hist = pd.DataFrame(index=hist.year, data=hist)
-                    data_proj = pd.DataFrame(index=proj.year, data=proj)
-                    data = pd.concat([data_hist, data_proj]).rename(columns={0:climate_var})
+                    data_array = array.mean(('x','y'))
+                    data_array = data_array.groupby('time.year').mean('time')
+                    data = pd.DataFrame(index=data_array.year, data=data_array).rename(columns={0:climate_var})
                     
                     # data.to_csv(os.path.join(os.path.join(output, folder),'{}_mod{}.csv'.format(climate_var,mod)))
                         
@@ -996,66 +1037,187 @@ def main():
                     plt.show()
                     
                 # concatenation des valeurs annuelles (temperature)
-                if False and climate_var == 'tas':
-                    mean_yt_deg2 = 11.37
-                    mean_yt_deg4 = 13.25
+                if True and climate_var == 'tas':
+                    # mean_yt_deg2 = 11.37
+                    # mean_yt_deg4 = 13.25
                     
-                    hist = array_hist.mean(('x','y'))
-                    hist = hist.groupby('time.year').mean('time')
-                    
-                    proj = array_proj.mean(('x','y'))
-                    proj = proj.groupby('time.year').mean('time')
-                    
-                    data_hist = pd.DataFrame(index=hist.year, data=hist)
-                    data_proj = pd.DataFrame(index=proj.year, data=proj)
-                    data = pd.concat([data_hist, data_proj]).rename(columns={0:'temperature'})
+                    data_array = array.mean(('x','y'))
+                    data_array = data_array.groupby('time.year').mean('time')
+                    data = pd.DataFrame(index=data_array.year, data=data_array).rename(columns={0:climate_var})
                     
                     data.to_csv(os.path.join(os.path.join(output, folder),'{}_mod{}.csv'.format(climate_var,mod)))
+                    
+                    rolling_data = data.rolling(20,center=True).mean()
+                    # fig,ax = plt.subplots(figsize=(5,5),dpi=300)
+                    # data.plot(ax=ax,color='k')
+                    # ax.plot([data.index.min(),data.index.max()],[mean_yt_deg2]*2,color='tab:blue',label='+2°C')
+                    # ax.plot([data.index.min(),data.index.max()],[mean_yt_deg4]*2,color='tab:red',label='+4°C')
+                    # ax.legend()
+                    # ax.set_ylim([8,17])
+                    # ax.set_title('Climate model #{}'.format(mod))
+                    # ax.set_ylabel('Yearly mean temperature over France (°C)')
+                    # plt.savefig(os.path.join(figs_folder,'{}_mod{}_evolution.png'.format(climate_var,mod)),bbox_inches='tight')
+                    # plt.show()
+                    
+                    # period_list = []
+                    # mean_20_years_list = []
+                    # for y0 in data.index[10:-10]:
+                    #     data_20 = data.loc[y0-10:y0+10]
+                    #     mean_20 = data_20.mean()
+                    #     period = y0
+                    #     period_list.append(period)
+                    #     mean_20_years_list.append(mean_20)
                         
+                    # mean_20_years_list = np.asarray(mean_20_years_list).T[0]
+                    
+                    # year_deg2 = period_list[next(x[0] for x in enumerate(mean_20_years_list) if x[1] > mean_yt_deg2)]
+                    # year_deg4 = period_list[next(x[0] for x in enumerate(mean_20_years_list) if x[1] > mean_yt_deg4)]
+                    
+                    ref_temp_1976_2005 = data[data.index.isin(list(range(1976,2006)))].mean().values[0]
+                    mean_yt_deg2 = ref_temp_1976_2005 + 1.4
+                    mean_yt_deg27 = ref_temp_1976_2005 + 2.1
+                    mean_yt_deg4 = ref_temp_1976_2005 + 3.4
+                    
+                    deg2_year = (data.rolling(20,center=True).mean()>=mean_yt_deg2).idxmax().values[0]
+                    deg27_year = (data.rolling(20,center=True).mean()>=mean_yt_deg27).idxmax().values[0]
+                    deg4_year = (data.rolling(20,center=True).mean()>=mean_yt_deg4).idxmax().values[0]
+                    
+                    print(models_dict.get(mod).get('historical_rcp85'))
+                    print(2,deg2_year)
+                    print(2.7,deg27_year)
+                    print(4,deg4_year)
+                    print()
+                    
                     fig,ax = plt.subplots(figsize=(5,5),dpi=300)
-                    data.plot(ax=ax,color='k')
-                    ax.plot([data.index.min(),data.index.max()],[mean_yt_deg2]*2,color='tab:blue',label='+2°C')
-                    ax.plot([data.index.min(),data.index.max()],[mean_yt_deg4]*2,color='tab:red',label='+4°C')
+                    ax.plot(data.tas,color='k',alpha=0.2,label='Annual temperature')
+                    ax.plot(rolling_data.tas,color='k',label='20-years rolling average')
+                    # ax.plot(period_list,mean_20_years_list,color='k')
+                    ax.fill_between([2000,2020],[17]*2,[8]*2,color='k',alpha=0.1)
+                    ax.errorbar([deg2_year],[mean_yt_deg2],xerr=np.asarray([[10,9]]).T,color='gold',label='+2.0°C ({}-{})'.format(deg2_year-10,deg2_year+9),marker='o',mec='k',capsize=5,ls='')
+                    ax.errorbar([deg27_year],[mean_yt_deg27],xerr=np.asarray([[10,9]]).T,color='tab:orange',label='+2.7°C ({}-{})'.format(deg27_year-10,deg27_year+9),marker='o',mec='k',capsize=5,ls='')
+                    ax.errorbar([deg4_year],[mean_yt_deg4],xerr=np.asarray([[10,9]]).T,color='tab:red',label='+4.0°C ({}-{})'.format(deg4_year-10,deg4_year+9),marker='o',mec='k',capsize=5,ls='')
+                    # ax.plot([deg27_year-10,deg27_year+9],[mean_yt_deg27]*2,color='tab:orange',label='+2.7°C ({}-{})'.format(deg27_year-10,deg27_year+9),)
+                    # ax.plot([deg4_year-10,deg4_year+9],[mean_yt_deg4]*2,color='tab:red',label='+4°C ({}-{})'.format(deg4_year-10,deg4_year+9))
+                    # ax.plot([year_deg2],[mean_yt_deg2],color='tab:blue',marker='o')
+                    # ax.plot([year_deg4],[mean_yt_deg4],color='tab:red',marker='o')
                     ax.legend()
                     ax.set_ylim([8,17])
-                    ax.set_title('Climate model n°{}'.format(mod+1))
-                    ax.set_ylabel('Yearly mean temperature over France (°C)')
-                    plt.savefig(os.path.join(figs_folder,'{}_mod{}_evolution.png'.format(climate_var,mod)),bbox_inches='tight')
-                    plt.show()
-                    
-                    period_list = []
-                    mean_20_years_list = []
-                    for y0 in data.index[10:-10]:
-                        data_20 = data.loc[y0-10:y0+10]
-                        mean_20 = data_20.mean()
-                        period = y0
-                        period_list.append(period)
-                        mean_20_years_list.append(mean_20)
-                        
-                    mean_20_years_list = np.asarray(mean_20_years_list).T[0]
-                    
-                    year_deg2 = period_list[next(x[0] for x in enumerate(mean_20_years_list) if x[1] > mean_yt_deg2)]
-                    year_deg4 = period_list[next(x[0] for x in enumerate(mean_20_years_list) if x[1] > mean_yt_deg4)]
-                        
-                    fig,ax = plt.subplots(figsize=(5,5),dpi=300)
-                    ax.plot(period_list,mean_20_years_list,color='k')
-                    ax.plot([period_list[0],year_deg2],[mean_yt_deg2]*2,color='tab:blue',label='+2°C ({}-{})'.format(year_deg2-10,year_deg2+10),)
-                    ax.plot([period_list[0],year_deg4],[mean_yt_deg4]*2,color='tab:red',label='+4°C ({}-{})'.format(year_deg4-10,year_deg4+10))
-                    ax.plot([year_deg2],[mean_yt_deg2],color='tab:blue',marker='o')
-                    ax.plot([year_deg4],[mean_yt_deg4],color='tab:red',marker='o')
-                    ax.legend()
-                    ax.set_ylim([8,17])
-                    ax.set_title('Climate model n°{}'.format(mod+1))
-                    ax.set_ylabel('Yearly mean temperature over 20 years (°C)')
-                    ax.set_xlabel('Center year of mean period')
+                    ax.set_xlim([1950,2100])
+                    ax.set_title('Climate model #{} - RCP8.5'.format(mod))
+                    ax.set_ylabel('Yearly mean temperature (°C)')
+                    ax.set_xlabel('')
                     plt.savefig(os.path.join(figs_folder,'{}_mod{}_moving_mean_evolution.png'.format(climate_var,mod)),bbox_inches='tight')
                     plt.show()
                 
+                array.close()
+                del array
+    
+    # Concaténation des données climatiques hist+rcp85
+    if False:
+        # calib_method = 'CDFt'
+        calib_method = 'ADAMONT'
+
+        if calib_method == 'CDFt':
+            models_dict = {0:{'historical':'Adjust_France_CNRM-CERFACS-CNRM-CM5_historical_r1i1p1_CNRM-ALADIN63_v2_LSCE-IPSL-CDFt-L-1V-0L-1976-2005_day_19510101-20051231.nc',
+                              # 'rcp45':'Adjust_France_CNRM-CERFACS-CNRM-CM5_rcp45_r1i1p1_CNRM-ALADIN63_v2_LSCE-IPSL-CDFt-L-1V-0L-1976-2005_day_20060101-21001231.nc',
+                              'rcp85':'Adjust_France_CNRM-CERFACS-CNRM-CM5_rcp85_r1i1p1_CNRM-ALADIN63_v2_LSCE-IPSL-CDFt-L-1V-0L-1976-2005_day_20060101-21001231.nc'},
+                           
+                           1:{'historical':'Adjust_France_CNRM-CERFACS-CNRM-CM5_historical_r1i1p1_MOHC-HadREM3-GA7-05_v2_LSCE-IPSL-CDFt-L-1V-0L-1976-2005_day_19520101-20051231.nc',
+                              'rcp85':'Adjust_France_CNRM-CERFACS-CNRM-CM5_rcp85_r1i1p1_MOHC-HadREM3-GA7-05_v2_LSCE-IPSL-CDFt-L-1V-0L-1976-2005_day_20060101-21001230.nc'},
+                           
+                           2:{'historical':'Adjust_France_ICHEC-EC-EARTH_historical_r12i1p1_KNMI-RACMO22E_v1_LSCE-IPSL-CDFt-L-1V-0L-1976-2005_day_19500101-20051231.nc',
+                              # 'rcp45':'Adjust_France_ICHEC-EC-EARTH_rcp45_r12i1p1_KNMI-RACMO22E_v1_LSCE-IPSL-CDFt-L-1V-0L-1976-2005_day_20060101-21001231.nc',
+                              'rcp85':'Adjust_France_ICHEC-EC-EARTH_rcp85_r12i1p1_KNMI-RACMO22E_v1_LSCE-IPSL-CDFt-L-1V-0L-1976-2005_day_20060101-21001231.nc'},
+                           
+                           3:{'historical':'Adjust_France_ICHEC-EC-EARTH_historical_r12i1p1_MOHC-HadREM3-GA7-05_v1_LSCE-IPSL-CDFt-L-1V-0L-1976-2005_day_19520101-20051231.nc',
+                              'rcp85':'Adjust_France_ICHEC-EC-EARTH_rcp85_r12i1p1_MOHC-HadREM3-GA7-05_v1_LSCE-IPSL-CDFt-L-1V-0L-1976-2005_day_20060101-21001231.nc'},
+                           
+                           4:{'historical':'Adjust_France_MOHC-HadGEM2-ES_historical_r1i1p1_MOHC-HadREM3-GA7-05_v1_LSCE-IPSL-CDFt-L-1V-0L-1976-2005_day_19520101-20051231.nc',
+                              'rcp85':'Adjust_France_MOHC-HadGEM2-ES_rcp85_r1i1p1_MOHC-HadREM3-GA7-05_v1_LSCE-IPSL-CDFt-L-1V-0L-1976-2005_day_20060101-20991219.nc'},
+                           }
+        
+        elif calib_method == 'ADAMONT':
+            models_dict = {0:{'historical':'Adjust_France_CNRM-CERFACS-CNRM-CM5_historical_r1i1p1_CNRM-ALADIN63_v2_MF-ADAMONT-SAFRAN-1980-2011_day_19510101-20051231.nc',
+                              'rcp85':     'Adjust_France_CNRM-CERFACS-CNRM-CM5_rcp85_r1i1p1_CNRM-ALADIN63_v2_MF-ADAMONT-SAFRAN-1980-2011_day_20060101-21001231.nc',
+                              'historical_rcp85':'Adjust_France_CNRM-CERFACS-CNRM-CM5_rcp85_r1i1p1_CNRM-ALADIN63_v2_MF-ADAMONT-SAFRAN-1980-2011_day_19510101-21001231.nc'},
+                           
+                           1:{'historical':'Adjust_France_CNRM-CERFACS-CNRM-CM5_historical_r1i1p1_MOHC-HadREM3-GA7-05_v2_MF-ADAMONT-SAFRAN-1980-2011_day_19520101-20051231.nc',
+                              'rcp85':     'Adjust_France_CNRM-CERFACS-CNRM-CM5_rcp85_r1i1p1_MOHC-HadREM3-GA7-05_v2_MF-ADAMONT-SAFRAN-1980-2011_day_20060101-21001230.nc',
+                              'historical_rcp85':     'Adjust_France_CNRM-CERFACS-CNRM-CM5_rcp85_r1i1p1_MOHC-HadREM3-GA7-05_v2_MF-ADAMONT-SAFRAN-1980-2011_day_19520101-21001230.nc'},
+                           
+                           2:{'historical':'Adjust_France_ICHEC-EC-EARTH_historical_r12i1p1_KNMI-RACMO22E_v1_MF-ADAMONT-SAFRAN-1980-2011_day_19500101-20051231.nc',
+                              'rcp85':     'Adjust_France_ICHEC-EC-EARTH_rcp85_r12i1p1_KNMI-RACMO22E_v1_MF-ADAMONT-SAFRAN-1980-2011_day_20060101-21001231.nc',
+                              'historical_rcp85':     'Adjust_France_ICHEC-EC-EARTH_rcp85_r12i1p1_KNMI-RACMO22E_v1_MF-ADAMONT-SAFRAN-1980-2011_day_19500101-21001231.nc'},
+                           
+                           3:{'historical':'Adjust_France_ICHEC-EC-EARTH_historical_r12i1p1_MOHC-HadREM3-GA7-05_v1_MF-ADAMONT-SAFRAN-1980-2011_day_19520101-20051231.nc',
+                              'rcp85':     'Adjust_France_ICHEC-EC-EARTH_rcp85_r12i1p1_MOHC-HadREM3-GA7-05_v1_MF-ADAMONT-SAFRAN-1980-2011_day_20060101-21001231.nc',
+                              'historical_rcp85':     'Adjust_France_ICHEC-EC-EARTH_rcp85_r12i1p1_MOHC-HadREM3-GA7-05_v1_MF-ADAMONT-SAFRAN-1980-2011_day_19520101-21001231.nc'},
+                           
+                           4:{'historical':'Adjust_France_MOHC-HadGEM2-ES_historical_r1i1p1_MOHC-HadREM3-GA7-05_v1_MF-ADAMONT-SAFRAN-1980-2011_day_19520101-20051231.nc',
+                              'rcp85':     'Adjust_France_MOHC-HadGEM2-ES_rcp85_r1i1p1_MOHC-HadREM3-GA7-05_v1_MF-ADAMONT-SAFRAN-1980-2011_day_20060101-20991219.nc',
+                              'historical_rcp85':     'Adjust_France_MOHC-HadGEM2-ES_rcp85_r1i1p1_MOHC-HadREM3-GA7-05_v1_MF-ADAMONT-SAFRAN-1980-2011_day_19520101-20991219.nc'},
+                           }
+        
+    
+        
+        if external_disk_connection:
+            data_folder = '/media/amounier/MPBE/heavy_data/Explore2'
+        else:
+            data_folder = os.path.join('data','Explore2')
+        
+        
+        climate_vars = ['tas','tasmax','tasmin','rsds']
+        # climate_vars = ['tas']
+        # climate_vars = ['tasmin']
+        for climate_var in climate_vars:
+            # print(climate_var)
+            
+            for idx,mod in enumerate(range(0,5)):
+                
+                # pas la mémoire pour tout faire d'un coup
+                # if mod >= 2 :
+                #     continue
+            
+                # if mod >= 4 :
+                #     continue
+                
+                print(climate_var,mod)
+                
+                
+                if climate_var+models_dict.get(mod).get('historical_rcp85') in os.listdir(data_folder):
+                    continue
+                
+                Explore2_hist = os.path.join(data_folder,climate_var+models_dict.get(mod).get('historical'))
+                array_hist = xr.open_dataset(Explore2_hist)
+                array_hist = array_hist[list(array_hist.data_vars)[-1]]
+                if 'tas' in climate_var:
+                    array_hist = array_hist - 273.15
+                array_hist.rio.write_crs('epsg:27572', inplace=True)
+                
+                Explore2_proj = os.path.join(data_folder,climate_var+models_dict.get(mod).get('rcp85'))
+                array_proj = xr.open_dataset(Explore2_proj)
+                array_proj = array_proj[list(array_proj.data_vars)[-1]]
+                if 'tas' in climate_var:
+                    array_proj = array_proj - 273.15
+                array_proj.rio.write_crs('epsg:27572', inplace=True)
+                
+                geom = pd.Series(France().geometry).apply(mapping)
+                array_hist = array_hist.rio.clip(geom, 'epsg:4326', drop=False)
+                array_proj = array_proj.rio.clip(geom, 'epsg:4326', drop=False)
+                
+                array = xr.concat([array_hist,array_proj],dim='time')
+                array.to_netcdf(os.path.join(data_folder,climate_var+models_dict.get(mod).get('historical_rcp85')),'w',format='NETCDF4')
+                
                 array_hist.close()
                 array_proj.close()
+                array.close()
+                
+                del array_hist
+                del array_proj
+                del array
                 
     # Réalisation des cartes 
-    if True:
+    if False:
         
         # calib_method = 'CDFt'
         calib_method = 'ADAMONT'
@@ -1081,31 +1243,54 @@ def main():
         
         elif calib_method == 'ADAMONT':
             models_dict = {0:{'historical':'Adjust_France_CNRM-CERFACS-CNRM-CM5_historical_r1i1p1_CNRM-ALADIN63_v2_MF-ADAMONT-SAFRAN-1980-2011_day_19510101-20051231.nc',
-                              'rcp85':     'Adjust_France_CNRM-CERFACS-CNRM-CM5_rcp85_r1i1p1_CNRM-ALADIN63_v2_MF-ADAMONT-SAFRAN-1980-2011_day_20060101-21001231.nc'},
+                              'rcp85':     'Adjust_France_CNRM-CERFACS-CNRM-CM5_rcp85_r1i1p1_CNRM-ALADIN63_v2_MF-ADAMONT-SAFRAN-1980-2011_day_20060101-21001231.nc',
+                              'historical_rcp85':'Adjust_France_CNRM-CERFACS-CNRM-CM5_rcp85_r1i1p1_CNRM-ALADIN63_v2_MF-ADAMONT-SAFRAN-1980-2011_day_19510101-21001231.nc'},
                            
                            1:{'historical':'Adjust_France_CNRM-CERFACS-CNRM-CM5_historical_r1i1p1_MOHC-HadREM3-GA7-05_v2_MF-ADAMONT-SAFRAN-1980-2011_day_19520101-20051231.nc',
-                              'rcp85':     'Adjust_France_CNRM-CERFACS-CNRM-CM5_rcp85_r1i1p1_MOHC-HadREM3-GA7-05_v2_MF-ADAMONT-SAFRAN-1980-2011_day_20060101-21001230.nc'},
+                              'rcp85':     'Adjust_France_CNRM-CERFACS-CNRM-CM5_rcp85_r1i1p1_MOHC-HadREM3-GA7-05_v2_MF-ADAMONT-SAFRAN-1980-2011_day_20060101-21001230.nc',
+                              'historical_rcp85':     'Adjust_France_CNRM-CERFACS-CNRM-CM5_rcp85_r1i1p1_MOHC-HadREM3-GA7-05_v2_MF-ADAMONT-SAFRAN-1980-2011_day_19520101-21001230.nc'},
                            
                            2:{'historical':'Adjust_France_ICHEC-EC-EARTH_historical_r12i1p1_KNMI-RACMO22E_v1_MF-ADAMONT-SAFRAN-1980-2011_day_19500101-20051231.nc',
-                              'rcp85':     'Adjust_France_ICHEC-EC-EARTH_rcp85_r12i1p1_KNMI-RACMO22E_v1_MF-ADAMONT-SAFRAN-1980-2011_day_20060101-21001231.nc'},
+                              'rcp85':     'Adjust_France_ICHEC-EC-EARTH_rcp85_r12i1p1_KNMI-RACMO22E_v1_MF-ADAMONT-SAFRAN-1980-2011_day_20060101-21001231.nc',
+                              'historical_rcp85':     'Adjust_France_ICHEC-EC-EARTH_rcp85_r12i1p1_KNMI-RACMO22E_v1_MF-ADAMONT-SAFRAN-1980-2011_day_19500101-21001231.nc'},
                            
                            3:{'historical':'Adjust_France_ICHEC-EC-EARTH_historical_r12i1p1_MOHC-HadREM3-GA7-05_v1_MF-ADAMONT-SAFRAN-1980-2011_day_19520101-20051231.nc',
-                              'rcp85':     'Adjust_France_ICHEC-EC-EARTH_rcp85_r12i1p1_MOHC-HadREM3-GA7-05_v1_MF-ADAMONT-SAFRAN-1980-2011_day_20060101-21001231.nc'},
+                              'rcp85':     'Adjust_France_ICHEC-EC-EARTH_rcp85_r12i1p1_MOHC-HadREM3-GA7-05_v1_MF-ADAMONT-SAFRAN-1980-2011_day_20060101-21001231.nc',
+                              'historical_rcp85':     'Adjust_France_ICHEC-EC-EARTH_rcp85_r12i1p1_MOHC-HadREM3-GA7-05_v1_MF-ADAMONT-SAFRAN-1980-2011_day_19520101-21001231.nc'},
                            
                            4:{'historical':'Adjust_France_MOHC-HadGEM2-ES_historical_r1i1p1_MOHC-HadREM3-GA7-05_v1_MF-ADAMONT-SAFRAN-1980-2011_day_19520101-20051231.nc',
-                              'rcp85':     'Adjust_France_MOHC-HadGEM2-ES_rcp85_r1i1p1_MOHC-HadREM3-GA7-05_v1_MF-ADAMONT-SAFRAN-1980-2011_day_20060101-20991219.nc'},
+                              'rcp85':     'Adjust_France_MOHC-HadGEM2-ES_rcp85_r1i1p1_MOHC-HadREM3-GA7-05_v1_MF-ADAMONT-SAFRAN-1980-2011_day_20060101-20991219.nc',
+                              'historical_rcp85':     'Adjust_France_MOHC-HadGEM2-ES_rcp85_r1i1p1_MOHC-HadREM3-GA7-05_v1_MF-ADAMONT-SAFRAN-1980-2011_day_19520101-20991219.nc'},
                            }
         
-        models_period_dict = {0:{2:[2020,2040],
-                                 4:[2059,2079],},
-                              1:{2:[2013,2033],
-                                 4:[2054,2074],},
-                              2:{2:[2017,2037],
-                                 4:[2061,2081],},
-                              3:{2:[2006,2025],
-                                 4:[2047,2067],},
-                              4:{2:[2006,2021], # debut des projections en 2006
-                                 4:[2040,2060],},}
+        # models_period_dict = {0:{2:[2020,2040],
+        #                          4:[2059,2079],},
+        #                       1:{2:[2013,2033],
+        #                          4:[2054,2074],},
+        #                       2:{2:[2017,2037],
+        #                          4:[2061,2081],},
+        #                       3:{2:[2006,2025],
+        #                          4:[2047,2067],},
+        #                       4:{2:[2006,2021], # debut des projections en 2006
+        #                          4:[2040,2060],},}
+        
+        # nouvelles périodes 
+        models_period_dict = {0:{2:  [2034,2053],
+                                 2.7:[2046,2065],
+                                 4:  [2072,2091],},
+                              1:{2:  [2027,2046],
+                                 2.7:[2042,2061],
+                                 4:  [2063,2082],},
+                              2:{2:  [2029,2048],
+                                 2.7:[2037,2056],
+                                 4:  [2069,2088],},
+                              3:{2:  [2018,2037],
+                                 2.7:[2033,2052],
+                                 4:  [2060,2079],},
+                              4:{2:  [2008,2027], 
+                                 2.7:[2024,2043],
+                                 4:  [2049,2068],},}
+        
         # print(pd.DataFrame().from_dict(models_period_dict).T.to_latex())
         
         if external_disk_connection:
@@ -1119,41 +1304,48 @@ def main():
             climate_vars = ['tas','tasmax','tasmin','rsds']
             climate_vars = ['rsds']
             for climate_var in climate_vars:
-            # climate_var = 'rsds' #'tas','tasmax','tasmin','rsds'
                 
-                # for idx,mod in enumerate(range(0,5)):
-                # for mod in [3]:
-                for idx,mod in enumerate(range(1,2)):
+                for idx,mod in enumerate([3,0,1,2,4]):
+                # for idx,mod in enumerate(range(1,2)):
                     
-                    Explore2_hist = os.path.join(data_folder,climate_var+models_dict.get(mod).get('historical'))
-                    array_hist = xr.open_dataset(Explore2_hist)
-                    array_hist = array_hist[list(array_hist.data_vars)[-1]]
-                    if 'tas' in climate_var:
-                        array_hist = array_hist - 273.15
-                    array_hist.rio.write_crs('epsg:27572', inplace=True)
+                    # Explore2_hist = os.path.join(data_folder,climate_var+models_dict.get(mod).get('historical'))
+                    # array_hist = xr.open_dataset(Explore2_hist)
+                    # array_hist = array_hist[list(array_hist.data_vars)[-1]]
+                    # if 'tas' in climate_var:
+                    #     array_hist = array_hist - 273.15
+                    # array_hist.rio.write_crs('epsg:27572', inplace=True)
                     
-                    Explore2_proj = os.path.join(data_folder,climate_var+models_dict.get(mod).get('rcp85'))
-                    array_proj = xr.open_dataset(Explore2_proj)
-                    array_proj = array_proj[list(array_proj.data_vars)[-1]]
-                    if 'tas' in climate_var:
-                        array_proj = array_proj - 273.15
-                    array_proj.rio.write_crs('epsg:27572', inplace=True)
+                    # Explore2_proj = os.path.join(data_folder,climate_var+models_dict.get(mod).get('rcp85'))
+                    # array_proj = xr.open_dataset(Explore2_proj)
+                    # array_proj = array_proj[list(array_proj.data_vars)[-1]]
+                    # if 'tas' in climate_var:
+                    #     array_proj = array_proj - 273.15
+                    # array_proj.rio.write_crs('epsg:27572', inplace=True)
+                    
+                    Explore2 = os.path.join(data_folder,climate_var+models_dict.get(mod).get('historical_rcp85'))
+                    array = xr.open_dataset(Explore2)
+                    array = array[list(array.data_vars)[-1]]
+                    array.rio.write_crs('epsg:27572', inplace=True)
                     
                     geom = pd.Series(France().geometry).apply(mapping)
-                    array_hist = array_hist.rio.clip(geom, 'epsg:4326', drop=False)
-                    array_proj = array_proj.rio.clip(geom, 'epsg:4326', drop=False)
+                    array = array.rio.clip(geom, 'epsg:4326', drop=False)
                     
-                    
-                    hist = array_hist.sel(time=slice("2000-01-01", "2020-12-31")).mean('time')
+                    hist = array.sel(time=slice("2000-01-01", "2020-12-31")).mean('time')
                     
                     proj2_period = models_period_dict.get(mod).get(2)
+                    proj27_period = models_period_dict.get(mod).get(2.7)
                     proj4_period = models_period_dict.get(mod).get(4)
                     
-                    proj2 = array_proj.sel(time=slice("{}-01-01".format(proj2_period[0]), "{}-12-31".format(proj2_period[1]))).mean('time')
-                    proj4 = array_proj.sel(time=slice("{}-01-01".format(proj4_period[0]), "{}-12-31".format(proj4_period[1]))).mean('time')
+                    proj2 = array.sel(time=slice("{}-01-01".format(proj2_period[0]), "{}-12-31".format(proj2_period[1]))).mean('time')
+                    proj27 = array.sel(time=slice("{}-01-01".format(proj27_period[0]), "{}-12-31".format(proj27_period[1]))).mean('time')
+                    proj4 = array.sel(time=slice("{}-01-01".format(proj4_period[0]), "{}-12-31".format(proj4_period[1]))).mean('time')
                     
                     diff2 = proj2 - hist
+                    diff27 = proj27 - hist
                     diff4 = proj4 - hist
+                    
+                    array.close()
+                    del array
                     
                     # etat de base
                     if 'tas' in climate_var:
@@ -1174,7 +1366,7 @@ def main():
                     img = hist.plot(ax=ax,transform=ccrs.epsg('27572'),add_colorbar=False,
                                    cmap=cmap,vmin=vmin,vmax=vmax)
                     
-                    ax.set_title('Model n°{} (2000-2020)'.format(mod+1))
+                    ax.set_title('Climate model #{} (2000-2020)'.format(mod))
                     
                     ax_cb = fig.add_axes([0,0,0.1,0.1])
                     posn = ax.get_position()
@@ -1194,20 +1386,21 @@ def main():
                     plt.close()
                     
                     # difference sur les periode 2 et 4
-                    cbar_label_diff_dict = {'tas':'Difference of daily temperature (°C)',
+                    cbar_label_diff_dict = {'tas':'Difference of daily mean temperature compared to 2000-2020 (°C)',
                                             'tasmax':'Difference of daily maximal temperature (°C)',
                                             'tasmin':'Difference of daily minimal temperature (°C)',
-                                            'rsds':'RSDS difference (W.m$^{-2}$)'}
+                                            'rsds':'Difference of daily RSDS (W.m$^{-2}$)'}
                     
                     cmap = cmocean.cm.balance
                     
+                    # +2°C
                     fig,ax = blank_national_map()
                     
                     
                     img = diff2.plot(ax=ax,transform=ccrs.epsg('27572'),add_colorbar=False,
                                      cmap=cmap,vmin=-max_val,vmax=max_val)
                     
-                    ax.set_title('Model n°{} (+2°C)'.format(mod+1))
+                    ax.set_title('Climate model #{} (+2°C)'.format(mod))
                     
                     ax_cb = fig.add_axes([0,0,0.1,0.1])
                     posn = ax.get_position()
@@ -1221,14 +1414,36 @@ def main():
                     plt.show()
                     plt.close()
                     
-                    cmap = cmocean.cm.balance
                     
+                    # +2.7°C
+                    fig,ax = blank_national_map()
+                    
+                    
+                    img = diff27.plot(ax=ax,transform=ccrs.epsg('27572'),add_colorbar=False,
+                                      cmap=cmap,vmin=-max_val,vmax=max_val)
+                    
+                    ax.set_title('Climate model #{} (+2.7°C)'.format(mod))
+                    
+                    ax_cb = fig.add_axes([0,0,0.1,0.1])
+                    posn = ax.get_position()
+                    ax_cb.set_position([posn.x0+posn.width+0.02, posn.y0, 0.04, posn.height])
+                    fig.add_axes(ax_cb)
+                    cbar = plt.colorbar(img,cax=ax_cb,extendfrac=0.02)
+                    cbar.set_label(cbar_label_diff_dict.get(climate_var))
+                    
+                    ax.set_extent(get_extent())
+                    plt.savefig(os.path.join(figs_folder,'map_{}_mod{}_27deg.png'.format(climate_var,mod)),bbox_inches='tight')
+                    plt.show()
+                    plt.close()
+                    
+                    
+                    # +4°C
                     fig,ax = blank_national_map()
                     
                     img = diff4.plot(ax=ax,transform=ccrs.epsg('27572'),add_colorbar=False,
                                      cmap=cmap,vmin=-max_val,vmax=max_val)
                     
-                    ax.set_title('Model n°{} (+4°C)'.format(mod+1))
+                    ax.set_title('Climate model #{} (+4°C)'.format(mod))
                     
                     ax_cb = fig.add_axes([0,0,0.1,0.1])
                     posn = ax.get_position()
@@ -1242,85 +1457,66 @@ def main():
                     plt.show()
                     plt.close()
                     
-                    array_hist.close()
-                    array_proj.close()
-                    
-                    del array_hist
-                    del array_proj
+                    del hist
+                    del proj2
+                    del proj27
+                    del proj4
+                    del diff2
+                    del diff27
+                    del diff4
+            
+        
+        # enregistrement d'un netCDF moyen des 5 modèles
+        if False:
+            climate_vars = ['tas','tasmax','tasmin','rsds']
+            climate_vars = ['rsds']
+            
+            for climate_var in climate_vars:
+                print(climate_var)
                 
+                mean_array = None
+                
+                for idx,mod in enumerate(range(0,5)):
+                    
+                    Explore2 = os.path.join(data_folder,climate_var+models_dict.get(mod).get('historical_rcp85'))
+                    array = xr.open_dataset(Explore2)
+                    array = array[list(array.data_vars)[-1]]
+                    array.rio.write_crs('epsg:27572', inplace=True)
+                    
+                    geom = pd.Series(France().geometry).apply(mapping)
+                    array = array.rio.clip(geom, 'epsg:4326', drop=False)
+                    
+                    if mean_array is None:
+                        mean_array = array
+                    else:
+                        mean_array = mean_array + array
+                    
+                    del array
+                    
+                mean_array = mean_array/5
+                mean_array.to_netcdf(os.path.join(data_folder,'{}Adjust_France_meanModels_MF-ADAMONT-SAFRAN-1980-2011_day_1950-2100.nc'.format(climate_var)),'w',format='NETCDF4')
+                
+                del mean_array
                 
         # carte moyenne des 5 modèles
         if True:
             climate_vars = ['tas','rsds']
+            climate_vars = ['tas']
+            
             for climate_var in climate_vars:
                 
-                array_hist = None
-                array_proj2 = None
-                array_proj4 = None
-                for idx,mod in enumerate(range(0,5)):
-                    
-                    proj2_period = models_period_dict.get(mod).get(2)
-                    proj4_period = models_period_dict.get(mod).get(4)
-                    
-                    if array_hist is None:
-                        Explore2_hist = os.path.join(data_folder,climate_var+models_dict.get(mod).get('historical'))
-                        array_hist = xr.open_dataset(Explore2_hist)
-                        array_hist = array_hist[list(array_hist.data_vars)[-1]]
-                        if 'tas' in climate_var:
-                            array_hist = array_hist - 273.15
-                        
-                    else:
-                        Explore2_hist = os.path.join(data_folder,climate_var+models_dict.get(mod).get('historical'))
-                        array_hist_new = xr.open_dataset(Explore2_hist)
-                        array_hist_new = array_hist_new[list(array_hist_new.data_vars)[-1]]
-                        if 'tas' in climate_var:
-                            array_hist_new = array_hist_new - 273.15
-                    
-                        array_hist = array_hist + array_hist_new
-                        
-                        del array_hist_new
-                    
-                    if array_proj2 is None:
-                        Explore2_proj = os.path.join(data_folder,climate_var+models_dict.get(mod).get('rcp85'))
-                        array_proj = xr.open_dataset(Explore2_proj)
-                        array_proj = array_proj[list(array_proj.data_vars)[-1]]
-                        if 'tas' in climate_var:
-                            array_proj = array_proj - 273.15
-                        array_proj.rio.write_crs('epsg:27572', inplace=True)
-                        
-                        array_proj2 = array_proj.sel(time=slice("{}-01-01".format(proj2_period[0]), "{}-12-31".format(proj2_period[1]))).mean('time')
-                        array_proj4 = array_proj.sel(time=slice("{}-01-01".format(proj4_period[0]), "{}-12-31".format(proj4_period[1]))).mean('time')
-                    
-                    else:
-                        Explore2_proj = os.path.join(data_folder,climate_var+models_dict.get(mod).get('rcp85'))
-                        array_proj = xr.open_dataset(Explore2_proj)
-                        array_proj = array_proj[list(array_proj.data_vars)[-1]]
-                        if 'tas' in climate_var:
-                            array_proj = array_proj - 273.15
-                        array_proj.rio.write_crs('epsg:27572', inplace=True)
-                        
-                        array_proj2_new = array_proj.sel(time=slice("{}-01-01".format(proj2_period[0]), "{}-12-31".format(proj2_period[1]))).mean('time')
-                        array_proj4_new = array_proj.sel(time=slice("{}-01-01".format(proj4_period[0]), "{}-12-31".format(proj4_period[1]))).mean('time')
-                        
-                        array_proj2 = array_proj2 + array_proj2_new
-                        array_proj4 = array_proj4 + array_proj4_new
-                        
-                        del array_proj2_new
-                        del array_proj4_new
-                
-                array_hist = array_hist/5
-                array_hist.rio.write_crs('epsg:27572', inplace=True)
+                Explore2 = os.path.join(data_folder,'{}Adjust_France_meanModels_MF-ADAMONT-SAFRAN-1980-2011_day_1950-2100.nc'.format(climate_var))
+                array = xr.open_dataset(Explore2)
+                array = array[list(array.data_vars)[-1]]
+                array.rio.write_crs('epsg:27572', inplace=True)
                 
                 geom = pd.Series(France().geometry).apply(mapping)
-                array_hist = array_hist.rio.clip(geom, 'epsg:4326', drop=False)
+                array = array.rio.clip(geom, 'epsg:4326', drop=False)
                 
                 
-                hist = array_hist.sel(time=slice("2000-01-01", "2020-12-31")).mean('time')
+                hist = array.sel(time=slice("2000-01-01", "2020-12-31"))
+                hist = hist.mean('time')
                 
-                array_proj2 = array_proj2/5
-                array_proj4 = array_proj4/5
-                
-                diff4 = array_proj4-hist
         
                 # carte de base
                 if False:
@@ -1358,12 +1554,25 @@ def main():
                     cbar.set_label(cbar_label_dict.get(climate_var))
                     
                     ax.set_extent(get_extent())
-                    plt.savefig(os.path.join(figs_folder,'map_{}_4deg.png'.format(climate_var)),bbox_inches='tight')
+                    plt.savefig(os.path.join(figs_folder,'map_{}_meanModels_2000-2020.png'.format(climate_var)),bbox_inches='tight')
                     plt.show()
                     plt.close()
                 
                 # carte des difference à +2, +4
-                if True:
+                if False:
+                    # ne marche pas, il faut trouver une période moyenne
+                    proj2_period = models_period_dict.get(mod).get(2)
+                    proj27_period = models_period_dict.get(mod).get(2.7)
+                    proj4_period = models_period_dict.get(mod).get(4)
+                    
+                    proj2 = array.sel(time=slice("{}-01-01".format(proj2_period[0]), "{}-12-31".format(proj2_period[1]))).mean('time')
+                    proj27 = array.sel(time=slice("{}-01-01".format(proj27_period[0]), "{}-12-31".format(proj27_period[1]))).mean('time')
+                    proj4 = array.sel(time=slice("{}-01-01".format(proj4_period[0]), "{}-12-31".format(proj4_period[1]))).mean('time')
+                    
+                    diff2 = proj2 - hist
+                    diff27 = proj27 - hist
+                    diff4 = proj4 - hist
+                    
                     cmap = cmocean.cm.balance
                     
                     fig,ax = blank_national_map()
@@ -1390,15 +1599,17 @@ def main():
                     cbar.set_label(cbar_label_diff_dict.get(climate_var))
                     
                     ax.set_extent(get_extent())
-                    plt.savefig(os.path.join(figs_folder,'map_{}_2000-2020.png'.format(climate_var)),bbox_inches='tight')
+                    plt.savefig(os.path.join(figs_folder,'map_{}_4deg.png'.format(climate_var)),bbox_inches='tight')
                     plt.show()
                     plt.close()
                 
                 
-                del array_hist
-                
+                del array
+    
+
             
     #%% Détermination des périodes de +2, +4 degrés d'après les données de l'atlas interactif
+    # ancienne méthode : problème
     if False:
         
         deg2_data = xr.open_dataset(os.path.join('data','CORDEX','CORDEX Europe - Mean temperature (T) deg C - Warming 2°C RCP8.5 - Annual (47 models)','map.nc'))
@@ -1416,11 +1627,14 @@ def main():
         mean_yt_deg2 = deg2_data_cropped.mean()
         mean_yt_deg4 = deg4_data_cropped.mean()
         
-        print('2°C',float(mean_yt_deg2))
-        print('4°C',float(mean_yt_deg4))
+        print('Monde 2°C',float(deg2_data.mean()))
+        print('France 2°C',float(mean_yt_deg2))
+        
+        print('Monde 4°C',float(deg4_data.mean()))
+        print('France 4°C',float(mean_yt_deg4))
         
         
-        if True:
+        if False:
             cmap = matplotlib.colormaps.get_cmap('viridis')
             cmap = cmocean.cm.thermal
             
@@ -1428,7 +1642,7 @@ def main():
             img = deg2_data_cropped.plot(ax=ax,transform=ccrs.PlateCarree(),add_colorbar=False,
                                          cmap=cmap,vmin=-3,vmax=16)
             
-            ax.set_title('Yearly mean temperature over France : {:.1f}°C'.format(mean_yt_deg2))
+            ax.set_title('Yearly mean temperature over France : {:.2f}°C'.format(mean_yt_deg2))
             
             ax_cb = fig.add_axes([0,0,0.1,0.1])
             posn = ax.get_position()
@@ -1447,7 +1661,7 @@ def main():
                                          cmap=cmap,vmin=-3,vmax=16)
             
             
-            ax.set_title('Yearly mean temperature over France : {:.1f}°C'.format(mean_yt_deg4))
+            ax.set_title('Yearly mean temperature over France : {:.2f}°C'.format(mean_yt_deg4))
             
             ax_cb = fig.add_axes([0,0,0.1,0.1])
             posn = ax.get_position()
@@ -1464,7 +1678,6 @@ def main():
             
     # %% Test des projections climatiques propres
     if False:
-        
         zcl_list = France().climats
         mod_list = list(range(5))
         
@@ -1472,7 +1685,8 @@ def main():
         for zcl_code in zcl_list:
             for mod in mod_list:
                 run_list.append((zcl_code, mod))
-                    
+        
+        # ne marche pas je crois (ram ?)
         # nb_cpu = multiprocessing.cpu_count()
         # pool = multiprocessing.Pool(nb_cpu)
         # pool.starmap(get_projected_weather_data, run_list)
@@ -1481,11 +1695,11 @@ def main():
             print(run)
             compute_projected_weather_data(*run)
         
-        # explore2 = get_projected_weather_data(zcl_code=zcl_code, nmod=mod)
+        # explore2 = get_projected_weather_data(zcl_code=zcl_code, period=[2090,2090],nmod=mod)
         # print(explore2)
         
     if False:
-        test = get_projected_weather_data('H3',[2090,2090])
+        test = get_projected_weather_data('H3',[2075,2075])
         agg = aggregate_resolution(test[['direct_sun_radiation_H']],resolution='D',agg_method='mean')
         print(agg.direct_sun_radiation_H.plot())
     
@@ -1494,7 +1708,7 @@ def main():
         zcl = Climat('H1a')
         var = 'temperature_2m'
         # var = 'direct_sun_radiation_H'
-        period=[2000,2020]
+        period=[2000,2100]
         agg_period = 'YS'
         
         # data = get_historical_weather_data(zcl.center_prefecture, period)
@@ -1517,24 +1731,364 @@ def main():
         
         # fort écart sur les flux solaire: à comparer avec les données d'observation MF
         
-        # models_period_dict = {0:{'now':[2000,2020], 
-        #                          2:[2029,2049],
-        #                          4:[2064,2084],},
-        #                       1:{'now':[2000,2020], 
-        #                          2:[2018,2038],
-        #                          4:[2056,2076],},
-        #                       2:{'now':[2000,2020], 
-        #                          2:[2024,2044],
-        #                          4:[2066,2086],},
-        #                       3:{'now':[2000,2020], 
-        #                          2:[2013,2033],
-        #                          4:[2056,2076],},
-        #                       4:{'now':[2000,2020], 
-        #                          2:[2006,2024], # debut des projections en 2006
-        #                          4:[2046,2066],},}
-        # period = 'now'
         
+    # graphe des évolutions de température hivernales et estivales par période et zone climatique
+    if False:
+        models_period_dict = {0:{2:  [2034,2053],
+                                 2.7:[2046,2065],
+                                 4:  [2072,2091],},
+                              1:{2:  [2027,2046],
+                                 2.7:[2042,2061],
+                                 4:  [2063,2082],},
+                              2:{2:  [2029,2048],
+                                 2.7:[2037,2056],
+                                 4:  [2069,2088],},
+                              3:{2:  [2018,2037],
+                                 2.7:[2033,2052],
+                                 4:  [2060,2079],},
+                              4:{2:  [2008,2027], 
+                                 2.7:[2024,2043],
+                                 4:  [2049,2068],},}
         
+        for mod in range(5):
+            models_period_dict[mod].update({0:[2000,2020]})
+        
+        zcl_list = France().climats
+        temperature_dict = dict()
+        
+        if False:
+            for mod in range(5):
+                for zcl in zcl_list:
+                    weather = compute_projected_weather_data(zcl, mod)
+                    for period in [0,2,2.7,4]:
+                        p = models_period_dict.get(mod).get(period)
+                        weather_period = weather[weather.index.year.isin(list(range(p[0],p[1]+1)))]
+                        weather_period = aggregate_resolution(weather_period[['temperature_2m']],resolution='D',agg_method='mean')
+                        
+                        temperature_dict[(mod,zcl,period,'ALL')] = weather_period.temperature_2m.to_list()
+                        temperature_dict[(mod,zcl,period,'DJF')] = weather_period[weather_period.index.month.isin([12,1,2])].temperature_2m.to_list()
+                        temperature_dict[(mod,zcl,period,'JJA')] = weather_period[weather_period.index.month.isin([6,7,8])].temperature_2m.to_list()
+                        
+            pickle.dump(temperature_dict, open('.temperature_dict.pickle', "wb"))
+        else:
+            temperature_dict = pickle.load(open('.temperature_dict.pickle', 'rb'))
+        
+        # affichage des graphes par modèles 
+        if False:
+            # mod = 1
+            models_dict = {0:'CNRM-CM5_ALADIN63',
+                           1:'CNRM-CM5_HadREM3-GA7',
+                           2:'EC-EARTH_HadREM3-GA7',
+                           3:'EC-EARTH_RACMO22E',
+                           4:'HadGEM2-ES_HadREM3-GA7'}
+            
+            for mod in range(5):
+                fig,ax = plt.subplots(figsize=(10,5),dpi=300)
+                for idx,zcl in enumerate(zcl_list):
+                    
+                    j = idx*7
+                    X = [j,j+2,j+4]
+                        
+                    for k,period in enumerate([0,2,4]):
+                        if idx==1 and k==1:
+                            label_jja ='JJA'
+                            label_djf ='DJF'
+                        else:
+                            label_jja = None
+                            label_djf = None
+                            
+                        jja_color = 'tab:red'
+                        djf_color = 'tab:blue'
+                        
+                        bplot_jja = ax.boxplot(temperature_dict[(mod,zcl,period,'JJA')],positions=[X[k]-0.2],
+                                               widths=0.5,label=label_jja,
+                                               patch_artist=True,
+                                               boxprops=dict(color=jja_color),
+                                               capprops=dict(color=jja_color),
+                                               whiskerprops=dict(color=jja_color),
+                                               flierprops=dict(markeredgecolor=jja_color,markersize=2),
+                                               medianprops=dict(color=jja_color),)
+                        
+                        for box in bplot_jja['boxes']:
+                            box.set(facecolor='w',lw=1.5)
+                        
+                        bplot_djf = ax.boxplot(temperature_dict[(mod,zcl,period,'DJF')],positions=[X[k]+0.2],
+                                               widths=0.5,label=label_djf,
+                                               patch_artist=True,
+                                               boxprops=dict(color=djf_color),
+                                               capprops=dict(color=djf_color),
+                                               whiskerprops=dict(color=djf_color),
+                                               flierprops=dict(markeredgecolor=djf_color,markersize=2),
+                                               medianprops=dict(color=djf_color),)
+                        
+                        for box in bplot_djf['boxes']:
+                            box.set(facecolor='w',lw=1.5)
+                    
+                    list_temp_jja = [np.mean(temperature_dict[(mod,zcl,p,'JJA')]) for p in [0,2,4]]
+                    list_temp_djf = [np.mean(temperature_dict[(mod,zcl,p,'DJF')]) for p in [0,2,4]]
+                    
+                    ax.plot(X,list_temp_jja,color=jja_color,zorder=-1,alpha=0.7)
+                    ax.plot(X,list_temp_djf,color=djf_color,zorder=-1,alpha=0.7)
+        
+                # ax.set_ylim(bottom=0.)
+                ax.set_ylabel('Mean temperature (°C)')
+                ax.legend()
+                ax.set_title(models_dict.get(mod).replace('_',' - '))
+                ax.set_xticks([(i*7)+2 for i in range(len(zcl_list))],zcl_list)
+                
+                ylims = ax.get_ylim()
+                ylims = [-15,40]
+                xlims = ax.get_xlim()
+                for i in range(len(zcl_list)):
+                    j = i*7
+                    X = [j-1.5,j+2,j+5.5]
+                    if i%2==0:
+                        ax.fill_between(X,[ylims[1]]*3,[ylims[0]]*3,color='lightgrey',alpha=0.37,zorder=-2)
+                
+                ax.set_xlim([xlims[0]-0.5,xlims[-1]+0.5])
+                ax.set_ylim(ylims)
+                plt.savefig(os.path.join(figs_folder,'{}.png'.format('temperature_evolution_zcl_nmod{}'.format(mod))),bbox_inches='tight')
+                
+                plt.show()
+                
+        # affichage des moyennes des modèles
+        if True:
+            fig,ax = plt.subplots(figsize=(10,5),dpi=300)
+            for idx,zcl in enumerate(zcl_list):
+                
+                j = idx*7
+                X = [j,j+2,j+4]
+                    
+                for k,period in enumerate([0,2,4]):
+                    if idx==1 and k==1:
+                        label_jja ='JJA'
+                        label_djf ='DJF'
+                    else:
+                        label_jja = None
+                        label_djf = None
+                        
+                    jja_color = 'tab:red'
+                    djf_color = 'tab:blue'
+                    
+                    list_jja = [np.mean(temperature_dict[(m,zcl,period,'JJA')]) for m in range(5)]
+                    
+                    ax.errorbar([X[k]-0.2],np.mean(list_jja),
+                                yerr=np.asarray([[np.mean(list_jja)-np.min(list_jja),np.max(list_jja)-np.mean(list_jja)]]).T,
+                                marker='o',mec=jja_color,mfc='w',ls='',ecolor=jja_color,capsize=2,
+                                label=label_jja,)
+                    
+                    list_djf = [np.mean(temperature_dict[(m,zcl,period,'DJF')]) for m in range(5)]
+                    
+                    ax.errorbar([X[k]+0.2],np.mean(list_djf),
+                                yerr=np.asarray([[np.mean(list_djf)-np.min(list_djf),np.max(list_djf)-np.mean(list_djf)]]).T,
+                                marker='o',mec=djf_color,mfc='w',ls='',ecolor=djf_color,capsize=2,
+                                label=label_djf,)
+                
+                list_temp_jja = [np.mean([np.mean(temperature_dict[(m,zcl,p,'JJA')]) for m in range(5)]) for p in [0,2,4]]
+                list_temp_djf = [np.mean([np.mean(temperature_dict[(m,zcl,p,'DJF')]) for m in range(5)]) for p in [0,2,4]]
+                
+                ax.plot(X,list_temp_jja,color=jja_color,zorder=-1,alpha=0.7)
+                ax.plot(X,list_temp_djf,color=djf_color,zorder=-1,alpha=0.7)
+    
+            # ax.set_ylim(bottom=0.)
+            ax.set_ylabel('Mean temperature (°C)')
+            ax.legend()
+            ax.set_title('')
+            ax.set_xticks([(i*7)+2 for i in range(len(zcl_list))],zcl_list)
+            
+            ylims = ax.get_ylim()
+            # ylims = [-15,40]
+            xlims = ax.get_xlim()
+            for i in range(len(zcl_list)):
+                j = i*7
+                X = [j-1.5,j+2,j+5.5]
+                if i%2==0:
+                    ax.fill_between(X,[ylims[1]]*3,[ylims[0]]*3,color='lightgrey',alpha=0.37,zorder=-2)
+            
+            ax.set_xlim([-1.5,54.5])
+            ax.set_ylim(ylims)
+            plt.savefig(os.path.join(figs_folder,'{}.png'.format('temperature_evolution_zcl')),bbox_inches='tight')
+            
+            plt.show()
+            
+    # idem pour les flux solaires
+    if False:
+        models_period_dict = {0:{2:  [2034,2053],
+                                 2.7:[2046,2065],
+                                 4:  [2072,2091],},
+                              1:{2:  [2027,2046],
+                                 2.7:[2042,2061],
+                                 4:  [2063,2082],},
+                              2:{2:  [2029,2048],
+                                 2.7:[2037,2056],
+                                 4:  [2069,2088],},
+                              3:{2:  [2018,2037],
+                                 2.7:[2033,2052],
+                                 4:  [2060,2079],},
+                              4:{2:  [2008,2027], 
+                                 2.7:[2024,2043],
+                                 4:  [2049,2068],},}
+        
+        for mod in range(5):
+            models_period_dict[mod].update({0:[2000,2020]})
+        
+        zcl_list = France().climats
+        normal_direct_radiation_dict = dict()
+        
+        if False:
+            for mod in range(5):
+                for zcl in zcl_list:
+                    weather = compute_projected_weather_data(zcl, mod)
+                    for period in [0,2,2.7,4]:
+                        p = models_period_dict.get(mod).get(period)
+                        weather_period = weather[weather.index.year.isin(list(range(p[0],p[1]+1)))]
+                        weather_period = aggregate_resolution(weather_period[['direct_normal_irradiance_instant']],resolution='D',agg_method='mean')
+                        
+                        normal_direct_radiation_dict[(mod,zcl,period,'ALL')] = weather_period.direct_normal_irradiance_instant.to_list()
+                        normal_direct_radiation_dict[(mod,zcl,period,'DJF')] = weather_period[weather_period.index.month.isin([12,1,2])].direct_normal_irradiance_instant.to_list()
+                        normal_direct_radiation_dict[(mod,zcl,period,'JJA')] = weather_period[weather_period.index.month.isin([6,7,8])].direct_normal_irradiance_instant.to_list()
+                        
+            pickle.dump(normal_direct_radiation_dict, open('.normal_direct_radiation_dict.pickle', "wb"))
+        else:
+            normal_direct_radiation_dict = pickle.load(open('.normal_direct_radiation_dict.pickle', 'rb'))
+        
+        # affichage des graphes par modèles 
+        if True:
+            # mod = 1
+            models_dict = {0:'CNRM-CM5_ALADIN63',
+                           1:'CNRM-CM5_HadREM3-GA7',
+                           2:'EC-EARTH_HadREM3-GA7',
+                           3:'EC-EARTH_RACMO22E',
+                           4:'HadGEM2-ES_HadREM3-GA7'}
+            
+            for mod in range(5):
+                fig,ax = plt.subplots(figsize=(10,5),dpi=300)
+                for idx,zcl in enumerate(zcl_list):
+                    
+                    j = idx*7
+                    X = [j,j+2,j+4]
+                        
+                    for k,period in enumerate([0,2,4]):
+                        if idx==1 and k==1:
+                            label_jja ='JJA'
+                            label_djf ='DJF'
+                        else:
+                            label_jja = None
+                            label_djf = None
+                            
+                        jja_color = 'tab:red'
+                        djf_color = 'tab:blue'
+                        
+                        bplot_jja = ax.boxplot(normal_direct_radiation_dict[(mod,zcl,period,'JJA')],positions=[X[k]-0.2],
+                                               widths=0.5,label=label_jja,
+                                               patch_artist=True,
+                                               boxprops=dict(color=jja_color),
+                                               capprops=dict(color=jja_color),
+                                               whiskerprops=dict(color=jja_color),
+                                               flierprops=dict(markeredgecolor=jja_color,markersize=2),
+                                               medianprops=dict(color=jja_color),)
+                        
+                        for box in bplot_jja['boxes']:
+                            box.set(facecolor='w',lw=1.5)
+                        
+                        bplot_djf = ax.boxplot(normal_direct_radiation_dict[(mod,zcl,period,'DJF')],positions=[X[k]+0.2],
+                                               widths=0.5,label=label_djf,
+                                               patch_artist=True,
+                                               boxprops=dict(color=djf_color),
+                                               capprops=dict(color=djf_color),
+                                               whiskerprops=dict(color=djf_color),
+                                               flierprops=dict(markeredgecolor=djf_color,markersize=2),
+                                               medianprops=dict(color=djf_color),)
+                        
+                        for box in bplot_djf['boxes']:
+                            box.set(facecolor='w',lw=1.5)
+                    
+                    list_temp_jja = [np.mean(normal_direct_radiation_dict[(mod,zcl,p,'JJA')]) for p in [0,2,4]]
+                    list_temp_djf = [np.mean(normal_direct_radiation_dict[(mod,zcl,p,'DJF')]) for p in [0,2,4]]
+                    
+                    ax.plot(X,list_temp_jja,color=jja_color,zorder=-1,alpha=0.7)
+                    ax.plot(X,list_temp_djf,color=djf_color,zorder=-1,alpha=0.7)
+        
+                # ax.set_ylim(bottom=0.)
+                ax.set_ylabel('Mean direct normal radiation (W.m$^{-2}$)')
+                ax.legend()
+                ax.set_title(models_dict.get(mod).replace('_',' - '))
+                ax.set_xticks([(i*7)+2 for i in range(len(zcl_list))],zcl_list)
+                
+                ylims = ax.get_ylim()
+                ylims = [0,700]
+                xlims = ax.get_xlim()
+                for i in range(len(zcl_list)):
+                    j = i*7
+                    X = [j-1.5,j+2,j+5.5]
+                    if i%2==0:
+                        ax.fill_between(X,[ylims[1]]*3,[ylims[0]]*3,color='lightgrey',alpha=0.37,zorder=-2)
+                
+                ax.set_xlim([xlims[0]-0.5,xlims[-1]+0.5])
+                ax.set_ylim(ylims)
+                plt.savefig(os.path.join(figs_folder,'{}.png'.format('radiation_evolution_zcl_nmod{}'.format(mod))),bbox_inches='tight')
+                
+                plt.show()
+                
+        # affichage des moyennes des modèles
+        if False:
+            fig,ax = plt.subplots(figsize=(10,5),dpi=300)
+            for idx,zcl in enumerate(zcl_list):
+                
+                j = idx*7
+                X = [j,j+2,j+4]
+                    
+                for k,period in enumerate([0,2,4]):
+                    if idx==1 and k==1:
+                        label_jja ='JJA'
+                        label_djf ='DJF'
+                    else:
+                        label_jja = None
+                        label_djf = None
+                        
+                    jja_color = 'tab:red'
+                    djf_color = 'tab:blue'
+                    
+                    list_jja = [np.mean(normal_direct_radiation_dict[(m,zcl,period,'JJA')]) for m in range(5)]
+                    
+                    ax.errorbar([X[k]-0.2],np.mean(list_jja),
+                                yerr=np.asarray([[np.mean(list_jja)-np.min(list_jja),np.max(list_jja)-np.mean(list_jja)]]).T,
+                                marker='o',mec=jja_color,mfc='w',ls='',ecolor=jja_color,capsize=2,
+                                label=label_jja,)
+                    
+                    list_djf = [np.mean(normal_direct_radiation_dict[(m,zcl,period,'DJF')]) for m in range(5)]
+                    
+                    ax.errorbar([X[k]+0.2],np.mean(list_djf),
+                                yerr=np.asarray([[np.mean(list_djf)-np.min(list_djf),np.max(list_djf)-np.mean(list_djf)]]).T,
+                                marker='o',mec=djf_color,mfc='w',ls='',ecolor=djf_color,capsize=2,
+                                label=label_djf,)
+                
+                list_temp_jja = [np.mean([np.mean(normal_direct_radiation_dict[(m,zcl,p,'JJA')]) for m in range(5)]) for p in [0,2,4]]
+                list_temp_djf = [np.mean([np.mean(normal_direct_radiation_dict[(m,zcl,p,'DJF')]) for m in range(5)]) for p in [0,2,4]]
+                
+                ax.plot(X,list_temp_jja,color=jja_color,zorder=-1,alpha=0.7)
+                ax.plot(X,list_temp_djf,color=djf_color,zorder=-1,alpha=0.7)
+    
+            # ax.set_ylim(bottom=0.)
+            ax.set_ylabel('Mean direct normal radiation (W.m$^{-2}$)')
+            ax.legend()
+            ax.set_title('')
+            ax.set_xticks([(i*7)+2 for i in range(len(zcl_list))],zcl_list)
+            
+            ylims = ax.get_ylim()
+            # ylims = [-15,40]
+            xlims = ax.get_xlim()
+            for i in range(len(zcl_list)):
+                j = i*7
+                X = [j-1.5,j+2,j+5.5]
+                if i%2==0:
+                    ax.fill_between(X,[ylims[1]]*3,[ylims[0]]*3,color='lightgrey',alpha=0.37,zorder=-2)
+            
+            ax.set_xlim([-1.5,54.5])
+            ax.set_ylim(ylims)
+            plt.savefig(os.path.join(figs_folder,'{}.png'.format('radiation_evolution_zcl')),bbox_inches='tight')
+            
+            plt.show()
         
     tac = time.time()
     print('Done in {:.2f}s.'.format(tac-tic))
