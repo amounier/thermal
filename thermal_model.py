@@ -1320,7 +1320,7 @@ def run_thermal_model(typology, behaviour, weather_data, progressbar=False, pmax
     # U[:,13] Phi_vmeca
     # U[:,14] Phi_vnat
     
-    # Remplacement de Te par Ti pour les parois adiabatiques
+    # Flux solaires nuls pour les parois mitoyennes
     if typology.w3_adiabatic:
         U[:,9] = compute_external_Phi(typology, weather_data, wall=3)*0 # Phi_sw3e
         U[:,10] = compute_internal_Phi(typology, weather_data, wall=3)*0 # Phi_sw3i

@@ -54,6 +54,23 @@ models_period_dict = {0:{2:[2020,2040],
                       4:{2:[2006,2021], # debut des projections en 2006
                          4:[2040,2060],},}
 
+# TODO : refaire tourner les calculs avec ces nouvelles périodes 
+models_period_dict = {0:{2:  [2034,2053],
+                         2.7:[2046,2065],
+                         4:  [2072,2091],},
+                      1:{2:  [2027,2046],
+                         2.7:[2042,2061],
+                         4:  [2063,2082],},
+                      2:{2:  [2029,2048],
+                         2.7:[2037,2056],
+                         4:  [2069,2088],},
+                      3:{2:  [2018,2037],
+                         2.7:[2033,2052],
+                         4:  [2060,2079],},
+                      4:{2:  [2008,2027], 
+                         2.7:[2024,2043],
+                         4:  [2049,2068],},}
+
 
 def compute_energy_needs_single_actions(component,typo_code,zcl,output_path,
                                         behaviour='conventionnel',period=[2000,2020],
@@ -151,7 +168,7 @@ def compute_energy_needs_single_actions(component,typo_code,zcl,output_path,
                                           'var_label':'Solar shader length (m)',
                                           'var_saver':'action_{}_{}_{}_{}_{}-{}_mod{}_reftest'.format(component,typo_code,zcl.code,behaviour.name,period[0],period[1],nmod)
                                               },
-                               'windows':{'var_space':[4.6,1.0],
+                               'windows':{'var_space':[10,0.8],
                                           'var_label':'Windows U-value (W.m$^{-2}$.K$^{-1}$)',
                                           'var_saver':'action_{}_{}_{}_{}_{}-{}_mod{}_reftest'.format(component,typo_code,zcl.code,behaviour.name,period[0],period[1],nmod)
                                               },
@@ -199,7 +216,7 @@ def compute_energy_needs_single_actions(component,typo_code,zcl,output_path,
             if component == 'shading':
                 typo.solar_shader_length = var_value
             if component == 'windows':
-                typo.windows_U = var_value
+                typo.windows_U = min(var_value,typo.windows_U)
                 
             # typo.basement = False
                 
@@ -350,7 +367,7 @@ def get_energy_needs_single_actions(component,typo_code,zcl,output_path,
                                           'var_label':'Solar shader length (m)',
                                           'var_saver':'action_{}_{}_{}_{}_{}-{}_mod{}_reftest'.format(component,typo_code,zcl.code,behaviour.name,period[0],period[1],nmod)
                                               },
-                               'windows':{'var_space':[4.6,1.0],
+                               'windows':{'var_space':[10,0.8],
                                           'var_label':'Windows U-value (W.m$^{-2}$.K$^{-1}$)',
                                           'var_saver':'action_{}_{}_{}_{}_{}-{}_mod{}_reftest'.format(component,typo_code,zcl.code,behaviour.name,period[0],period[1],nmod)
                                               },
@@ -397,7 +414,10 @@ def compute_energy_needs_typology(typo_code, typo_level,zcl,output_path,
             weather_data = refine_resolution(weather_data, resolution='600s')
             pickle.dump(weather_data, open(weather_data_checkfile, "wb"))
         else:
-            weather_data = pickle.load(open(weather_data_checkfile, 'rb'))
+            try:
+                weather_data = pickle.load(open(weather_data_checkfile, 'rb'))
+            except pickle.UnpicklingError:
+                weather_data = pickle.load(open(weather_data_checkfile, 'rb'))
 
     else:
         weather_data_checkfile = ".weather_data_{}_{}_{}".format(city,period[0],period[1]) + ".pickle"
@@ -767,7 +787,7 @@ def compute_energy_needs_multi_actions(multi_action_idx,typo_code,zcl,output_pat
 def get_energy_needs_multi_actions(multi_action_idx,typo_code,zcl,output_path,
                                    behaviour='conventionnel',period_label='ref', 
                                    model='explore2',natnocvent=False):
-    # TODO : à modifier pour prendre en compte tous les modèles climatiques 
+    
     typo = Typology(typo_code)
     
     if behaviour == 'conventionnel':
@@ -903,7 +923,7 @@ def main():
     
     
     #%% Variation des paramètres d'isolation 
-    if False:
+    if True:
         
         # Caractérisation du temps de calcul
         if False:
@@ -1010,7 +1030,7 @@ def main():
             
             
         # Évolution relatifs des besoins en chaud et froid selon les épaisseurs d'isolants (comparaiosn litt)
-        if True:
+        if False:
             
             # Localisation
             city = 'Aalborg' # pour la comparaison avec Pomianowski
@@ -1052,9 +1072,9 @@ def main():
             Bfr_list = []
             
             for idx,thickness in tqdm.tqdm(enumerate(thickness_list),total=len(thickness_list)):
-                typo.ceiling_supplementary_insulation_thickness = 0.1
-                typo.floor_insulation_thickness = 0.1
-                # typo.windows_U = 0.786
+                typo.ceiling_supplementary_insulation_thickness = 0.05
+                typo.floor_insulation_thickness = 0.05
+                typo.windows_U = 1.
                 
                 typo.w0_insulation_thickness = thickness
                 typo.w1_insulation_thickness = thickness
@@ -1109,54 +1129,54 @@ def main():
         # Évolution des monogestes
         if False:
             # Localisation
-            zcl = Climat('H1a')
-            # zcl = Climat('H3')
+            # zcl = Climat('H1a')
+            zcl = Climat('H3')
             typo_code = 'FR.N.SFH.01.Gen'
             # typo_code = 'FR.N.SFH.07.Gen'
             
             # premier test
             if False:
-                # compute_energy_needs_single_actions('roof',typo_code,zcl,
-                #                      output_path=os.path.join(output, folder),
-                #                      behaviour='conventionnel',
-                #                      period=[2000,2020],
-                #                      plot=True,show=True,
-                #                      progressbar=True)
+                compute_energy_needs_single_actions('roof',typo_code,zcl,
+                                     output_path=os.path.join(output, folder),
+                                     behaviour='conventionnel',
+                                     period=[2000,2020],
+                                     plot=True,show=True,
+                                     progressbar=True)
                 
-                # compute_energy_needs_single_actions('walls',typo_code,zcl,
-                #                      output_path=os.path.join(output, folder),
-                #                      behaviour='conventionnel',
-                #                      period=[2000,2020],
-                #                      plot=True,show=True,
-                #                      progressbar=True)
+                compute_energy_needs_single_actions('walls',typo_code,zcl,
+                                     output_path=os.path.join(output, folder),
+                                     behaviour='conventionnel',
+                                     period=[2000,2020],
+                                     plot=True,show=True,
+                                     progressbar=True)
                 
-                # compute_energy_needs_single_actions('floor',typo_code,zcl,
-                #                      output_path=os.path.join(output, folder),
-                #                      behaviour='conventionnel',
-                #                      period=[2000,2020],
-                #                      plot=True,show=True,
-                #                      progressbar=True)
+                compute_energy_needs_single_actions('floor',typo_code,zcl,
+                                     output_path=os.path.join(output, folder),
+                                     behaviour='conventionnel',
+                                     period=[2000,2020],
+                                     plot=True,show=True,
+                                     progressbar=True)
                 
-                # compute_energy_needs_single_actions('albedo',typo_code,zcl,
-                #                      output_path=os.path.join(output, folder),
-                #                      behaviour='conventionnel',
-                #                      period=[2000,2020],
-                #                      plot=True,show=True,
-                #                      progressbar=True)
+                compute_energy_needs_single_actions('albedo',typo_code,zcl,
+                                     output_path=os.path.join(output, folder),
+                                     behaviour='conventionnel',
+                                     period=[2000,2020],
+                                     plot=True,show=True,
+                                     progressbar=True)
                 
-                # compute_energy_needs_single_actions('ventilation',typo_code,zcl,
-                #                      output_path=os.path.join(output, folder),
-                #                      behaviour='conventionnel',
-                #                      period=[2000,2020],
-                #                      plot=True,show=True,
-                #                      progressbar=True)
+                compute_energy_needs_single_actions('ventilation',typo_code,zcl,
+                                     output_path=os.path.join(output, folder),
+                                     behaviour='conventionnel',
+                                     period=[2000,2020],
+                                     plot=True,show=True,
+                                     progressbar=True)
                 
-                # compute_energy_needs_single_actions('shading',typo_code,zcl,
-                #                      output_path=os.path.join(output, folder),
-                #                      behaviour='conventionnel',
-                #                      period=[2000,2020],
-                #                      plot=True,show=True,
-                #                      progressbar=True,model='era5')
+                compute_energy_needs_single_actions('shading',typo_code,zcl,
+                                     output_path=os.path.join(output, folder),
+                                     behaviour='conventionnel',
+                                     period=[2000,2020],
+                                     plot=True,show=True,
+                                     progressbar=True,model='era5')
                 
                 compute_energy_needs_single_actions('windows',typo_code,zcl,
                                      output_path=os.path.join(output, folder),
@@ -1266,7 +1286,7 @@ def main():
         if False:
             zcl_list = ['H1b','H3']
             # zcl = Climat('H1b')
-            mod = 1
+            mod = 0
         
             run_list = []
             for zcl_code in zcl_list:
@@ -1284,9 +1304,9 @@ def main():
                                 run_list.append((code, level, zcl, os.path.join(output, folder),
                                                  'conventionnel',period,'explore2',mod))
                                               
-            # nb_cpu = multiprocessing.cpu_count()
-            # pool = multiprocessing.Pool(nb_cpu)
-            # pool.starmap(compute_energy_needs_typology, run_list)
+            nb_cpu = multiprocessing.cpu_count()-1
+            pool = multiprocessing.Pool(nb_cpu)
+            pool.starmap(compute_energy_needs_typology, run_list)
             
             for zcl_code in zcl_list:
                 zcl = Climat(zcl_code)
@@ -1296,10 +1316,10 @@ def main():
         
         
         # cadran des rénovations par gestes
-        if True:
+        if False:
             
             # calcul des gains
-            if True:
+            if False:
                 # component = 'shading'
                 zcl_list = ['H1b','H3']
                 
@@ -1307,11 +1327,11 @@ def main():
                 for mod in list(range(5)):
                 # for mod in [1]:
                     for component in ['shading','walls','floor','roof','albedo','windows','ventilation']:
-                    # for component in ['floor']:
+                    # for component in ['windows']:
                         for zcl_code in zcl_list:
                             zcl = Climat(zcl_code)
-                            for building_type in ['SFH','TH','MFH','AB']:
-                            # for building_type in ['SFH']:
+                            # for building_type in ['SFH','TH','MFH','AB']:
+                            for building_type in ['AB']:
                                 for i in range(1,11):
                                     code = 'FR.N.{}.{:02d}.Gen'.format(building_type,i)
                                     
@@ -1388,11 +1408,11 @@ def main():
     
 
                 for component in ['shading','walls','floor','roof','albedo','windows','ventilation']:
-                # for component in ['floor']:
+                # for component in ['windows']:
                     for zcl_code in zcl_list:
                         zcl = Climat(zcl_code)
-                        # for building_type in ['SFH','TH','MFH','AB']:
-                        for building_type in ['SFH']:
+                        for building_type in ['SFH','TH','MFH','AB']:
+                        # for building_type in ['SFH']:
                             fig,ax = plt.subplots(figsize=(5,5),dpi=300)
                             max_Delta_x = 0
                             max_Delta_y = 0
@@ -1517,8 +1537,8 @@ def main():
                 
                 zoom = False
                 
-                for building_type in ['SFH','TH','MFH','AB']:
-                # for building_type in ['SFH']:
+                # for building_type in ['SFH','TH','MFH','AB']:
+                for building_type in ['AB']:
                     
                     fig,ax = plt.subplots(figsize=(5,5),dpi=300)
                     
@@ -1662,10 +1682,12 @@ def main():
                 
             
     #%% Combinaisons de gestes de rénovations
-    if False:
+    if True:
         
+        # TODO: attention au dossier déclaré
         # folder = '20250331_thermal_optimisation'
-        # figs_folder = os.path.join(output, folder, 'figs')
+        # folder = '20250414_thermal_optimisation'
+        figs_folder = os.path.join(output, folder, 'figs')
         
         # first test 
         if False:
@@ -1698,8 +1720,8 @@ def main():
                 for ma_idx in range(128):
                     for zcl_code in zcl_list:
                         zcl = Climat(zcl_code)
-                        # for building_type in ['SFH','TH','MFH','AB']:
-                        for building_type in ['SFH']:
+                        for building_type in ['SFH','TH','MFH','AB']:
+                        # for building_type in ['SFH']:
                             for i in range(1,11):
                             # for i in range(1,5):
                                 code = 'FR.N.{}.{:02d}.Gen'.format(building_type,i)
@@ -1743,11 +1765,14 @@ def main():
         if True:
             
             # premier test 
-            if False:
+            if True:
                 zcl_code = 'H1b'
                 # zcl_code = 'H3'
-                building_type = 'SFH'
-                nocturnal_natural_cooling = True
+                # building_type = 'SFH'
+                # building_type = 'TH'
+                # building_type = 'MFH'
+                building_type = 'AB'
+                # nocturnal_natural_cooling = True
                 nocturnal_natural_cooling = False
                 
                 
@@ -1773,7 +1798,7 @@ def main():
                     for zcl_code in ['H1b','H3']:
                         Bch,Bfr,Btot = create_combination_results_dict(zcl_code, building_type, os.path.join(output, folder),natnocvent=nocturnal_natural_cooling)
                         
-                        results_dict = {'Typologies':['FR.N.{}.{:02d}.Gen'.format(building_type,i) + '=' + period for building_type in ['SFH'] for i in range(1,11) for period in ['2000-2020','+2°C','+4°C']]}
+                        results_dict = {'Typologies':['FR.N.{}.{:02d}.Gen'.format(building_type,i) + '=' + period for building_type in [building_type] for i in range(1,11) for period in ['2000-2020','+2°C','+4°C']]}
                         for idx in range(128):
                             for period in ['2000-2020','+2°C','+4°C']:
                                 # code_period = code + '=' + period
@@ -1840,521 +1865,526 @@ def main():
             if True:
                 zcl_code = 'H1b'
                 zcl_code = 'H3'
-                building_type = 'SFH'
+                # building_type = 'SFH'
+                # building_type = 'TH'
+                # building_type = 'MFH'
+                building_type = 'AB'
                 nocturnal_natural_cooling = False
                 
-                # passage des besoins aux consommations
+                for zcl_code in ['H1b','H3']:
                 
-                Bch,Bfr,Btot = create_combination_results_dict(zcl_code, building_type, os.path.join(output, folder),natnocvent=nocturnal_natural_cooling)
-                
-                results_dict_heating = {'Typologies':['FR.N.{}.{:02d}.Gen'.format(building_type,i) + '=' + period for building_type in ['SFH'] for i in range(1,11) for period in ['2000-2020','+2°C','+4°C']]}
-                results_dict_cooling = {'Typologies':['FR.N.{}.{:02d}.Gen'.format(building_type,i) + '=' + period for building_type in ['SFH'] for i in range(1,11) for period in ['2000-2020','+2°C','+4°C']]}
-                for idx in range(128):
-                    for period in ['2000-2020','+2°C','+4°C']:
-                        # code_period = code + '=' + period
-                        results_dict_heating[idx] = [Bch[code_period.replace('=','-')][idx] for code_period in results_dict_heating['Typologies']]
-                        results_dict_cooling[idx] = [Bfr[code_period.replace('=','-')][idx] for code_period in results_dict_cooling['Typologies']]
-                
-                dataset_needs_heating = pd.DataFrame().from_dict(results_dict_heating)
-                dataset_needs_heating['Period'] = [e.split('=')[-1] for e in dataset_needs_heating.Typologies]
-                dataset_needs_heating['Typologies'] = [e.split('=')[0] for e in dataset_needs_heating.Typologies]
-                dataset_needs_heating = dataset_needs_heating.set_index('Period')
-                
-                dataset_needs_cooling = pd.DataFrame().from_dict(results_dict_cooling)
-                dataset_needs_cooling['Period'] = [e.split('=')[-1] for e in dataset_needs_cooling.Typologies]
-                dataset_needs_cooling['Typologies'] = [e.split('=')[0] for e in dataset_needs_cooling.Typologies]
-                dataset_needs_cooling = dataset_needs_cooling.set_index('Period')
-                
-                dataset_energy_systems = pd.read_csv(os.path.join('data','TABULA','statistics_energy_systems_typologies.csv')).set_index('Energy systems')
-                
-                dict_energy_efficiency = {'Electricity-Direct electric':0.95, 
-                                          'Electricity-Heat pump air':2,
-                                          'Electricity-Heat pump water':2.5, 
-                                          'Heating-District heating':0.76,
-                                          'Natural gas-Performance boiler':0.76, 
-                                          'Oil fuel-Performance boiler':0.76,
-                                          'Wood fuel-Performance boiler':0.76} 
-                
-                
-
-                dataset_consumption_heating_dict = {e:dataset_needs_heating.copy() for e in dict_energy_efficiency.keys()}
-                dataset_consumption_cooling = dataset_needs_cooling.copy()
-                
-                def get_ponderated_efficiency(typo_code):
-                    ponderations = dataset_energy_systems[typo_code].to_dict()
-                    efficiency = 0
-                    for energy_type,energy_effi in dict_energy_efficiency.items():
-                        efficiency += energy_effi * ponderations.get(energy_type)
-                    return efficiency
-                
-                # heatmap des efficacité de chauffage
-                if False:
-                    dataset_efficiency = {'SFH':[],'TH':[],'MFH':[],'AB':[]}
-                    for bt in dataset_efficiency.keys():
-                        for i in range(1,12):
-                            code = 'FR.N.{}.{:02d}.Gen'.format(bt,i)
-                            dataset_efficiency[bt].append(get_ponderated_efficiency(code))
-                    dataset_efficiency = pd.DataFrame().from_dict(dataset_efficiency).T
-                    dataset_efficiency = dataset_efficiency.rename(columns={i:'{:02d}'.format(i+1) for i in dataset_efficiency.columns})
-                                               
-                    fig,ax = plt.subplots(figsize=(5*(10/4),5), dpi=300)
-                    sns.heatmap(dataset_efficiency, annot=True, fmt=".1f",cmap='viridis',cbar=False)
-                    # for j,typ in enumerate(typology_category_list):
-                    #     ax.text(len(tabula_period_list)+0.5,j+0.5,'{:.1f}%'.format(dict_sum_repartition_logements.get(typ)),
-                    #             ha='right',va='center')
-                    ax.set_title('Weighted average efficiency of heating systems')
-                    plt.savefig(os.path.join(figs_folder,'heating_efficiency_typologies.png'), bbox_inches='tight')
-                    plt.show()
-                
-                typology_list = [Typology(c) for c in dataset_consumption_cooling.Typologies]
-                surface_list = np.asarray([t.surface for t in typology_list])
-                # efficiency_list = np.asarray([get_ponderated_efficiency(e.strip()) for e in dataset_needs_heating.Typologies])
-                ponderation_list = {e:np.asarray([dataset_energy_systems[typo.code].to_dict().get(e) for typo in typology_list]) for e in dict_energy_efficiency.keys()}
-                
-                for idx in range(128):
-                    dataset_consumption_cooling[idx] = dataset_consumption_cooling[idx] / dict_energy_efficiency.get('Electricity-Heat pump air') * surface_list
-                    for e in dict_energy_efficiency.keys():
-                        dataset_consumption_heating_dict[e][idx] = dataset_consumption_heating_dict[e][idx] * ponderation_list.get(e) / dict_energy_efficiency.get(e) * surface_list
-                
-                
-                # passage des consommations aux couts
-                
-                # cout de la renovation
-                
-                dict_components_costs = {'walls': 160, #€/m2
-                                         'windows': 540, #€/m2,
-                                         'roof': 80, #€/m2,
-                                         'ventilation': 4400, #€/unit,
-                                         'shading': 400, #€/m,
-                                         'floor': 50, #€/m2,
-                                         'albedo': 40, #€/m2
+                    # passage des besoins aux consommations
+                    # print(os.path.join(output, folder))
+                    Bch,Bfr,Btot = create_combination_results_dict(zcl_code, building_type, os.path.join(output, folder),natnocvent=nocturnal_natural_cooling)
+                    
+                    results_dict_heating = {'Typologies':['FR.N.{}.{:02d}.Gen'.format(building_type,i) + '=' + period for building_type in [building_type] for i in range(1,11) for period in ['2000-2020','+2°C','+4°C']]}
+                    results_dict_cooling = {'Typologies':['FR.N.{}.{:02d}.Gen'.format(building_type,i) + '=' + period for building_type in [building_type] for i in range(1,11) for period in ['2000-2020','+2°C','+4°C']]}
+                    for idx in range(128):
+                        for period in ['2000-2020','+2°C','+4°C']:
+                            # code_period = code + '=' + period
+                            results_dict_heating[idx] = [Bch[code_period.replace('=','-')][idx] for code_period in results_dict_heating['Typologies']]
+                            results_dict_cooling[idx] = [Bfr[code_period.replace('=','-')][idx] for code_period in results_dict_cooling['Typologies']]
+                    
+                    dataset_needs_heating = pd.DataFrame().from_dict(results_dict_heating)
+                    dataset_needs_heating['Period'] = [e.split('=')[-1] for e in dataset_needs_heating.Typologies]
+                    dataset_needs_heating['Typologies'] = [e.split('=')[0] for e in dataset_needs_heating.Typologies]
+                    dataset_needs_heating = dataset_needs_heating.set_index('Period')
+                    
+                    dataset_needs_cooling = pd.DataFrame().from_dict(results_dict_cooling)
+                    dataset_needs_cooling['Period'] = [e.split('=')[-1] for e in dataset_needs_cooling.Typologies]
+                    dataset_needs_cooling['Typologies'] = [e.split('=')[0] for e in dataset_needs_cooling.Typologies]
+                    dataset_needs_cooling = dataset_needs_cooling.set_index('Period')
+                    
+                    dataset_energy_systems = pd.read_csv(os.path.join('data','TABULA','statistics_energy_systems_typologies.csv')).set_index('Energy systems')
+                    
+                    dict_energy_efficiency = {'Electricity-Direct electric':0.95, 
+                                              'Electricity-Heat pump air':2,
+                                              'Electricity-Heat pump water':2.5, 
+                                              'Heating-District heating':0.76,
+                                              'Natural gas-Performance boiler':0.76, 
+                                              'Oil fuel-Performance boiler':0.76,
+                                              'Wood fuel-Performance boiler':0.76} 
+                    
+                    
+    
+                    dataset_consumption_heating_dict = {e:dataset_needs_heating.copy() for e in dict_energy_efficiency.keys()}
+                    dataset_consumption_cooling = dataset_needs_cooling.copy()
+                    
+                    def get_ponderated_efficiency(typo_code):
+                        ponderations = dataset_energy_systems[typo_code].to_dict()
+                        efficiency = 0
+                        for energy_type,energy_effi in dict_energy_efficiency.items():
+                            efficiency += energy_effi * ponderations.get(energy_type)
+                        return efficiency
+                    
+                    # heatmap des efficacité de chauffage
+                    if False:
+                        dataset_efficiency = {'SFH':[],'TH':[],'MFH':[],'AB':[]}
+                        for bt in dataset_efficiency.keys():
+                            for i in range(1,12):
+                                code = 'FR.N.{}.{:02d}.Gen'.format(bt,i)
+                                dataset_efficiency[bt].append(get_ponderated_efficiency(code))
+                        dataset_efficiency = pd.DataFrame().from_dict(dataset_efficiency).T
+                        dataset_efficiency = dataset_efficiency.rename(columns={i:'{:02d}'.format(i+1) for i in dataset_efficiency.columns})
+                                                   
+                        fig,ax = plt.subplots(figsize=(5*(10/4),5), dpi=300)
+                        sns.heatmap(dataset_efficiency, annot=True, fmt=".1f",cmap='viridis',cbar=False)
+                        # for j,typ in enumerate(typology_category_list):
+                        #     ax.text(len(tabula_period_list)+0.5,j+0.5,'{:.1f}%'.format(dict_sum_repartition_logements.get(typ)),
+                        #             ha='right',va='center')
+                        ax.set_title('Weighted average efficiency of heating systems')
+                        plt.savefig(os.path.join(figs_folder,'heating_efficiency_typologies.png'), bbox_inches='tight')
+                        plt.show()
+                    
+                    typology_list = [Typology(c) for c in dataset_consumption_cooling.Typologies]
+                    surface_list = np.asarray([t.surface for t in typology_list])
+                    # efficiency_list = np.asarray([get_ponderated_efficiency(e.strip()) for e in dataset_needs_heating.Typologies])
+                    ponderation_list = {e:np.asarray([dataset_energy_systems[typo.code].to_dict().get(e) for typo in typology_list]) for e in dict_energy_efficiency.keys()}
+                    
+                    for idx in range(128):
+                        dataset_consumption_cooling[idx] = dataset_consumption_cooling[idx] / dict_energy_efficiency.get('Electricity-Heat pump air') * surface_list
+                        for e in dict_energy_efficiency.keys():
+                            dataset_consumption_heating_dict[e][idx] = dataset_consumption_heating_dict[e][idx] * ponderation_list.get(e) / dict_energy_efficiency.get(e) * surface_list
+                    
+                    
+                    # passage des consommations aux couts
+                    
+                    # cout de la renovation
+                    
+                    dict_components_costs = {'walls': 160, #€/m2
+                                             'windows': 540, #€/m2,
+                                             'roof': 80, #€/m2,
+                                             'ventilation': 4400, #€/unit,
+                                             'shading': 400, #€/m,
+                                             'floor': 50, #€/m2,
+                                             'albedo': 40, #€/m2
+                                             }
+                    
+                    dict_components_carbon = {'walls': 55, #kgCO2/m2
+                                              'windows': 7, #kgCO2/m2,
+                                              'roof': 30, #kgCO2/m2,
+                                              'ventilation': 0, #kgCO2/unit, # TODO à remplir
+                                              'shading': 0, #kgCO2/m, # TODO à remplir
+                                              'floor': 29, #kgCO2/m2,
+                                              'albedo': 1.3, #kgCO2/m2
+                                              }
+                    
+                    
+                    carbon_social_cost = 256*1e-3 #€/kgCO2eq
+                    
+                    dataset_multiactions_costs = dataset_consumption_cooling.copy()
+                    dataset_multiactions_carbon_cost = dataset_consumption_cooling.copy()
+                    
+                    
+                    renovation_surface_dict = {'walls': np.asarray([t.w0_surface*int(not t.w0_adiabatic) for t in typology_list]) + np.asarray([t.w1_surface*int(not t.w1_adiabatic) for t in typology_list])+ np.asarray([t.w2_surface*int(not t.w2_adiabatic) for t in typology_list])+ np.asarray([t.w3_surface*int(not t.w3_adiabatic) for t in typology_list]),
+                                               'windows': np.asarray([t.w0_windows_surface for t in typology_list]) + np.asarray([t.w1_windows_surface for t in typology_list])+ np.asarray([t.w2_windows_surface for t in typology_list])+ np.asarray([t.w3_windows_surface for t in typology_list]),
+                                               'roof': np.asarray([t.roof_surface for t in typology_list]),
+                                               'ventilation': np.asarray([1 for t in typology_list]), #€/unit,
+                                               'shading': np.asarray([t.w0_windows_surface/t.windows_height*(not t.w0_orientation == 'N') for t in typology_list])+np.asarray([t.w1_windows_surface/t.windows_height*(not t.w1_orientation == 'N') for t in typology_list])+np.asarray([t.w2_windows_surface/t.windows_height*(not t.w2_orientation == 'N') for t in typology_list])+np.asarray([t.w3_windows_surface/t.windows_height*(not t.w3_orientation == 'N') for t in typology_list]),
+                                               'floor': np.asarray([t.ground_surface for t in typology_list]),
+                                               'albedo': np.asarray([t.w0_surface*int(not t.w0_adiabatic) for t in typology_list]) + np.asarray([t.w1_surface*int(not t.w1_adiabatic) for t in typology_list])+ np.asarray([t.w2_surface*int(not t.w2_adiabatic) for t in typology_list])+ np.asarray([t.w3_surface*int(not t.w3_adiabatic) for t in typology_list])+np.asarray([t.roof_surface for t in typology_list]),
+                                               }
+                    
+                    for idx in range(128):
+                        dict_works = get_components_dict_multi_actions(idx)
+                        list_costs = np.asarray([0]*len(dataset_multiactions_costs))
+                        list_carbon = np.asarray([0]*len(dataset_multiactions_costs))
+                        for component,work in dict_works.items():
+                            if work:
+                                list_costs = list_costs + renovation_surface_dict.get(component) * dict_components_costs.get(component)
+                                list_carbon = list_carbon + renovation_surface_dict.get(component) * dict_components_carbon.get(component) * carbon_social_cost
+                        dataset_multiactions_costs[idx] = list_costs
+                        dataset_multiactions_carbon_cost[idx] = list_carbon
+                        
+                        
+                    # affichage en heatmap des couts
+                    if False:
+                        cmap = 'viridis'
+                        vmax = dataset_multiactions_costs.drop(columns='Typologies').max().max()
+                        norm = mpl.colors.Normalize(vmin=0, vmax=vmax)
+                        mappable = mpl.cm.ScalarMappable(norm=norm, cmap=cmap)
+                        
+                        # fig,ax = plt.subplots(dpi=300,figsize=(15,len(results_dict['Typologies'])/2))
+                        fig,ax = plt.subplots(dpi=300,figsize=(10,10))
+                        ax = sns.heatmap(dataset_multiactions_costs.drop(columns='Typologies'),ax=ax,cbar=False,cmap=cmap,vmin=0.)
+                        ax.set_title('')
+                        ax.set_ylabel('')
+                        ax.set_xlabel('Multi-actions combination index')
+                        
+                        xlims = ax.get_xlim()
+                        for n in range(0,int(len(dataset_multiactions_costs)/3)):
+                            if dataset_multiactions_costs[0].values[3*n] > 0.5*vmax:
+                                color = 'k'
+                            else:
+                                color = 'w'
+                            ax.text(1,3*n+0.5,dataset_multiactions_costs['Typologies'].values[3*n],color=color,va='center')
+                        for n in range(1,int(len(dataset_multiactions_costs)/3)):
+                            ax.plot(xlims,[3*n]*2,color='w')
+                        
+                        # min_idxs = dataset_multiactions_costs.drop(columns='Typologies').idxmin(axis=1)
+                        # for line, idx_min in enumerate(min_idxs.values):
+                        #     ax.plot([idx_min,idx_min+1],[line,line],color='k')
+                        #     ax.plot([idx_min,idx_min],[line,line+1],color='k')
+                        #     ax.plot([idx_min+1,idx_min+1],[line,line+1],color='k')
+                        #     ax.plot([idx_min,idx_min+1],[line+1,line+1],color='k')
+                            
+                            # ax.text(idx_min,line,str(idx_min))
+                    
+                        ax_cb = fig.add_axes([0,0,0.1,0.1])
+                        posn = ax.get_position()
+                        ax_cb.set_position([posn.x0+posn.width+0.01, posn.y0, 0.03, posn.height])
+                        fig.add_axes(ax_cb)
+                        cbar = plt.colorbar(mappable, cax=ax_cb,extendfrac=0.02)
+                        cbar.set_label('Renovation costs (€)')
+                        plt.savefig(os.path.join(figs_folder,'{}.png'.format('multiactions_renovation_costs_{}'.format(building_type))),bbox_inches='tight')
+                        plt.show()
+                        
+                    
+                    # affichage en heatmap des couts carbones de la rénovation
+                    if False:
+                        cmap = 'viridis'
+                        vmax = dataset_multiactions_carbon_cost.drop(columns='Typologies').max().max()
+                        norm = mpl.colors.Normalize(vmin=0, vmax=vmax)
+                        mappable = mpl.cm.ScalarMappable(norm=norm, cmap=cmap)
+                        
+                        # fig,ax = plt.subplots(dpi=300,figsize=(15,len(results_dict['Typologies'])/2))
+                        fig,ax = plt.subplots(dpi=300,figsize=(10,10))
+                        ax = sns.heatmap(dataset_multiactions_carbon_cost.drop(columns='Typologies'),ax=ax,cbar=False,cmap=cmap,vmin=0.)
+                        ax.set_title('')
+                        ax.set_ylabel('')
+                        ax.set_xlabel('Multi-actions combination index')
+                        
+                        xlims = ax.get_xlim()
+                        for n in range(0,int(len(dataset_multiactions_carbon_cost)/3)):
+                            if dataset_multiactions_carbon_cost[0].values[3*n] > 0.5*vmax:
+                                color = 'k'
+                            else:
+                                color = 'w'
+                            ax.text(1,3*n+0.5,dataset_multiactions_carbon_cost['Typologies'].values[3*n],color=color,va='center')
+                        for n in range(1,int(len(dataset_multiactions_carbon_cost)/3)):
+                            ax.plot(xlims,[3*n]*2,color='w')
+                        
+                        # min_idxs = dataset_multiactions_carbon_cost.drop(columns='Typologies').idxmin(axis=1)
+                        # for line, idx_min in enumerate(min_idxs.values):
+                        #     ax.plot([idx_min,idx_min+1],[line,line],color='k')
+                        #     ax.plot([idx_min,idx_min],[line,line+1],color='k')
+                        #     ax.plot([idx_min+1,idx_min+1],[line,line+1],color='k')
+                        #     ax.plot([idx_min,idx_min+1],[line+1,line+1],color='k')
+                            
+                            # ax.text(idx_min,line,str(idx_min))
+                    
+                        ax_cb = fig.add_axes([0,0,0.1,0.1])
+                        posn = ax.get_position()
+                        ax_cb.set_position([posn.x0+posn.width+0.01, posn.y0, 0.03, posn.height])
+                        fig.add_axes(ax_cb)
+                        cbar = plt.colorbar(mappable, cax=ax_cb,extendfrac=0.02)
+                        cbar.set_label('Renovation carbon intensity (€)')
+                        plt.savefig(os.path.join(figs_folder,'{}.png'.format('multiactions_renovation_carbon_costs_{}'.format(building_type))),bbox_inches='tight')
+                        plt.show()
+                    
+                    
+                    # cout de l'énergie
+                    
+                    dict_energy_costs = {'Electricity-Direct electric':0.171374, #€/kWh
+                                         'Electricity-Heat pump air':0.171374,  #€/kWh
+                                         'Electricity-Heat pump water':0.171374,  #€/kWh
+                                         'Heating-District heating':0.074600, #€/kWh
+                                         'Natural gas-Performance boiler':0.087524, #€/kWh
+                                         'Oil fuel-Performance boiler':0.100072,#€/kWh
+                                         'Wood fuel-Performance boiler':0.061600 #€/kWh
                                          }
-                
-                dict_components_carbon = {'walls': 55, #kgCO2/m2
-                                          'windows': 7, #kgCO2/m2,
-                                          'roof': 30, #kgCO2/m2,
-                                          'ventilation': 0, #kgCO2/unit, # TODO à remplir
-                                          'shading': 0, #kgCO2/m, # TODO à remplir
-                                          'floor': 29, #kgCO2/m2,
-                                          'albedo': 1.3, #kgCO2/m2
-                                          }
-                
-                
-                carbon_social_cost = 256*1e-3 #€/kgCO2eq
-                
-                dataset_multiactions_costs = dataset_consumption_cooling.copy()
-                dataset_multiactions_carbon_cost = dataset_consumption_cooling.copy()
-                
-                
-                renovation_surface_dict = {'walls': np.asarray([t.w0_surface*int(not t.w0_adiabatic) for t in typology_list]) + np.asarray([t.w1_surface*int(not t.w1_adiabatic) for t in typology_list])+ np.asarray([t.w2_surface*int(not t.w2_adiabatic) for t in typology_list])+ np.asarray([t.w3_surface*int(not t.w3_adiabatic) for t in typology_list]),
-                                           'windows': np.asarray([t.w0_windows_surface for t in typology_list]) + np.asarray([t.w1_windows_surface for t in typology_list])+ np.asarray([t.w2_windows_surface for t in typology_list])+ np.asarray([t.w3_windows_surface for t in typology_list]),
-                                           'roof': np.asarray([t.roof_surface for t in typology_list]),
-                                           'ventilation': np.asarray([1 for t in typology_list]), #€/unit,
-                                           'shading': np.asarray([t.w0_windows_surface/t.windows_height*(not t.w0_orientation == 'N') for t in typology_list])+np.asarray([t.w1_windows_surface/t.windows_height*(not t.w1_orientation == 'N') for t in typology_list])+np.asarray([t.w2_windows_surface/t.windows_height*(not t.w2_orientation == 'N') for t in typology_list])+np.asarray([t.w3_windows_surface/t.windows_height*(not t.w3_orientation == 'N') for t in typology_list]),
-                                           'floor': np.asarray([t.ground_surface for t in typology_list]),
-                                           'albedo': np.asarray([t.w0_surface*int(not t.w0_adiabatic) for t in typology_list]) + np.asarray([t.w1_surface*int(not t.w1_adiabatic) for t in typology_list])+ np.asarray([t.w2_surface*int(not t.w2_adiabatic) for t in typology_list])+ np.asarray([t.w3_surface*int(not t.w3_adiabatic) for t in typology_list])+np.asarray([t.roof_surface for t in typology_list]),
-                                           }
-                
-                for idx in range(128):
-                    dict_works = get_components_dict_multi_actions(idx)
-                    list_costs = np.asarray([0]*len(dataset_multiactions_costs))
-                    list_carbon = np.asarray([0]*len(dataset_multiactions_costs))
-                    for component,work in dict_works.items():
-                        if work:
-                            list_costs = list_costs + renovation_surface_dict.get(component) * dict_components_costs.get(component)
-                            list_carbon = list_carbon + renovation_surface_dict.get(component) * dict_components_carbon.get(component) * carbon_social_cost
-                    dataset_multiactions_costs[idx] = list_costs
-                    dataset_multiactions_carbon_cost[idx] = list_carbon
+                    
+                    dict_energy_carbon_intensity = {'Electricity-Direct electric':0.079, 
+                                                    'Electricity-Heat pump air':0.079,
+                                                    'Electricity-Heat pump water':0.079, 
+                                                    'Heating-District heating':0.101,
+                                                    'Natural gas-Performance boiler':0.227, 
+                                                    'Oil fuel-Performance boiler':0.324,
+                                                    'Wood fuel-Performance boiler':0.03} #kgCO2/kWh
                     
                     
-                # affichage en heatmap des couts
-                if False:
-                    cmap = 'viridis'
-                    vmax = dataset_multiactions_costs.drop(columns='Typologies').max().max()
-                    norm = mpl.colors.Normalize(vmin=0, vmax=vmax)
-                    mappable = mpl.cm.ScalarMappable(norm=norm, cmap=cmap)
                     
-                    # fig,ax = plt.subplots(dpi=300,figsize=(15,len(results_dict['Typologies'])/2))
-                    fig,ax = plt.subplots(dpi=300,figsize=(10,10))
-                    ax = sns.heatmap(dataset_multiactions_costs.drop(columns='Typologies'),ax=ax,cbar=False,cmap=cmap,vmin=0.)
-                    ax.set_title('')
-                    ax.set_ylabel('')
-                    ax.set_xlabel('Multi-actions combination index')
+                    duration = 30 # cf BAR-TH-145
+                    # duration = 30 # cf BAR-TH-145
                     
-                    xlims = ax.get_xlim()
-                    for n in range(0,int(len(dataset_multiactions_costs)/3)):
-                        if dataset_multiactions_costs[0].values[3*n] > 0.5*vmax:
-                            color = 'k'
-                        else:
-                            color = 'w'
-                        ax.text(1,3*n+0.5,dataset_multiactions_costs['Typologies'].values[3*n],color=color,va='center')
-                    for n in range(1,int(len(dataset_multiactions_costs)/3)):
-                        ax.plot(xlims,[3*n]*2,color='w')
+                    social_discount_factor = 3.2 
+                    private_discount_factor = 8
                     
-                    # min_idxs = dataset_multiactions_costs.drop(columns='Typologies').idxmin(axis=1)
-                    # for line, idx_min in enumerate(min_idxs.values):
-                    #     ax.plot([idx_min,idx_min+1],[line,line],color='k')
-                    #     ax.plot([idx_min,idx_min],[line,line+1],color='k')
-                    #     ax.plot([idx_min+1,idx_min+1],[line,line+1],color='k')
-                    #     ax.plot([idx_min,idx_min+1],[line+1,line+1],color='k')
+                    year_list = np.arange(duration+1)
+                    social_discount_list = 1/(1+social_discount_factor/100)**year_list
+                    private_discount_list = 1/(1+private_discount_factor/100)**year_list
+                    
+                    # graphe du facteur avec le taux d'actualisation
+                    if True:
+                        fig,ax = plt.subplots(figsize=(5,5),dpi=300)
+                        ax.plot(year_list, social_discount_list,label='$\\gamma$ = {}%'.format(social_discount_factor))
+                        ax.plot(year_list, private_discount_list,label='$\\gamma$ = {}%'.format(private_discount_factor))
+                        ax.set_xlabel('Years')
+                        ax.set_ylabel('Discount factor')
+                        ax.set_ylim(bottom=0.)
+                        ax.legend()
+                        plt.savefig(os.path.join(figs_folder,'{}.png'.format('discount_factor')),bbox_inches='tight')
+                        plt.show()
+                    
+                    
+                    dataset_social_energy_cost = dataset_multiactions_costs.copy()
+                    dataset_social_energy_carbon_cost = dataset_multiactions_costs.copy()
+                    dataset_private_energy_cost = dataset_multiactions_costs.copy()
+                    dataset_private_energy_carbon_cost = dataset_multiactions_costs.copy()
+                    for idx in range(128):
+                        # dataset_energy_cost[idx] = duration * dataset_consumption_cooling[idx] * dict_energy_costs.get('Electricity-Heat pump air')
+                        dataset_social_energy_cost[idx] = [sum([r * v * dict_energy_costs.get('Electricity-Heat pump air') for r in social_discount_list]) for v in dataset_consumption_cooling[idx]]
+                        dataset_social_energy_carbon_cost[idx] = [sum([carbon_social_cost* r * v * dict_energy_carbon_intensity.get('Electricity-Heat pump air') for r in social_discount_list]) for v in dataset_consumption_cooling[idx]]
+                        dataset_private_energy_cost[idx] = [sum([r * v * dict_energy_costs.get('Electricity-Heat pump air') for r in private_discount_list]) for v in dataset_consumption_cooling[idx]]
+                        dataset_private_energy_carbon_cost[idx] = [sum([carbon_social_cost* r * v * dict_energy_carbon_intensity.get('Electricity-Heat pump air') for r in private_discount_list]) for v in dataset_consumption_cooling[idx]]
                         
-                        # ax.text(idx_min,line,str(idx_min))
-                
-                    ax_cb = fig.add_axes([0,0,0.1,0.1])
-                    posn = ax.get_position()
-                    ax_cb.set_position([posn.x0+posn.width+0.01, posn.y0, 0.03, posn.height])
-                    fig.add_axes(ax_cb)
-                    cbar = plt.colorbar(mappable, cax=ax_cb,extendfrac=0.02)
-                    cbar.set_label('Renovation costs (€)')
-                    plt.savefig(os.path.join(figs_folder,'{}.png'.format('multiactions_renovation_costs_{}'.format(building_type))),bbox_inches='tight')
-                    plt.show()
+                    for e in dict_energy_costs.keys():
+                        for idx in range(128): 
+                            # dataset_energy_cost[idx] = dataset_energy_cost[idx] + duration * dataset_consumption_heating_dict[e][idx] * dict_energy_costs.get(e)
+                            dataset_social_energy_cost[idx] = dataset_social_energy_cost[idx] + np.asarray([sum([r * v * dict_energy_costs.get(e) for r in social_discount_list]) for v in dataset_consumption_heating_dict[e][idx]])
+                            dataset_social_energy_carbon_cost[idx] = dataset_social_energy_carbon_cost[idx] + np.asarray([sum([carbon_social_cost* r * v * dict_energy_carbon_intensity.get(e) for r in social_discount_list]) for v in dataset_consumption_heating_dict[e][idx]])
+                            dataset_private_energy_cost[idx] = dataset_private_energy_cost[idx] + np.asarray([sum([r * v * dict_energy_costs.get(e) for r in private_discount_list]) for v in dataset_consumption_heating_dict[e][idx]])
+                            dataset_private_energy_carbon_cost[idx] = dataset_private_energy_carbon_cost[idx] + np.asarray([sum([carbon_social_cost* r * v * dict_energy_carbon_intensity.get(e) for r in private_discount_list]) for v in dataset_consumption_heating_dict[e][idx]])
                     
-                
-                # affichage en heatmap des couts carbones de la rénovation
-                if False:
-                    cmap = 'viridis'
-                    vmax = dataset_multiactions_carbon_cost.drop(columns='Typologies').max().max()
-                    norm = mpl.colors.Normalize(vmin=0, vmax=vmax)
-                    mappable = mpl.cm.ScalarMappable(norm=norm, cmap=cmap)
-                    
-                    # fig,ax = plt.subplots(dpi=300,figsize=(15,len(results_dict['Typologies'])/2))
-                    fig,ax = plt.subplots(dpi=300,figsize=(10,10))
-                    ax = sns.heatmap(dataset_multiactions_carbon_cost.drop(columns='Typologies'),ax=ax,cbar=False,cmap=cmap,vmin=0.)
-                    ax.set_title('')
-                    ax.set_ylabel('')
-                    ax.set_xlabel('Multi-actions combination index')
-                    
-                    xlims = ax.get_xlim()
-                    for n in range(0,int(len(dataset_multiactions_carbon_cost)/3)):
-                        if dataset_multiactions_carbon_cost[0].values[3*n] > 0.5*vmax:
-                            color = 'k'
-                        else:
-                            color = 'w'
-                        ax.text(1,3*n+0.5,dataset_multiactions_carbon_cost['Typologies'].values[3*n],color=color,va='center')
-                    for n in range(1,int(len(dataset_multiactions_carbon_cost)/3)):
-                        ax.plot(xlims,[3*n]*2,color='w')
-                    
-                    # min_idxs = dataset_multiactions_carbon_cost.drop(columns='Typologies').idxmin(axis=1)
-                    # for line, idx_min in enumerate(min_idxs.values):
-                    #     ax.plot([idx_min,idx_min+1],[line,line],color='k')
-                    #     ax.plot([idx_min,idx_min],[line,line+1],color='k')
-                    #     ax.plot([idx_min+1,idx_min+1],[line,line+1],color='k')
-                    #     ax.plot([idx_min,idx_min+1],[line+1,line+1],color='k')
+                    # affichage en heatmap des couts de l'énergie
+                    if False:
+                        cmap = {'H1b':'Blues','H3':'Reds'}.get(zcl_code)
+                        vmax = dataset_social_energy_cost.drop(columns='Typologies').max().max()
+                        norm = mpl.colors.Normalize(vmin=0, vmax=vmax)
+                        mappable = mpl.cm.ScalarMappable(norm=norm, cmap=cmap)
                         
-                        # ax.text(idx_min,line,str(idx_min))
-                
-                    ax_cb = fig.add_axes([0,0,0.1,0.1])
-                    posn = ax.get_position()
-                    ax_cb.set_position([posn.x0+posn.width+0.01, posn.y0, 0.03, posn.height])
-                    fig.add_axes(ax_cb)
-                    cbar = plt.colorbar(mappable, cax=ax_cb,extendfrac=0.02)
-                    cbar.set_label('Renovation carbon intensity (€)')
-                    plt.savefig(os.path.join(figs_folder,'{}.png'.format('multiactions_renovation_carbon_costs_{}'.format(building_type))),bbox_inches='tight')
-                    plt.show()
-                
-                
-                # cout de l'énergie
-                
-                dict_energy_costs = {'Electricity-Direct electric':0.171374, #€/kWh
-                                     'Electricity-Heat pump air':0.171374,  #€/kWh
-                                     'Electricity-Heat pump water':0.171374,  #€/kWh
-                                     'Heating-District heating':0.074600, #€/kWh
-                                     'Natural gas-Performance boiler':0.087524, #€/kWh
-                                     'Oil fuel-Performance boiler':0.100072,#€/kWh
-                                     'Wood fuel-Performance boiler':0.061600 #€/kWh
-                                     }
-                
-                dict_energy_carbon_intensity = {'Electricity-Direct electric':0.079, 
-                                                'Electricity-Heat pump air':0.079,
-                                                'Electricity-Heat pump water':0.079, 
-                                                'Heating-District heating':0.101,
-                                                'Natural gas-Performance boiler':0.227, 
-                                                'Oil fuel-Performance boiler':0.324,
-                                                'Wood fuel-Performance boiler':0.03} #kgCO2/kWh
-                
-                
-                
-                duration = 30 # cf BAR-TH-145
-                # duration = 30 # cf BAR-TH-145
-                
-                social_discount_factor = 3.2 
-                private_discount_factor = 8
-                
-                year_list = np.arange(duration+1)
-                social_discount_list = 1/(1+social_discount_factor/100)**year_list
-                private_discount_list = 1/(1+private_discount_factor/100)**year_list
-                
-                # graphe du facteur avec le taux d'actualisation
-                if True:
-                    fig,ax = plt.subplots(figsize=(5,5),dpi=300)
-                    ax.plot(year_list, social_discount_list,label='$\\gamma$ = {}%'.format(social_discount_factor))
-                    ax.plot(year_list, private_discount_list,label='$\\gamma$ = {}%'.format(private_discount_factor))
-                    ax.set_xlabel('Years')
-                    ax.set_ylabel('Discount factor')
-                    ax.set_ylim(bottom=0.)
-                    ax.legend()
-                    plt.savefig(os.path.join(figs_folder,'{}.png'.format('discount_factor')),bbox_inches='tight')
-                    plt.show()
-                
-                
-                dataset_social_energy_cost = dataset_multiactions_costs.copy()
-                dataset_social_energy_carbon_cost = dataset_multiactions_costs.copy()
-                dataset_private_energy_cost = dataset_multiactions_costs.copy()
-                dataset_private_energy_carbon_cost = dataset_multiactions_costs.copy()
-                for idx in range(128):
-                    # dataset_energy_cost[idx] = duration * dataset_consumption_cooling[idx] * dict_energy_costs.get('Electricity-Heat pump air')
-                    dataset_social_energy_cost[idx] = [sum([r * v * dict_energy_costs.get('Electricity-Heat pump air') for r in social_discount_list]) for v in dataset_consumption_cooling[idx]]
-                    dataset_social_energy_carbon_cost[idx] = [sum([carbon_social_cost* r * v * dict_energy_carbon_intensity.get('Electricity-Heat pump air') for r in social_discount_list]) for v in dataset_consumption_cooling[idx]]
-                    dataset_private_energy_cost[idx] = [sum([r * v * dict_energy_costs.get('Electricity-Heat pump air') for r in private_discount_list]) for v in dataset_consumption_cooling[idx]]
-                    dataset_private_energy_carbon_cost[idx] = [sum([carbon_social_cost* r * v * dict_energy_carbon_intensity.get('Electricity-Heat pump air') for r in private_discount_list]) for v in dataset_consumption_cooling[idx]]
-                    
-                for e in dict_energy_costs.keys():
-                    for idx in range(128): 
-                        # dataset_energy_cost[idx] = dataset_energy_cost[idx] + duration * dataset_consumption_heating_dict[e][idx] * dict_energy_costs.get(e)
-                        dataset_social_energy_cost[idx] = dataset_social_energy_cost[idx] + np.asarray([sum([r * v * dict_energy_costs.get(e) for r in social_discount_list]) for v in dataset_consumption_heating_dict[e][idx]])
-                        dataset_social_energy_carbon_cost[idx] = dataset_social_energy_carbon_cost[idx] + np.asarray([sum([carbon_social_cost* r * v * dict_energy_carbon_intensity.get(e) for r in social_discount_list]) for v in dataset_consumption_heating_dict[e][idx]])
-                        dataset_private_energy_cost[idx] = dataset_private_energy_cost[idx] + np.asarray([sum([r * v * dict_energy_costs.get(e) for r in private_discount_list]) for v in dataset_consumption_heating_dict[e][idx]])
-                        dataset_private_energy_carbon_cost[idx] = dataset_private_energy_carbon_cost[idx] + np.asarray([sum([carbon_social_cost* r * v * dict_energy_carbon_intensity.get(e) for r in private_discount_list]) for v in dataset_consumption_heating_dict[e][idx]])
-                
-                # affichage en heatmap des couts de l'énergie
-                if False:
-                    cmap = {'H1b':'Blues','H3':'Reds'}.get(zcl_code)
-                    vmax = dataset_social_energy_cost.drop(columns='Typologies').max().max()
-                    norm = mpl.colors.Normalize(vmin=0, vmax=vmax)
-                    mappable = mpl.cm.ScalarMappable(norm=norm, cmap=cmap)
-                    
-                    # fig,ax = plt.subplots(dpi=300,figsize=(15,len(results_dict['Typologies'])/2))
-                    fig,ax = plt.subplots(dpi=300,figsize=(10,10))
-                    ax = sns.heatmap(dataset_social_energy_cost.drop(columns='Typologies'),ax=ax,cbar=False,cmap=cmap,vmin=0.)
-                    ax.set_title(zcl_code)
-                    ax.set_ylabel('')
-                    ax.set_xlabel('Multi-actions combination index')
-                    
-                    xlims = ax.get_xlim()
-                    for n in range(0,int(len(dataset_social_energy_cost)/3)):
-                        if dataset_social_energy_cost[0].values[3*n] > 0.5*vmax:
-                            color = 'k'
-                        else:
-                            color = 'w'
-                        ax.text(1,3*n+0.5,dataset_social_energy_cost['Typologies'].values[3*n],color=color,va='center')
-                    for n in range(1,int(len(dataset_social_energy_cost)/3)):
-                        ax.plot(xlims,[3*n]*2,color='w')
-                    
-                    # min_idxs = dataset_multiactions_costs.drop(columns='Typologies').idxmin(axis=1)
-                    # for line, idx_min in enumerate(min_idxs.values):
-                    #     ax.plot([idx_min,idx_min+1],[line,line],color='k')
-                    #     ax.plot([idx_min,idx_min],[line,line+1],color='k')
-                    #     ax.plot([idx_min+1,idx_min+1],[line,line+1],color='k')
-                    #     ax.plot([idx_min,idx_min+1],[line+1,line+1],color='k')
+                        # fig,ax = plt.subplots(dpi=300,figsize=(15,len(results_dict['Typologies'])/2))
+                        fig,ax = plt.subplots(dpi=300,figsize=(10,10))
+                        ax = sns.heatmap(dataset_social_energy_cost.drop(columns='Typologies'),ax=ax,cbar=False,cmap=cmap,vmin=0.)
+                        ax.set_title(zcl_code)
+                        ax.set_ylabel('')
+                        ax.set_xlabel('Multi-actions combination index')
                         
-                        # ax.text(idx_min,line,str(idx_min))
-                
-                    ax_cb = fig.add_axes([0,0,0.1,0.1])
-                    posn = ax.get_position()
-                    ax_cb.set_position([posn.x0+posn.width+0.01, posn.y0, 0.03, posn.height])
-                    fig.add_axes(ax_cb)
-                    cbar = plt.colorbar(mappable, cax=ax_cb,extendfrac=0.02)
-                    cbar.set_label('Energy costs (€)')
-                    plt.savefig(os.path.join(figs_folder,'{}.png'.format('multiactions_energy_costs_{}_{}'.format(building_type,zcl_code))),bbox_inches='tight')
-                    plt.show()
-                    
-                # affichage en heatmap des couts carbone de l'énergie
-                if False:
-                    cmap = {'H1b':'Blues','H3':'Reds'}.get(zcl_code)
-                    vmax = dataset_social_energy_carbon_cost.drop(columns='Typologies').max().max()
-                    norm = mpl.colors.Normalize(vmin=0, vmax=vmax)
-                    mappable = mpl.cm.ScalarMappable(norm=norm, cmap=cmap)
-                    
-                    # fig,ax = plt.subplots(dpi=300,figsize=(15,len(results_dict['Typologies'])/2))
-                    fig,ax = plt.subplots(dpi=300,figsize=(10,10))
-                    ax = sns.heatmap(dataset_social_energy_carbon_cost.drop(columns='Typologies'),ax=ax,cbar=False,cmap=cmap,vmin=0.)
-                    ax.set_title(zcl_code)
-                    ax.set_ylabel('')
-                    ax.set_xlabel('Multi-actions combination index')
-                    
-                    xlims = ax.get_xlim()
-                    for n in range(0,int(len(dataset_social_energy_carbon_cost)/3)):
-                        if dataset_social_energy_carbon_cost[0].values[3*n] > 0.5*vmax:
-                            color = 'k'
-                        else:
-                            color = 'w'
-                        ax.text(1,3*n+0.5,dataset_social_energy_carbon_cost['Typologies'].values[3*n],color=color,va='center')
-                    for n in range(1,int(len(dataset_social_energy_carbon_cost)/3)):
-                        ax.plot(xlims,[3*n]*2,color='w')
-                    
-                    # min_idxs = dataset_multiactions_costs.drop(columns='Typologies').idxmin(axis=1)
-                    # for line, idx_min in enumerate(min_idxs.values):
-                    #     ax.plot([idx_min,idx_min+1],[line,line],color='k')
-                    #     ax.plot([idx_min,idx_min],[line,line+1],color='k')
-                    #     ax.plot([idx_min+1,idx_min+1],[line,line+1],color='k')
-                    #     ax.plot([idx_min,idx_min+1],[line+1,line+1],color='k')
+                        xlims = ax.get_xlim()
+                        for n in range(0,int(len(dataset_social_energy_cost)/3)):
+                            if dataset_social_energy_cost[0].values[3*n] > 0.5*vmax:
+                                color = 'k'
+                            else:
+                                color = 'w'
+                            ax.text(1,3*n+0.5,dataset_social_energy_cost['Typologies'].values[3*n],color=color,va='center')
+                        for n in range(1,int(len(dataset_social_energy_cost)/3)):
+                            ax.plot(xlims,[3*n]*2,color='w')
                         
-                        # ax.text(idx_min,line,str(idx_min))
+                        # min_idxs = dataset_multiactions_costs.drop(columns='Typologies').idxmin(axis=1)
+                        # for line, idx_min in enumerate(min_idxs.values):
+                        #     ax.plot([idx_min,idx_min+1],[line,line],color='k')
+                        #     ax.plot([idx_min,idx_min],[line,line+1],color='k')
+                        #     ax.plot([idx_min+1,idx_min+1],[line,line+1],color='k')
+                        #     ax.plot([idx_min,idx_min+1],[line+1,line+1],color='k')
+                            
+                            # ax.text(idx_min,line,str(idx_min))
+                    
+                        ax_cb = fig.add_axes([0,0,0.1,0.1])
+                        posn = ax.get_position()
+                        ax_cb.set_position([posn.x0+posn.width+0.01, posn.y0, 0.03, posn.height])
+                        fig.add_axes(ax_cb)
+                        cbar = plt.colorbar(mappable, cax=ax_cb,extendfrac=0.02)
+                        cbar.set_label('Energy costs (€)')
+                        plt.savefig(os.path.join(figs_folder,'{}.png'.format('multiactions_energy_costs_{}_{}'.format(building_type,zcl_code))),bbox_inches='tight')
+                        plt.show()
+                        
+                    # affichage en heatmap des couts carbone de l'énergie
+                    if False:
+                        cmap = {'H1b':'Blues','H3':'Reds'}.get(zcl_code)
+                        vmax = dataset_social_energy_carbon_cost.drop(columns='Typologies').max().max()
+                        norm = mpl.colors.Normalize(vmin=0, vmax=vmax)
+                        mappable = mpl.cm.ScalarMappable(norm=norm, cmap=cmap)
+                        
+                        # fig,ax = plt.subplots(dpi=300,figsize=(15,len(results_dict['Typologies'])/2))
+                        fig,ax = plt.subplots(dpi=300,figsize=(10,10))
+                        ax = sns.heatmap(dataset_social_energy_carbon_cost.drop(columns='Typologies'),ax=ax,cbar=False,cmap=cmap,vmin=0.)
+                        ax.set_title(zcl_code)
+                        ax.set_ylabel('')
+                        ax.set_xlabel('Multi-actions combination index')
+                        
+                        xlims = ax.get_xlim()
+                        for n in range(0,int(len(dataset_social_energy_carbon_cost)/3)):
+                            if dataset_social_energy_carbon_cost[0].values[3*n] > 0.5*vmax:
+                                color = 'k'
+                            else:
+                                color = 'w'
+                            ax.text(1,3*n+0.5,dataset_social_energy_carbon_cost['Typologies'].values[3*n],color=color,va='center')
+                        for n in range(1,int(len(dataset_social_energy_carbon_cost)/3)):
+                            ax.plot(xlims,[3*n]*2,color='w')
+                        
+                        # min_idxs = dataset_multiactions_costs.drop(columns='Typologies').idxmin(axis=1)
+                        # for line, idx_min in enumerate(min_idxs.values):
+                        #     ax.plot([idx_min,idx_min+1],[line,line],color='k')
+                        #     ax.plot([idx_min,idx_min],[line,line+1],color='k')
+                        #     ax.plot([idx_min+1,idx_min+1],[line,line+1],color='k')
+                        #     ax.plot([idx_min,idx_min+1],[line+1,line+1],color='k')
+                            
+                            # ax.text(idx_min,line,str(idx_min))
+                    
+                        ax_cb = fig.add_axes([0,0,0.1,0.1])
+                        posn = ax.get_position()
+                        ax_cb.set_position([posn.x0+posn.width+0.01, posn.y0, 0.03, posn.height])
+                        fig.add_axes(ax_cb)
+                        cbar = plt.colorbar(mappable, cax=ax_cb,extendfrac=0.02)
+                        cbar.set_label('Energy carbon costs (€)')
+                        plt.savefig(os.path.join(figs_folder,'{}.png'.format('multiactions_energy_carbon_costs_{}_{}'.format(building_type,zcl_code))),bbox_inches='tight')
+                        plt.show()
                 
-                    ax_cb = fig.add_axes([0,0,0.1,0.1])
-                    posn = ax.get_position()
-                    ax_cb.set_position([posn.x0+posn.width+0.01, posn.y0, 0.03, posn.height])
-                    fig.add_axes(ax_cb)
-                    cbar = plt.colorbar(mappable, cax=ax_cb,extendfrac=0.02)
-                    cbar.set_label('Energy carbon costs (€)')
-                    plt.savefig(os.path.join(figs_folder,'{}.png'.format('multiactions_energy_carbon_costs_{}_{}'.format(building_type,zcl_code))),bbox_inches='tight')
-                    plt.show()
-            
-                
-                # calcul des rentabilités relatives à la situation initiale
-                
-                dataset_private_costs = dataset_multiactions_costs.copy()
-                dataset_social_costs = dataset_multiactions_costs.copy()
-                for idx in range(128):
-                    dataset_private_costs[idx] = dataset_private_costs[idx] + dataset_private_energy_cost[idx]
-                    dataset_social_costs[idx] = dataset_social_costs[idx] + dataset_social_energy_cost[idx] + dataset_social_energy_carbon_cost[idx] + dataset_multiactions_carbon_cost[idx]
-                
-                relative_gains = True
-                
-                if relative_gains:
-                    for idx in range(1,128):
-                        dataset_social_costs[idx] = dataset_social_costs[0] - dataset_social_costs[idx]
-                        dataset_private_costs[idx] =  dataset_private_costs[0] - dataset_private_costs[idx]
-                    dataset_social_costs[0] = dataset_social_costs[0] - dataset_social_costs[0]
-                    dataset_private_costs[0] = dataset_private_costs[0] - dataset_private_costs[0]
-                
-                # calcul des subventions publiques nécessaires
-                min_idxs = dataset_social_costs.drop(columns='Typologies').idxmax(axis=1)
-                
-                subsidies = pd.DataFrame(min_idxs).rename(columns={0:'min_idx'})
-                subsidies['Typologies'] = dataset_social_costs.Typologies
-                subsidies = subsidies.reset_index()
-                subsidies['idx'] = [subsidies[(subsidies.Period=='2000-2020')&(subsidies.Typologies==bt)]['min_idx'].values[0] for bt in subsidies.Typologies]
-                subsidies['gain_ref_social'] = [dataset_social_costs[(dataset_social_costs.index=='2000-2020')&(dataset_social_costs.Typologies==bt)][idx].values[0] for bt,idx in zip(subsidies.Typologies,subsidies.idx)]
-                subsidies['gain_2°C_social'] = [dataset_social_costs[(dataset_social_costs.index=='+2°C')&(dataset_social_costs.Typologies==bt)][idx].values[0] for bt,idx in zip(subsidies.Typologies,subsidies.idx)]
-                subsidies['gain_4°C_social'] = [dataset_social_costs[(dataset_social_costs.index=='+4°C')&(dataset_social_costs.Typologies==bt)][idx].values[0] for bt,idx in zip(subsidies.Typologies,subsidies.idx)]
-                subsidies['gain_ref_private'] = [dataset_private_costs[(dataset_private_costs.index=='2000-2020')&(dataset_private_costs.Typologies==bt)][idx].values[0] for bt,idx in zip(subsidies.Typologies,subsidies.idx)]
-                subsidies['gain_2°C_private'] = [dataset_private_costs[(dataset_private_costs.index=='+2°C')&(dataset_private_costs.Typologies==bt)][idx].values[0] for bt,idx in zip(subsidies.Typologies,subsidies.idx)]
-                subsidies['gain_4°C_private'] = [dataset_private_costs[(dataset_private_costs.index=='+4°C')&(dataset_private_costs.Typologies==bt)][idx].values[0] for bt,idx in zip(subsidies.Typologies,subsidies.idx)]
-                subsidies.to_csv(os.path.join(output, folder,'{}.csv'.format('multiactions_subsidies_{}_{}'.format(building_type,zcl_code))),index=False)
-                
-                
-                
-                # heat map des rentabilités sociales
-                if True:
-                    cmap = {'H1b':'Blues','H3':'Reds'}.get(zcl_code)
+                    
+                    # calcul des rentabilités relatives à la situation initiale
+                    
+                    dataset_private_costs = dataset_multiactions_costs.copy()
+                    dataset_social_costs = dataset_multiactions_costs.copy()
+                    for idx in range(128):
+                        dataset_private_costs[idx] = dataset_private_costs[idx] + dataset_private_energy_cost[idx]
+                        dataset_social_costs[idx] = dataset_social_costs[idx] + dataset_social_energy_cost[idx] + dataset_social_energy_carbon_cost[idx] + dataset_multiactions_carbon_cost[idx]
+                    
+                    relative_gains = True
+                    
                     if relative_gains:
-                        cmap = cmocean.cm.balance_r
-                    vmax = dataset_social_costs.drop(columns='Typologies').max().max()
-                    if relative_gains:
-                        vmin = dataset_social_costs.drop(columns='Typologies').min().min()
-                        vmax = np.max((np.abs(vmin),np.abs(vmax)))
-                        vmin = - vmax
-                    else:
-                        vmin = 0.
-                    norm = mpl.colors.Normalize(vmin=vmin, vmax=vmax)
-                    mappable = mpl.cm.ScalarMappable(norm=norm, cmap=cmap)
+                        for idx in range(1,128):
+                            dataset_social_costs[idx] = dataset_social_costs[0] - dataset_social_costs[idx]
+                            dataset_private_costs[idx] =  dataset_private_costs[0] - dataset_private_costs[idx]
+                        dataset_social_costs[0] = dataset_social_costs[0] - dataset_social_costs[0]
+                        dataset_private_costs[0] = dataset_private_costs[0] - dataset_private_costs[0]
                     
-                    # fig,ax = plt.subplots(dpi=300,figsize=(15,len(results_dict['Typologies'])/2))
-                    fig,ax = plt.subplots(dpi=300,figsize=(10,10))
-                    ax = sns.heatmap(dataset_social_costs.drop(columns='Typologies'),ax=ax,cbar=False,cmap=cmap,vmin=vmin,vmax=vmax)
-                    ax.set_title(zcl_code)
-                    ax.set_ylabel('')
-                    ax.set_xlabel('Multi-actions combination index')
-                    
-                    xlims = ax.get_xlim()
-                    for n in range(0,int(len(dataset_social_costs)/3)):
-                        if np.abs(dataset_social_costs[0].values[3*n]) < 0.66*vmax:
-                            color = 'k'
-                        else:
-                            color = 'w'
-                        ax.text(1,3*n+0.5,dataset_social_costs['Typologies'].values[3*n],color=color,va='center')
-                    for n in range(1,int(len(dataset_social_costs)/3)):
-                        ax.plot(xlims,[3*n]*2,color='w')
-                    
+                    # calcul des subventions publiques nécessaires
                     min_idxs = dataset_social_costs.drop(columns='Typologies').idxmax(axis=1)
-                    for line, idx_min in enumerate(min_idxs.values):
-                        ax.plot([idx_min,idx_min+1],[line,line],color='k')
-                        ax.plot([idx_min,idx_min],[line,line+1],color='k')
-                        ax.plot([idx_min+1,idx_min+1],[line,line+1],color='k')
-                        ax.plot([idx_min,idx_min+1],[line+1,line+1],color='k')
-                        
-                        # ax.text(idx_min,line,str(idx_min))
-                
-                    ax_cb = fig.add_axes([0,0,0.1,0.1])
-                    posn = ax.get_position()
-                    ax_cb.set_position([posn.x0+posn.width+0.01, posn.y0, 0.03, posn.height])
-                    fig.add_axes(ax_cb)
-                    cbar = plt.colorbar(mappable, cax=ax_cb,extendfrac=0.02)
-                    if relative_gains:
-                        cbar.set_label('Total social profitability compared to no actions (€)')
-                    else:
-                        cbar.set_label('Total costs (€)')
-                    plt.savefig(os.path.join(figs_folder,'{}.png'.format('multiactions_social_costs_{}_{}_relative{}'.format(building_type,zcl_code,relative_gains))),bbox_inches='tight')
-                    plt.show()
+                    
+                    subsidies = pd.DataFrame(min_idxs).rename(columns={0:'min_idx'})
+                    subsidies['Typologies'] = dataset_social_costs.Typologies
+                    subsidies = subsidies.reset_index()
+                    subsidies['idx'] = [subsidies[(subsidies.Period=='2000-2020')&(subsidies.Typologies==bt)]['min_idx'].values[0] for bt in subsidies.Typologies]
+                    subsidies['gain_ref_social'] = [dataset_social_costs[(dataset_social_costs.index=='2000-2020')&(dataset_social_costs.Typologies==bt)][idx].values[0] for bt,idx in zip(subsidies.Typologies,subsidies.idx)]
+                    subsidies['gain_2°C_social'] = [dataset_social_costs[(dataset_social_costs.index=='+2°C')&(dataset_social_costs.Typologies==bt)][idx].values[0] for bt,idx in zip(subsidies.Typologies,subsidies.idx)]
+                    subsidies['gain_4°C_social'] = [dataset_social_costs[(dataset_social_costs.index=='+4°C')&(dataset_social_costs.Typologies==bt)][idx].values[0] for bt,idx in zip(subsidies.Typologies,subsidies.idx)]
+                    subsidies['gain_ref_private'] = [dataset_private_costs[(dataset_private_costs.index=='2000-2020')&(dataset_private_costs.Typologies==bt)][idx].values[0] for bt,idx in zip(subsidies.Typologies,subsidies.idx)]
+                    subsidies['gain_2°C_private'] = [dataset_private_costs[(dataset_private_costs.index=='+2°C')&(dataset_private_costs.Typologies==bt)][idx].values[0] for bt,idx in zip(subsidies.Typologies,subsidies.idx)]
+                    subsidies['gain_4°C_private'] = [dataset_private_costs[(dataset_private_costs.index=='+4°C')&(dataset_private_costs.Typologies==bt)][idx].values[0] for bt,idx in zip(subsidies.Typologies,subsidies.idx)]
+                    subsidies.to_csv(os.path.join(output, folder,'{}.csv'.format('multiactions_subsidies_{}_{}'.format(building_type,zcl_code))),index=False)
                     
                     
-                # heat map des rentabilités privées
-                if True:
-                    cmap = {'H1b':'Blues','H3':'Reds'}.get(zcl_code)
-                    if relative_gains:
-                        cmap = cmocean.cm.balance_r
-                    vmax = dataset_private_costs.drop(columns='Typologies').max().max()
-                    if relative_gains:
-                        vmin = dataset_private_costs.drop(columns='Typologies').min().min()
-                        vmax = np.max((np.abs(vmin),np.abs(vmax)))
-                        vmin = - vmax
-                    else:
-                        vmin = 0.
-                    norm = mpl.colors.Normalize(vmin=vmin, vmax=vmax)
-                    mappable = mpl.cm.ScalarMappable(norm=norm, cmap=cmap)
                     
-                    # fig,ax = plt.subplots(dpi=300,figsize=(15,len(results_dict['Typologies'])/2))
-                    fig,ax = plt.subplots(dpi=300,figsize=(10,10))
-                    ax = sns.heatmap(dataset_private_costs.drop(columns='Typologies'),ax=ax,cbar=False,cmap=cmap,vmin=vmin,vmax=vmax)
-                    ax.set_title(zcl_code)
-                    ax.set_ylabel('')
-                    ax.set_xlabel('Multi-actions combination index')
-                    
-                    xlims = ax.get_xlim()
-                    for n in range(0,int(len(dataset_private_costs)/3)):
-                        if np.abs(dataset_private_costs[0].values[3*n]) < 0.66*vmax:
-                            color = 'k'
+                    # heat map des rentabilités sociales
+                    if True:
+                        cmap = {'H1b':'Blues','H3':'Reds'}.get(zcl_code)
+                        if relative_gains:
+                            cmap = cmocean.cm.balance_r
+                        vmax = dataset_social_costs.drop(columns='Typologies').max().max()
+                        if relative_gains:
+                            vmin = dataset_social_costs.drop(columns='Typologies').min().min()
+                            vmax = np.max((np.abs(vmin),np.abs(vmax)))
+                            vmin = - vmax
                         else:
-                            color = 'w'
-                        ax.text(1,3*n+0.5,dataset_private_costs['Typologies'].values[3*n],color=color,va='center')
-                    for n in range(1,int(len(dataset_private_costs)/3)):
-                        ax.plot(xlims,[3*n]*2,color='w')
-                    
-                    min_idxs = dataset_private_costs.drop(columns='Typologies').idxmax(axis=1)
-                    for line, idx_min in enumerate(min_idxs.values):
-                        ax.plot([idx_min,idx_min+1],[line,line],color='k')
-                        ax.plot([idx_min,idx_min],[line,line+1],color='k')
-                        ax.plot([idx_min+1,idx_min+1],[line,line+1],color='k')
-                        ax.plot([idx_min,idx_min+1],[line+1,line+1],color='k')
+                            vmin = 0.
+                        norm = mpl.colors.Normalize(vmin=vmin, vmax=vmax)
+                        mappable = mpl.cm.ScalarMappable(norm=norm, cmap=cmap)
                         
-                        # ax.text(idx_min,line,str(idx_min))
-                
-                    ax_cb = fig.add_axes([0,0,0.1,0.1])
-                    posn = ax.get_position()
-                    ax_cb.set_position([posn.x0+posn.width+0.01, posn.y0, 0.03, posn.height])
-                    fig.add_axes(ax_cb)
-                    cbar = plt.colorbar(mappable, cax=ax_cb,extendfrac=0.02)
-                    if relative_gains:
-                        cbar.set_label('Total private profitability compared to no actions (€)')
-                    else:
-                        cbar.set_label('Total costs (€)')
-                    plt.savefig(os.path.join(figs_folder,'{}.png'.format('multiactions_private_costs_{}_{}_relative{}'.format(building_type,zcl_code,relative_gains))),bbox_inches='tight')
-                    plt.show()
-                
-                    # # calcul des effets du climat sur la rentabilité de l'optimum en période de référence
-                    # optimal_gains = pd.DataFrame(min_idxs).rename(columns={0:'min_idx'})
-                    # optimal_gains['Typologies'] = dataset_social_costs.Typologies
-                    # optimal_gains = optimal_gains.reset_index()
-                    # optimal_gains['idx'] = [optimal_gains[(optimal_gains.Period=='2000-2020')&(optimal_gains.Typologies==bt)]['min_idx'].values[0] for bt in optimal_gains.Typologies]
-                    # optimal_gains['gain_2000-2020'] = [dataset_social_costs[(dataset_social_costs.index=='2000-2020')&(dataset_social_costs.Typologies==bt)][idx].values[0] for bt,idx in zip(optimal_gains.Typologies,optimal_gains.idx)]
-                    # optimal_gains['gain_4°C'] = [dataset_social_costs[(dataset_social_costs.index=='+4°C')&(dataset_social_costs.Typologies==bt)][idx].values[0] for bt,idx in zip(optimal_gains.Typologies,optimal_gains.idx)]
-                    # optimal_gains['yield_losses'] = 1-(optimal_gains['gain_4°C']/optimal_gains['gain_2000-2020'])
-                    # optimal_gains.to_csv(os.path.join(output, folder,'{}.csv'.format('multiactions_total_costs_{}_{}'.format(building_type,zcl_code))),index=False)
+                        # fig,ax = plt.subplots(dpi=300,figsize=(15,len(results_dict['Typologies'])/2))
+                        fig,ax = plt.subplots(dpi=300,figsize=(10,10))
+                        ax = sns.heatmap(dataset_social_costs.drop(columns='Typologies'),ax=ax,cbar=False,cmap=cmap,vmin=vmin,vmax=vmax)
+                        ax.set_title(zcl_code)
+                        ax.set_ylabel('')
+                        ax.set_xlabel('Multi-actions combination index')
+                        
+                        xlims = ax.get_xlim()
+                        for n in range(0,int(len(dataset_social_costs)/3)):
+                            if np.abs(dataset_social_costs[0].values[3*n]) < 0.66*vmax:
+                                color = 'k'
+                            else:
+                                color = 'w'
+                            ax.text(1,3*n+0.5,dataset_social_costs['Typologies'].values[3*n],color=color,va='center')
+                        for n in range(1,int(len(dataset_social_costs)/3)):
+                            ax.plot(xlims,[3*n]*2,color='w')
+                        
+                        min_idxs = dataset_social_costs.drop(columns='Typologies').idxmax(axis=1)
+                        for line, idx_min in enumerate(min_idxs.values):
+                            ax.plot([idx_min,idx_min+1],[line,line],color='k')
+                            ax.plot([idx_min,idx_min],[line,line+1],color='k')
+                            ax.plot([idx_min+1,idx_min+1],[line,line+1],color='k')
+                            ax.plot([idx_min,idx_min+1],[line+1,line+1],color='k')
+                            
+                            # ax.text(idx_min,line,str(idx_min))
+                    
+                        ax_cb = fig.add_axes([0,0,0.1,0.1])
+                        posn = ax.get_position()
+                        ax_cb.set_position([posn.x0+posn.width+0.01, posn.y0, 0.03, posn.height])
+                        fig.add_axes(ax_cb)
+                        cbar = plt.colorbar(mappable, cax=ax_cb,extendfrac=0.02)
+                        if relative_gains:
+                            cbar.set_label('Total social profitability compared to no actions (€)')
+                        else:
+                            cbar.set_label('Total costs (€)')
+                        plt.savefig(os.path.join(figs_folder,'{}.png'.format('multiactions_social_costs_{}_{}_relative{}'.format(building_type,zcl_code,relative_gains))),bbox_inches='tight')
+                        plt.show()
+                        
+                        
+                    # heat map des rentabilités privées
+                    if True:
+                        cmap = {'H1b':'Blues','H3':'Reds'}.get(zcl_code)
+                        if relative_gains:
+                            cmap = cmocean.cm.balance_r
+                        vmax = dataset_private_costs.drop(columns='Typologies').max().max()
+                        if relative_gains:
+                            vmin = dataset_private_costs.drop(columns='Typologies').min().min()
+                            vmax = np.max((np.abs(vmin),np.abs(vmax)))
+                            vmin = - vmax
+                        else:
+                            vmin = 0.
+                        norm = mpl.colors.Normalize(vmin=vmin, vmax=vmax)
+                        mappable = mpl.cm.ScalarMappable(norm=norm, cmap=cmap)
+                        
+                        # fig,ax = plt.subplots(dpi=300,figsize=(15,len(results_dict['Typologies'])/2))
+                        fig,ax = plt.subplots(dpi=300,figsize=(10,10))
+                        ax = sns.heatmap(dataset_private_costs.drop(columns='Typologies'),ax=ax,cbar=False,cmap=cmap,vmin=vmin,vmax=vmax)
+                        ax.set_title(zcl_code)
+                        ax.set_ylabel('')
+                        ax.set_xlabel('Multi-actions combination index')
+                        
+                        xlims = ax.get_xlim()
+                        for n in range(0,int(len(dataset_private_costs)/3)):
+                            if np.abs(dataset_private_costs[0].values[3*n]) < 0.66*vmax:
+                                color = 'k'
+                            else:
+                                color = 'w'
+                            ax.text(1,3*n+0.5,dataset_private_costs['Typologies'].values[3*n],color=color,va='center')
+                        for n in range(1,int(len(dataset_private_costs)/3)):
+                            ax.plot(xlims,[3*n]*2,color='w')
+                        
+                        min_idxs = dataset_private_costs.drop(columns='Typologies').idxmax(axis=1)
+                        for line, idx_min in enumerate(min_idxs.values):
+                            ax.plot([idx_min,idx_min+1],[line,line],color='k')
+                            ax.plot([idx_min,idx_min],[line,line+1],color='k')
+                            ax.plot([idx_min+1,idx_min+1],[line,line+1],color='k')
+                            ax.plot([idx_min,idx_min+1],[line+1,line+1],color='k')
+                            
+                            # ax.text(idx_min,line,str(idx_min))
+                    
+                        ax_cb = fig.add_axes([0,0,0.1,0.1])
+                        posn = ax.get_position()
+                        ax_cb.set_position([posn.x0+posn.width+0.01, posn.y0, 0.03, posn.height])
+                        fig.add_axes(ax_cb)
+                        cbar = plt.colorbar(mappable, cax=ax_cb,extendfrac=0.02)
+                        if relative_gains:
+                            cbar.set_label('Total private profitability compared to no actions (€)')
+                        else:
+                            cbar.set_label('Total costs (€)')
+                        plt.savefig(os.path.join(figs_folder,'{}.png'.format('multiactions_private_costs_{}_{}_relative{}'.format(building_type,zcl_code,relative_gains))),bbox_inches='tight')
+                        plt.show()
+                    
+                        # # calcul des effets du climat sur la rentabilité de l'optimum en période de référence
+                        # optimal_gains = pd.DataFrame(min_idxs).rename(columns={0:'min_idx'})
+                        # optimal_gains['Typologies'] = dataset_social_costs.Typologies
+                        # optimal_gains = optimal_gains.reset_index()
+                        # optimal_gains['idx'] = [optimal_gains[(optimal_gains.Period=='2000-2020')&(optimal_gains.Typologies==bt)]['min_idx'].values[0] for bt in optimal_gains.Typologies]
+                        # optimal_gains['gain_2000-2020'] = [dataset_social_costs[(dataset_social_costs.index=='2000-2020')&(dataset_social_costs.Typologies==bt)][idx].values[0] for bt,idx in zip(optimal_gains.Typologies,optimal_gains.idx)]
+                        # optimal_gains['gain_4°C'] = [dataset_social_costs[(dataset_social_costs.index=='+4°C')&(dataset_social_costs.Typologies==bt)][idx].values[0] for bt,idx in zip(optimal_gains.Typologies,optimal_gains.idx)]
+                        # optimal_gains['yield_losses'] = 1-(optimal_gains['gain_4°C']/optimal_gains['gain_2000-2020'])
+                        # optimal_gains.to_csv(os.path.join(output, folder,'{}.csv'.format('multiactions_total_costs_{}_{}'.format(building_type,zcl_code))),index=False)
                     
                     
                 # affichage des besoins de subventions
-                if False:
+                if True:
                     fig,ax = plt.subplots(figsize=(10,5),dpi=300)
                     for zcl_code in ['H1b','H3']:
                         print(zcl_code)
