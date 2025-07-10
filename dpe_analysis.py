@@ -68,7 +68,13 @@ def main():
         file_names = ['H1_border12','H2_border12','H2_border23','H3_border23']
         total_dep = {}
         
+        # caractérisation du 31 exclu:
         if False:
+            plot_dpe_distribution(dep='31', path=output_path,max_xlim=600, external_disk=external_disk_connection)
+            
+            
+        # étude des effets des zones climatiques
+        if True:
             for name, border_dep_list in zip(file_names,[H1_border12_dep_code,H2_border12_dep_code,H2_border23_dep_code,H3_border23_dep_code]):
                 counter = None
                 for dep in tqdm.tqdm(border_dep_list,desc=name):
@@ -142,8 +148,8 @@ def main():
         # graphes 
         if True:
             fig,ax = plt.subplots(figsize=(5,5),dpi=300)
-            ax.plot(h1_b12.index, h1_b12.ratio, color='tab:blue',label='H1 ($\\mu$={:.0f})'.format(mean_h1_b12),zorder=4)
-            ax.plot(h2_b12.index, h2_b12.ratio, color='k',label='H2 ($\\mu$={:.0f})'.format(mean_h2_b12))
+            ax.plot(h1_b12.index, h1_b12.ratio, color='tab:blue',label='H1 ($\\mu$={:.0f} '.format(mean_h1_b12)+'kWh.m$^{-2}$)',zorder=4)
+            ax.plot(h2_b12.index, h2_b12.ratio, color='k',label='H2 ($\\mu$={:.0f} '.format(mean_h2_b12)+'kWh.m$^{-2}$)')
             
             xmax = 600.
             ymax = ax.get_ylim()[-1]
@@ -163,8 +169,8 @@ def main():
             plt.show()
         
             fig,ax = plt.subplots(figsize=(5,5),dpi=300)
-            ax.plot(h2_b23.index, h2_b23.ratio, color='k',label='H2 ($\\mu$={:.0f})'.format(mean_h2_b23))
-            ax.plot(h3_b23.index, h3_b23.ratio, color='tab:blue',label='H3 ($\\mu$={:.0f})'.format(mean_h3_b23),zorder=4)
+            ax.plot(h2_b23.index, h2_b23.ratio, color='k',label='H2 ($\\mu$={:.0f} '.format(mean_h2_b23)+'kWh.m$^{-2}$)')
+            ax.plot(h3_b23.index, h3_b23.ratio, color='tab:blue',label='H3 ($\\mu$={:.0f} '.format(mean_h3_b23)+'kWh.m$^{-2}$)',zorder=4)
             
             xmax = 600.
             ymax = ax.get_ylim()[-1]
