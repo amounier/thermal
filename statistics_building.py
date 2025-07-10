@@ -797,7 +797,7 @@ def main():
                 
         
         # représentativité et écarts par rapport à la distribution par étiquette
-        if False:
+        if True:
             # cartes 
             if True:
                 # TODO : representativity à recalculer
@@ -846,11 +846,38 @@ def main():
                             matrix_typo_repartition_batiments_bgc[j,i] = count_batiments
                             
                     matrix_typo_repartition_logements_bgc = matrix_typo_repartition_logements_bgc/matrix_typo_repartition_logements_bgc.sum().sum()*100
+                    
+                    # vérification/ comparaison avec TABULA
+                    matrix_typo_repartition_logements_bgc[:,-1:] = np.nan
+                    matrix_typo_repartition_logements_bgc = matrix_typo_repartition_logements_bgc/np.nan_to_num(matrix_typo_repartition_logements_bgc).sum()*100
+                    
+                    
                     matrix_typo_repartition_batiments_bgc = matrix_typo_repartition_batiments_bgc/matrix_typo_repartition_batiments_bgc.sum().sum()*100
+                    
+                    matrix_typo_repartition_pouget = np.asarray([[8.6, 4.9, 5.0, 4.1, 5.1, 5.1, 4.8, 3.1, 4., 0.8, np.nan],
+                                                                 [2.6, 1.4, 1.3, 1., 1.2, 1.1, 1.1, 0.7, 1., 0.2, np.nan],
+                                                                 [13.7, 2.1, 3.0, 1.4, 0.7, 0.8, 1.3, 0.6, 1.3, 0.4, np.nan],
+                                                                 [2.1, 1.5, 5.9, 5.2, 3.2, 1.9, 3.6, 1.7, 3.1, 0.9, np.nan]])
+                    matrix_typo_repartition_pouget = matrix_typo_repartition_pouget/np.nan_to_num(matrix_typo_repartition_pouget).sum()*100
+                    # vérification/ comparaison avec TABULA
+                    # matrix_typo_repartition_pouget[:,-4:] = np.nan
+                    # matrix_typo_repartition_pouget = matrix_typo_repartition_pouget/np.nan_to_num(matrix_typo_repartition_pouget).sum()*100
+                    
+                    ratio_SFH_TH_pouget = matrix_typo_repartition_pouget[0]/(matrix_typo_repartition_pouget[0]+matrix_typo_repartition_pouget[1])
+                    print(np.nanmean(ratio_SFH_TH_pouget))
+                    
+                    matrix_typo_repartition_tabula = pd.read_csv(os.path.join('data','TABULA','tabula_typologies_stats.csv'))
+                    matrix_typo_repartition_tabula = matrix_typo_repartition_tabula.set_index('construction year class')
+                    matrix_typo_repartition_tabula = matrix_typo_repartition_tabula.T.values
+                    matrix_typo_repartition_tabula = matrix_typo_repartition_tabula/np.nan_to_num(matrix_typo_repartition_tabula).sum()*100
+                    
+                    ratio_SFH_TH_tabula = matrix_typo_repartition_tabula[0]/(matrix_typo_repartition_tabula[0]+matrix_typo_repartition_tabula[1])
+                    print(ratio_SFH_TH_tabula, np.nanmean(ratio_SFH_TH_tabula))
                     
                     try:
                         matrix_typo_repartition_logements,_ = pickle.load(open('.bdnb_dpe_matrix_typo_rep.pickle', 'rb'))
                         ratio_SFH_TH = matrix_typo_repartition_logements[0,:]/(matrix_typo_repartition_logements[0,:]+matrix_typo_repartition_logements[1,:])
+                        ratio_SFH_TH = np.asarray([np.mean([np.nanmean(ratio_SFH_TH_pouget),np.nanmean(ratio_SFH_TH_tabula)])]*len(ratio_SFH_TH))
                         
                         matrix_typo_repartition_logements_bgc2 = matrix_typo_repartition_logements_bgc.copy()
                         matrix_typo_repartition_logements_bgc2[0,:] = matrix_typo_repartition_logements_bgc[0,:]*ratio_SFH_TH
@@ -868,11 +895,20 @@ def main():
                                                                  index=typology_category_list,
                                                                  columns=[e.replace('avant','before').replace('après','after') for e in tabula_period_list])
                     
+                    df_typo_repartition_logements_pougets = pd.DataFrame(data=matrix_typo_repartition_pouget,
+                                                                         index=typology_category_list,
+                                                                         columns=[e.replace('avant','before').replace('après','after') for e in tabula_period_list])
+                    df_typo_repartition_logements_tabula = pd.DataFrame(data=matrix_typo_repartition_tabula,
+                                                                         index=typology_category_list,
+                                                                         columns=[e.replace('avant','before').replace('après','after') for e in tabula_period_list])
+                    
                     df_typo_repartition_batiments_bgc = pd.DataFrame(data=matrix_typo_repartition_batiments_bgc,
                                                                  index=typology_category_list,
                                                                  columns=[e.replace('avant','before').replace('après','after') for e in tabula_period_list])
                     
                     dict_sum_repartition_logements = df_typo_repartition_logements_bgc.sum(axis=1).to_dict()
+                    dict_sum_repartition_logements_pougets = df_typo_repartition_logements_pougets.sum(axis=1).to_dict()
+                    dict_sum_repartition_logements_tabula = df_typo_repartition_logements_tabula.sum(axis=1).to_dict()
                     dict_sum_repartition_batiments = df_typo_repartition_batiments_bgc.sum(axis=1).to_dict()
                     
                     fig,ax = plt.subplots(figsize=(5*(len(dict_tabula_period.keys())/4),5), dpi=300)
@@ -885,13 +921,31 @@ def main():
                     plt.show()
                     
                     fig,ax = plt.subplots(figsize=(5*(len(dict_tabula_period.keys())/4),5), dpi=300)
-                    sns.heatmap(df_typo_repartition_batiments_bgc, annot=True, fmt=".1f",cmap='viridis',cbar=False)
+                    sns.heatmap(df_typo_repartition_logements_pougets, annot=True, fmt=".1f",cmap='viridis',cbar=False)
                     for j,typ in enumerate(typology_category_list):
-                        ax.text(len(tabula_period_list)+0.5,j+0.5,'{:.1f}%'.format(dict_sum_repartition_batiments.get(typ)),
+                        ax.text(len(tabula_period_list)+0.5,j+0.5,'{:.1f}%'.format(dict_sum_repartition_logements_pougets.get(typ)),
                                 ha='right',va='center')
-                    ax.set_title('Distribution of buildings (%)')
-                    plt.savefig(os.path.join(figs_folder,'bgc_distribution_tabula_buildings_ponderated.png'), bbox_inches='tight')
+                    ax.set_title('Distribution of households (Pouget)')
+                    plt.savefig(os.path.join(figs_folder,'bgc_distribution_tabula_households_ponderated_pouget.png'), bbox_inches='tight')
                     plt.show()
+                    
+                    fig,ax = plt.subplots(figsize=(5*(len(dict_tabula_period.keys())/4),5), dpi=300)
+                    sns.heatmap(df_typo_repartition_logements_tabula, annot=True, fmt=".1f",cmap='viridis',cbar=False)
+                    for j,typ in enumerate(typology_category_list):
+                        ax.text(len(tabula_period_list)+0.5,j+0.5,'{:.1f}%'.format(dict_sum_repartition_logements_tabula.get(typ)),
+                                ha='right',va='center')
+                    ax.set_title('Distribution of households (TABULA)')
+                    plt.savefig(os.path.join(figs_folder,'bgc_distribution_tabula_households_ponderated_tabula.png'), bbox_inches='tight')
+                    plt.show()
+                    
+                    # fig,ax = plt.subplots(figsize=(5*(len(dict_tabula_period.keys())/4),5), dpi=300)
+                    # sns.heatmap(df_typo_repartition_batiments_bgc, annot=True, fmt=".1f",cmap='viridis',cbar=False)
+                    # for j,typ in enumerate(typology_category_list):
+                    #     ax.text(len(tabula_period_list)+0.5,j+0.5,'{:.1f}%'.format(dict_sum_repartition_batiments.get(typ)),
+                    #             ha='right',va='center')
+                    # ax.set_title('Distribution of buildings (%)')
+                    # plt.savefig(os.path.join(figs_folder,'bgc_distribution_tabula_buildings_ponderated.png'), bbox_inches='tight')
+                    # plt.show()
                     
                 departements_dict_maison_logements = {}
                 departements_dict_appart_logements = {}
@@ -1007,7 +1061,7 @@ def main():
         # Statistiques des typologies en France
         # TODO à refaire avec les données complètes
         # TODO : à reprendre avec les stats de représentativité 
-        if True:
+        if False:
             dpe = pd.read_parquet(os.path.join('data','BDNB',reformat_bdnb_dpe_file))
             
             mask = dpe["dpe_mix_arrete_surface_habitable_logement"] > 1e3
