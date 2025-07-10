@@ -403,6 +403,7 @@ def draw_climat_map(dict_dep,figs_folder,cbar_min=0,cbar_max=1.,
     
     plotter['color'] = (plotter.vals-cbar_min)/(cbar_max-cbar_min)
     plotter['color'] = plotter['color'].apply(cmap)
+    plotter['color'] = [(1.,1.,1.,1.) if e == (0.,0.,0.,0.) else e for e in plotter.color ]
     
     # print(plotter.color)
     plotter.plot(color=plotter.color, ax=ax, transform=ccrs.PlateCarree(),alpha=alpha)
@@ -437,7 +438,7 @@ def draw_climat_map(dict_dep,figs_folder,cbar_min=0,cbar_max=1.,
                         transform=ccrs.PlateCarree(), color=color,ls='',
                         marker='o',label=city.name,mec='k',zorder=5)
         
-    if not all(plotter.color==(0.0, 0.0, 0.0, 0.0)) and not no_cbar:
+    if not all(plotter.color==(1.,1.,1.,1.)) and not no_cbar:
         cbar_ax = fig.add_axes([0, 0, 0.1, 0.1])
         posn = ax.get_position()
         cbar_ax.set_position([posn.x0+posn.width+0.02, posn.y0, 0.04, posn.height])
@@ -500,15 +501,23 @@ def main():
             
     
     # zone climatique 8
-    if False:
+    if True:
         zcl = Climat('H3')
         # print(zcl.code)
         # print(zcl.codint)
         
         france = France()
         
-        draw_climat_map({Climat(e):None for e in france.climats},zcl_label=False, 
-                        figs_folder=figs_folder, save='zcl',
+        zcl_dict = {Climat(e):None for e in france.climats}
+        for k,v in zcl_dict.items():
+            if k.code == 'H1b':
+                zcl_dict[k] = 0.1
+            if k.code == 'H3':
+                zcl_dict[k] = 0.9
+        
+        draw_climat_map(zcl_dict,zcl_label=False, 
+                        figs_folder=figs_folder, save='zcl',cmap=matplotlib.colormaps.get_cmap('coolwarm'),
+                        no_cbar=True,alpha=0.5,
                         add_city_points=[Climat(c).center_prefecture for c in france.climats],lw=0.7)
         
         # [print(d) for d in zcl.departements]
@@ -534,7 +543,7 @@ def main():
        
     
     # Pour Pille: zcl winter + departements
-    if True:
+    if False:
         france = France()
         
         fig,ax = draw_departement_map({dep:None for dep in france.departements}, 
