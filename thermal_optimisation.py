@@ -1129,19 +1129,19 @@ def main():
         # Évolution des monogestes
         if False:
             # Localisation
-            # zcl = Climat('H1a')
+            zcl = Climat('H1b')
             zcl = Climat('H3')
             typo_code = 'FR.N.SFH.01.Gen'
             # typo_code = 'FR.N.SFH.07.Gen'
             
             # premier test
-            if False:
-                compute_energy_needs_single_actions('roof',typo_code,zcl,
-                                     output_path=os.path.join(output, folder),
-                                     behaviour='conventionnel',
-                                     period=[2000,2020],
-                                     plot=True,show=True,
-                                     progressbar=True)
+            if True:
+                # compute_energy_needs_single_actions('roof',typo_code,zcl,
+                #                      output_path=os.path.join(output, folder),
+                #                      behaviour='conventionnel',
+                #                      period=[2000,2020],
+                #                      plot=True,show=True,
+                #                      progressbar=True)
                 
                 compute_energy_needs_single_actions('walls',typo_code,zcl,
                                      output_path=os.path.join(output, folder),
@@ -1150,43 +1150,43 @@ def main():
                                      plot=True,show=True,
                                      progressbar=True)
                 
-                compute_energy_needs_single_actions('floor',typo_code,zcl,
-                                     output_path=os.path.join(output, folder),
-                                     behaviour='conventionnel',
-                                     period=[2000,2020],
-                                     plot=True,show=True,
-                                     progressbar=True)
+                # compute_energy_needs_single_actions('floor',typo_code,zcl,
+                #                      output_path=os.path.join(output, folder),
+                #                      behaviour='conventionnel',
+                #                      period=[2000,2020],
+                #                      plot=True,show=True,
+                #                      progressbar=True)
                 
-                compute_energy_needs_single_actions('albedo',typo_code,zcl,
-                                     output_path=os.path.join(output, folder),
-                                     behaviour='conventionnel',
-                                     period=[2000,2020],
-                                     plot=True,show=True,
-                                     progressbar=True)
+                # compute_energy_needs_single_actions('albedo',typo_code,zcl,
+                #                      output_path=os.path.join(output, folder),
+                #                      behaviour='conventionnel',
+                #                      period=[2000,2020],
+                #                      plot=True,show=True,
+                #                      progressbar=True)
                 
-                compute_energy_needs_single_actions('ventilation',typo_code,zcl,
-                                     output_path=os.path.join(output, folder),
-                                     behaviour='conventionnel',
-                                     period=[2000,2020],
-                                     plot=True,show=True,
-                                     progressbar=True)
+                # compute_energy_needs_single_actions('ventilation',typo_code,zcl,
+                #                      output_path=os.path.join(output, folder),
+                #                      behaviour='conventionnel',
+                #                      period=[2000,2020],
+                #                      plot=True,show=True,
+                #                      progressbar=True)
                 
-                compute_energy_needs_single_actions('shading',typo_code,zcl,
-                                     output_path=os.path.join(output, folder),
-                                     behaviour='conventionnel',
-                                     period=[2000,2020],
-                                     plot=True,show=True,
-                                     progressbar=True,model='era5')
+                # compute_energy_needs_single_actions('shading',typo_code,zcl,
+                #                      output_path=os.path.join(output, folder),
+                #                      behaviour='conventionnel',
+                #                      period=[2000,2020],
+                #                      plot=True,show=True,
+                #                      progressbar=True,model='era5')
                 
-                compute_energy_needs_single_actions('windows',typo_code,zcl,
-                                     output_path=os.path.join(output, folder),
-                                     behaviour='conventionnel',
-                                     period=[2000,2020],
-                                     plot=True,show=True,
-                                     progressbar=True,model='era5')
+                # compute_energy_needs_single_actions('windows',typo_code,zcl,
+                #                      output_path=os.path.join(output, folder),
+                #                      behaviour='conventionnel',
+                #                      period=[2000,2020],
+                #                      plot=True,show=True,
+                #                      progressbar=True,model='era5')
             
             # parallelisation
-            if True:
+            if False:
                 zc_list = ['H1b','H3']
                 typo_list = ['FR.N.SFH.01.Gen','FR.N.TH.01.Gen','FR.N.MFH.01.Gen','FR.N.AB.01.Gen']
                 components = ['roof','walls','floor','albedo','ventilation','shading','windows']
@@ -1538,7 +1538,7 @@ def main():
                 zoom = False
                 
                 # for building_type in ['SFH','TH','MFH','AB']:
-                for building_type in ['AB']:
+                for building_type in ['SFH']:
                     
                     fig,ax = plt.subplots(figsize=(5,5),dpi=300)
                     
@@ -1637,6 +1637,8 @@ def main():
                 
                             max_max_Delta_y = max(max_Delta_y, max_max_Delta_y)
                             max_max_Delta_x = max(max_Delta_x, max_max_Delta_x)
+                            
+                            
                     
                     
                     max_Delta = max(max_max_Delta_x*1.01, max_max_Delta_y*1.01)
@@ -1682,7 +1684,7 @@ def main():
                 
             
     #%% Combinaisons de gestes de rénovations
-    if True:
+    if False:
         
         # TODO: attention au dossier déclaré
         # folder = '20250331_thermal_optimisation'
@@ -1765,13 +1767,13 @@ def main():
         if True:
             
             # premier test 
-            if True:
+            if False:
                 zcl_code = 'H1b'
                 # zcl_code = 'H3'
-                # building_type = 'SFH'
+                building_type = 'SFH'
                 # building_type = 'TH'
                 # building_type = 'MFH'
-                building_type = 'AB'
+                # building_type = 'AB'
                 # nocturnal_natural_cooling = True
                 nocturnal_natural_cooling = False
                 
@@ -1865,10 +1867,10 @@ def main():
             if True:
                 zcl_code = 'H1b'
                 zcl_code = 'H3'
-                # building_type = 'SFH'
+                building_type = 'SFH'
                 # building_type = 'TH'
                 # building_type = 'MFH'
-                building_type = 'AB'
+                # building_type = 'AB'
                 nocturnal_natural_cooling = False
                 
                 for zcl_code in ['H1b','H3']:
@@ -2115,7 +2117,7 @@ def main():
                     private_discount_list = 1/(1+private_discount_factor/100)**year_list
                     
                     # graphe du facteur avec le taux d'actualisation
-                    if True:
+                    if False:
                         fig,ax = plt.subplots(figsize=(5,5),dpi=300)
                         ax.plot(year_list, social_discount_list,label='$\\gamma$ = {}%'.format(social_discount_factor))
                         ax.plot(year_list, private_discount_list,label='$\\gamma$ = {}%'.format(private_discount_factor))
@@ -2251,6 +2253,8 @@ def main():
                     # calcul des subventions publiques nécessaires
                     min_idxs = dataset_social_costs.drop(columns='Typologies').idxmax(axis=1)
                     
+                    # print(min_idxs)
+                    
                     subsidies = pd.DataFrame(min_idxs).rename(columns={0:'min_idx'})
                     subsidies['Typologies'] = dataset_social_costs.Typologies
                     subsidies = subsidies.reset_index()
@@ -2263,7 +2267,65 @@ def main():
                     subsidies['gain_4°C_private'] = [dataset_private_costs[(dataset_private_costs.index=='+4°C')&(dataset_private_costs.Typologies==bt)][idx].values[0] for bt,idx in zip(subsidies.Typologies,subsidies.idx)]
                     subsidies.to_csv(os.path.join(output, folder,'{}.csv'.format('multiactions_subsidies_{}_{}'.format(building_type,zcl_code))),index=False)
                     
+                    reformated_social_costs = dataset_social_costs.copy().reset_index().set_index(['Period','Typologies'])
+                    min_idxs_1 = reformated_social_costs.reset_index().set_index(['Period','Typologies']).idxmax(axis=1)
                     
+                    # 2e meilleure combinaison
+                    for idx in range(len(min_idxs_1)):
+                        reformated_social_costs.loc[min_idxs_1.index[idx],min_idxs_1.values[idx]] = np.nan
+                    min_idxs_2 = reformated_social_costs.reset_index().set_index(['Period','Typologies']).idxmax(axis=1)
+                    
+                    # 3e meilleure combinaison
+                    for idx in range(len(min_idxs_2)):
+                        reformated_social_costs.loc[min_idxs_2.index[idx],min_idxs_2.values[idx]] = np.nan
+                    min_idxs_3 = reformated_social_costs.reset_index().set_index(['Period','Typologies']).idxmax(axis=1)
+                    
+                    # 4e meilleure combinaison
+                    for idx in range(len(min_idxs_3)):
+                        reformated_social_costs.loc[min_idxs_3.index[idx],min_idxs_3.values[idx]] = np.nan
+                    min_idxs_4 = reformated_social_costs.reset_index().set_index(['Period','Typologies']).idxmax(axis=1)
+                    
+                    # 5e meilleure combinaison
+                    for idx in range(len(min_idxs_4)):
+                        reformated_social_costs.loc[min_idxs_4.index[idx],min_idxs_4.values[idx]] = np.nan
+                    min_idxs_5 = reformated_social_costs.reset_index().set_index(['Period','Typologies']).idxmax(axis=1)
+                    
+                    # 6e meilleure combinaison
+                    for idx in range(len(min_idxs_5)):
+                        reformated_social_costs.loc[min_idxs_5.index[idx],min_idxs_5.values[idx]] = np.nan
+                    min_idxs_6 = reformated_social_costs.reset_index().set_index(['Period','Typologies']).idxmax(axis=1)
+                    
+                    # 7e meilleure combinaison
+                    for idx in range(len(min_idxs_6)):
+                        reformated_social_costs.loc[min_idxs_6.index[idx],min_idxs_6.values[idx]] = np.nan
+                    min_idxs_7 = reformated_social_costs.reset_index().set_index(['Period','Typologies']).idxmax(axis=1)
+                    
+                    # 8e meilleure combinaison
+                    for idx in range(len(min_idxs_7)):
+                        reformated_social_costs.loc[min_idxs_7.index[idx],min_idxs_7.values[idx]] = np.nan
+                    min_idxs_8 = reformated_social_costs.reset_index().set_index(['Period','Typologies']).idxmax(axis=1)
+                    
+                    # 9e meilleure combinaison
+                    for idx in range(len(min_idxs_8)):
+                        reformated_social_costs.loc[min_idxs_8.index[idx],min_idxs_8.values[idx]] = np.nan
+                    min_idxs_9 = reformated_social_costs.reset_index().set_index(['Period','Typologies']).idxmax(axis=1)
+                    
+                    # 10e meilleure combinaison
+                    for idx in range(len(min_idxs_9)):
+                        reformated_social_costs.loc[min_idxs_9.index[idx],min_idxs_9.values[idx]] = np.nan
+                    min_idxs_10 = reformated_social_costs.reset_index().set_index(['Period','Typologies']).idxmax(axis=1)
+                    
+                    for nth,midxs in enumerate([min_idxs_1,min_idxs_2,min_idxs_3,min_idxs_4,min_idxs_5,min_idxs_6,min_idxs_7,min_idxs_8,min_idxs_9,min_idxs_10]):
+                        subsidies = pd.DataFrame(midxs).rename(columns={0:'min_idx'})
+                        subsidies = subsidies.reset_index()
+                        subsidies['idx'] = [subsidies[(subsidies.Period=='2000-2020')&(subsidies.Typologies==bt)]['min_idx'].values[0] for bt in subsidies.Typologies]
+                        subsidies['gain_ref_social'] = [dataset_social_costs[(dataset_social_costs.index=='2000-2020')&(dataset_social_costs.Typologies==bt)][idx].values[0] for bt,idx in zip(subsidies.Typologies,subsidies.idx)]
+                        subsidies['gain_2°C_social'] = [dataset_social_costs[(dataset_social_costs.index=='+2°C')&(dataset_social_costs.Typologies==bt)][idx].values[0] for bt,idx in zip(subsidies.Typologies,subsidies.idx)]
+                        subsidies['gain_4°C_social'] = [dataset_social_costs[(dataset_social_costs.index=='+4°C')&(dataset_social_costs.Typologies==bt)][idx].values[0] for bt,idx in zip(subsidies.Typologies,subsidies.idx)]
+                        subsidies['gain_ref_private'] = [dataset_private_costs[(dataset_private_costs.index=='2000-2020')&(dataset_private_costs.Typologies==bt)][idx].values[0] for bt,idx in zip(subsidies.Typologies,subsidies.idx)]
+                        subsidies['gain_2°C_private'] = [dataset_private_costs[(dataset_private_costs.index=='+2°C')&(dataset_private_costs.Typologies==bt)][idx].values[0] for bt,idx in zip(subsidies.Typologies,subsidies.idx)]
+                        subsidies['gain_4°C_private'] = [dataset_private_costs[(dataset_private_costs.index=='+4°C')&(dataset_private_costs.Typologies==bt)][idx].values[0] for bt,idx in zip(subsidies.Typologies,subsidies.idx)]
+                        subsidies.to_csv(os.path.join(output, folder,'{}.csv'.format('multiactions_subsidies_{}_{}_{}th-best'.format(building_type,zcl_code,nth+1))),index=False)
                     
                     # heat map des rentabilités sociales
                     if True:
@@ -2387,28 +2449,39 @@ def main():
                 if True:
                     fig,ax = plt.subplots(figsize=(10,5),dpi=300)
                     for zcl_code in ['H1b','H3']:
-                        print(zcl_code)
-                        subsidies = pd.read_csv(os.path.join(output, folder,'{}.csv'.format('multiactions_subsidies_{}_{}'.format(building_type,zcl_code))))
+                        # print(zcl_code)
+                        subsidies_dict = {nth:pd.read_csv(os.path.join(output, folder,'{}.csv'.format('multiactions_subsidies_{}_{}_{}th-best'.format(building_type,zcl_code,nth)))) for nth in range(1,11)}
+                        # subsidies = pd.read_csv(os.path.join(output, folder,'{}.csv'.format('multiactions_subsidies_{}_{}_1th-best'.format(building_type,zcl_code))))
                         for i in range(1,11):
+                            # for nth in range(1,11):
+                            subsidies = subsidies_dict.get(1)
                             code = 'FR.N.{}.{:02d}.Gen'.format(building_type,i)
                             
                             j = i*7
                             X = [j,j+2,j+4]
                                 
                             if i==1:
-                                label = zcl_code
+                                label = None
                             else:
                                 label = None
                             color = {'H1b':'tab:blue','H3':'tab:red'}.get(zcl_code)
                                 
                             Y = subsidies[subsidies.Typologies==code][['gain_ref_private','gain_2°C_private', 'gain_4°C_private']].values[0]
                             Y *= -1
-                                
-                            ax.plot(X,Y,label=label,color=color,marker='o')
-                            ax.plot(X[0],Y[0],color=color,marker='o',mfc='w')
                             
-                            if i < 6:
-                                print(code, (Y[1]-Y[0])/Y[0],(Y[2]-Y[0])/Y[0])
+                            Y_2D = np.asarray([subsidies_dict.get(nth)[subsidies_dict.get(nth).Typologies==code][['gain_ref_private','gain_2°C_private', 'gain_4°C_private']].values[0] for nth in range(1,11)])
+                            Y_2D *= -1
+                            
+                            # prix par logement
+                            Y = Y/Typology(code).households
+                            
+                            if not all(Y==0.) or True:
+                                ax.plot(X,Y,label=label,color=color,marker='o')
+                                ax.plot(X[0],Y[0],color=color,marker='o',mfc='w')
+                                ax.fill_between(X, Y_2D.mean(axis=0)+Y_2D.std(axis=0), Y_2D.mean(axis=0)-Y_2D.std(axis=0), color=color, alpha=0.37)
+                                
+                            # if i < 6:
+                            #     print(code, (Y[1]-Y[0])/Y[0],(Y[2]-Y[0])/Y[0])
                                 
                                 
 
@@ -2416,7 +2489,13 @@ def main():
                     ylims = ax.get_ylim()
                     xlims = [5.5,75.5]
                     
-                    ax.set_ylabel('Minimal required public subsidies (€)')
+                    for zcl_code in ['H1b','H3']:
+                        color = {'H1b':'tab:blue','H3':'tab:red'}.get(zcl_code)
+                        ax.fill_between([-1],[0],label=zcl_code,color=color,alpha=1)
+                    ax.plot([-1],[0],label='Optimal combination',color='k',marker='o')
+                    ax.fill_between([-1],[0],label='10 best combinations',color='k',alpha=0.37)
+                    
+                    ax.set_ylabel('Minimal required public subsidies (€.household$^{-1}$)')
                     ax.legend(loc='lower right')
                     ax.set_xticks([(i*7)+2 for i in range(1,11)],['{}.{:02d}'.format(building_type,i) for i in range(1,11)])
                     
