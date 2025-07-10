@@ -34,7 +34,7 @@ dependencies:
   - pytables
   - pyarrow
  # - requests_cache
-  #- pip:
-  #	- openmeteo-requests
+ # - pip:
+ # 	- openmeteo-requests
   #	- retry-requests	
  #     - eppy

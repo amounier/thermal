@@ -1704,7 +1704,7 @@ def main():
         print(agg.direct_sun_radiation_H.plot())
     
     # caractérisation des évolutions de températures
-    if False:
+    if True:
         zcl = Climat('H1a')
         var = 'temperature_2m'
         # var = 'direct_sun_radiation_H'
