@@ -43,16 +43,16 @@ from future_meteorology import get_projected_weather_data
 #                       4:{2:[2006,2024], # debut des projections en 2006
 #                          4:[2046,2066],},}
 
-models_period_dict = {0:{2:[2020,2040],
-                         4:[2059,2079],},
-                      1:{2:[2013,2033],
-                         4:[2054,2074],},
-                      2:{2:[2017,2037],
-                         4:[2061,2081],},
-                      3:{2:[2006,2025],
-                         4:[2047,2067],},
-                      4:{2:[2006,2021], # debut des projections en 2006
-                         4:[2040,2060],},}
+# models_period_dict = {0:{2:[2020,2040],
+#                          4:[2059,2079],},
+#                       1:{2:[2013,2033],
+#                          4:[2054,2074],},
+#                       2:{2:[2017,2037],
+#                          4:[2061,2081],},
+#                       3:{2:[2006,2025],
+#                          4:[2047,2067],},
+#                       4:{2:[2006,2021], # debut des projections en 2006
+#                          4:[2040,2060],},}
 
 # TODO : refaire tourner les calculs avec ces nouvelles périodes 
 models_period_dict = {0:{2:  [2034,2053],
@@ -199,9 +199,9 @@ def compute_energy_needs_single_actions(component,typo_code,zcl,output_path,
                 typo.floor_insulation_thickness = typo.floor_insulation_thickness + var_value
             if component == 'walls':
                 typo.w0_insulation_thickness = typo.w0_insulation_thickness + var_value
-                typo.w1_insulation_thickness = typo.w0_insulation_thickness + var_value
-                typo.w2_insulation_thickness = typo.w0_insulation_thickness + var_value
-                typo.w3_insulation_thickness = typo.w0_insulation_thickness + var_value
+                typo.w1_insulation_thickness = typo.w1_insulation_thickness + var_value
+                typo.w2_insulation_thickness = typo.w2_insulation_thickness + var_value
+                typo.w3_insulation_thickness = typo.w3_insulation_thickness + var_value
             if component == 'roof':
                 typo.ceiling_supplementary_insulation_thickness = var_value
             if component == 'albedo':
@@ -713,14 +713,14 @@ def compute_energy_needs_multi_actions(multi_action_idx,typo_code,zcl,output_pat
             
         if dict_components.get('walls'):
             typo.w0_insulation_thickness = typo.w0_insulation_thickness + dict_all_components.get('walls').get('var_space')[1]
-            typo.w1_insulation_thickness = typo.w0_insulation_thickness + dict_all_components.get('walls').get('var_space')[1]
-            typo.w2_insulation_thickness = typo.w0_insulation_thickness + dict_all_components.get('walls').get('var_space')[1]
-            typo.w3_insulation_thickness = typo.w0_insulation_thickness + dict_all_components.get('walls').get('var_space')[1]
+            typo.w1_insulation_thickness = typo.w1_insulation_thickness + dict_all_components.get('walls').get('var_space')[1]
+            typo.w2_insulation_thickness = typo.w2_insulation_thickness + dict_all_components.get('walls').get('var_space')[1]
+            typo.w3_insulation_thickness = typo.w3_insulation_thickness + dict_all_components.get('walls').get('var_space')[1]
         else:
             typo.w0_insulation_thickness = typo.w0_insulation_thickness + dict_all_components.get('walls').get('var_space')[0]
-            typo.w1_insulation_thickness = typo.w0_insulation_thickness + dict_all_components.get('walls').get('var_space')[0]
-            typo.w2_insulation_thickness = typo.w0_insulation_thickness + dict_all_components.get('walls').get('var_space')[0]
-            typo.w3_insulation_thickness = typo.w0_insulation_thickness + dict_all_components.get('walls').get('var_space')[0]
+            typo.w1_insulation_thickness = typo.w1_insulation_thickness + dict_all_components.get('walls').get('var_space')[0]
+            typo.w2_insulation_thickness = typo.w2_insulation_thickness + dict_all_components.get('walls').get('var_space')[0]
+            typo.w3_insulation_thickness = typo.w3_insulation_thickness + dict_all_components.get('walls').get('var_space')[0]
             
         if dict_components.get('roof'):
             typo.ceiling_supplementary_insulation_thickness = dict_all_components.get('roof').get('var_space')[1]
@@ -1130,7 +1130,7 @@ def main():
         if False:
             # Localisation
             zcl = Climat('H1b')
-            zcl = Climat('H3')
+            # zcl = Climat('H3')
             typo_code = 'FR.N.SFH.01.Gen'
             # typo_code = 'FR.N.SFH.07.Gen'
             
@@ -1326,12 +1326,12 @@ def main():
                 run_list = []
                 for mod in list(range(5)):
                 # for mod in [1]:
-                    for component in ['shading','walls','floor','roof','albedo','windows','ventilation']:
-                    # for component in ['windows']:
+                    # for component in ['shading','walls','floor','roof','albedo','windows','ventilation']:
+                    for component in ['walls']:
                         for zcl_code in zcl_list:
                             zcl = Climat(zcl_code)
                             # for building_type in ['SFH','TH','MFH','AB']:
-                            for building_type in ['AB']:
+                            for building_type in ['SFH']:
                                 for i in range(1,11):
                                     code = 'FR.N.{}.{:02d}.Gen'.format(building_type,i)
                                     
@@ -1361,7 +1361,7 @@ def main():
                 pool.starmap(compute_energy_needs_single_actions, run_list)
                 
             # affichage du cadran
-            if False:
+            if True:
 
                 dict_all_components = {'floor':{'var_space':np.logspace(np.log10(0+0.05),np.log10(0.4+0.05),num=10)-0.05,
                                                 'var_label':'Supplementary floor insulation',
@@ -1407,12 +1407,12 @@ def main():
                 output_path = os.path.join(output, folder)
     
 
-                for component in ['shading','walls','floor','roof','albedo','windows','ventilation']:
-                # for component in ['windows']:
+                # for component in ['shading','walls','floor','roof','albedo','windows','ventilation']:
+                for component in ['walls']:
                     for zcl_code in zcl_list:
                         zcl = Climat(zcl_code)
-                        for building_type in ['SFH','TH','MFH','AB']:
-                        # for building_type in ['SFH']:
+                        # for building_type in ['SFH','TH','MFH','AB']:
+                        for building_type in ['SFH']:
                             fig,ax = plt.subplots(figsize=(5,5),dpi=300)
                             max_Delta_x = 0
                             max_Delta_y = 0
@@ -1524,7 +1524,7 @@ def main():
                             plt.show()
                         
             # aggregation des cadrans
-            if True:
+            if False:
                 marker_list = list(Line2D.filled_markers)[1:]
                 marker_list = ['o','^','s','*','d','P','X']
                 cmap_dict = {'H3':plt.colormaps.get_cmap('Reds_r'),
