@@ -16,6 +16,7 @@ import numpy as np
 # import tqdm
 from sklearn.metrics import r2_score
 from scipy.optimize import curve_fit
+import seaborn as sns
 
 from meteorology import get_meteo_data
 from utils import plot_timeserie
@@ -163,9 +164,9 @@ def plot_thermal_sensitivity(temperature,consumption,figs_folder,reg_code,reg_na
 
 
     fig,ax = plt.subplots(figsize=(5,5),dpi=300)
-    ax.plot(temperature,consumption,alpha=0.1, ls='',marker='.',label='raw_data')
+    ax.plot(temperature,consumption,alpha=0.05, ls='',marker='.',label='raw_data',color='tab:blue')
     label_fit = 'pw linear (R$^2$ = {:.2f})\n   $k_h$=-{:.1f} Wh/K\n   $k_c$={:.2f} Wh/K\n   $C_0$={:.2f} Wh'.format(r2_value,kh_opt,kc_opt,C0_opt)
-    ax.plot(temperature,yd ,label=label_fit)
+    ax.plot(temperature,yd ,label=label_fit,color='k')
     
     ax.set_ylim(bottom=0.)
     ylim = ax.get_ylim()
@@ -186,7 +187,7 @@ def plot_thermal_sensitivity(temperature,consumption,figs_folder,reg_code,reg_na
     ax.legend(loc='upper right')
     plt.savefig(os.path.join(figs_folder,'{}.png'.format('thermosensibilite_reg{}_{}'.format(reg_code, year))),bbox_inches='tight')
     plt.show()
-    return 
+    return yd
     
 #%% ===========================================================================
 # script principal
@@ -270,17 +271,25 @@ def main():
             x = data_temperature_sorted.temperature_2m.values
             y = data_temperature_sorted['total_energie_soutiree_wh_reg_{}'.format(reg_code)].values/data_temperature_sorted['nb_points_soutirage_reg_{}'.format(reg_code)].values
             
-            # p0 = (10, 20, 200, 1,1)
-            # popt , e = curve_fit(piecewise_linear, x, y, p0=p0)
-            
-            # r2 = r2_score(y,yd)
-            
             plot_thermal_sensitivity(temperature=x,consumption=y,figs_folder=figs_folder,
                                      reg_code=reg_code,reg_name=reg_name,year=year)
             
+            data['month'] = data.index.month
+            data['total_energie_per_pdl_wh_reg{}'.format(reg_code)] = data['total_energie_soutiree_wh_reg_{}'.format(reg_code)].values/data['nb_points_soutirage_reg_{}'.format(reg_code)].values
+            
+            # fig,ax = plt.subplots(figsize=(5,5),dpi=300)
+            # sns.scatterplot(data=data,x='temperature_2m',
+            #                 y='total_energie_per_pdl_wh_reg{}'.format(reg_code),
+            #                 hue='month',ax=ax,alpha=0.3)
+            # ax.set_title('{} ({})'.format(reg_name, year))
+            # ax.set_ylim(bottom=0.)
+            # plt.show()        
+            
+    
+        
         
     #%% Vérification des courbes de charges hebdomadaires 
-    if True:
+    if False:
         cons = open_electricity_consumption(scale='regional')
         list_cols = []
         for regcode in dict_region_code_chef_lieu.keys():
@@ -296,10 +305,14 @@ def main():
         
         weekdays = [x for xs in [[i]*24 for i in range(7)] for x in xs]
         hours = list(range(24))*7
-        weekly_cons = pd.DataFrame().from_dict({'weekday':weekdays,'hour':hours}).set_index(['weekday','hour'])
         
-        season = 'JJA'
+        
+        # seasons = ['DJF','MAM','JJA','SON']
+        seasons = ['DJF','JJA']
         regions = [28,93]
+        regions_color = {44:'tab:blue',
+                         28:'tab:blue',
+                         93:'tab:red'}
         
         season_dict = {'JJA':[6,7,8],
                        'DJF':[12,1,2],
@@ -314,50 +327,71 @@ def main():
                           5:'Saturday',
                           6:'Sunday'}
         
-        mean_col_dict = {'total_energie_soutiree_wh_reg_{}_par_point_soutirage'.format(regcode):'energie_soutiree_moyenne_wh_reg_{}'.format(regcode) for regcode in dict_region_code_chef_lieu.keys()}
-        std_col_dict = {'total_energie_soutiree_wh_reg_{}_par_point_soutirage'.format(regcode):'energie_soutiree_std_wh_reg_{}'.format(regcode) for regcode in dict_region_code_chef_lieu.keys()}
+        for season in seasons:
+            weekly_cons = pd.DataFrame().from_dict({'weekday':weekdays,'hour':hours}).set_index(['weekday','hour'])
+            
+            mean_col_dict = {'total_energie_soutiree_wh_reg_{}_par_point_soutirage'.format(regcode):'energie_soutiree_moyenne_wh_reg_{}'.format(regcode) for regcode in dict_region_code_chef_lieu.keys()}
+            std_col_dict = {'total_energie_soutiree_wh_reg_{}_par_point_soutirage'.format(regcode):'energie_soutiree_std_wh_reg_{}'.format(regcode) for regcode in dict_region_code_chef_lieu.keys()}
+            
+            mean_weekly = cons[cons.index.month.isin(season_dict.get(season))][list_cols].groupby(by=['weekday','hour']).mean()
+            std_weekly = cons[cons.index.month.isin(season_dict.get(season))][list_cols].groupby(by=['weekday','hour']).std()
+            
+            mean_weekly = mean_weekly.rename(columns=mean_col_dict)
+            std_weekly = std_weekly.rename(columns=std_col_dict)
+            
+            weekly_cons = weekly_cons.join(mean_weekly)
+            weekly_cons = weekly_cons.join(std_weekly)
+            
+            weekly_cons['weekday_hour'] = [hour + 24*dow for dow,hour in weekly_cons.index]
+            
+            fig,ax = plt.subplots(figsize=(15,5),dpi=300)
+            
+            for regcode in regions:
+                if regcode == 94:
+                    continue
+                ax.plot(weekly_cons.weekday_hour, weekly_cons['energie_soutiree_moyenne_wh_reg_{}'.format(regcode)],
+                        label=dict_region_code_region_name.get(regcode)+' ({})'.format(season),color=regions_color.get(regcode))
+                ax.fill_between(weekly_cons.weekday_hour, 
+                                weekly_cons['energie_soutiree_moyenne_wh_reg_{}'.format(regcode)]+weekly_cons['energie_soutiree_std_wh_reg_{}'.format(regcode)],
+                                weekly_cons['energie_soutiree_moyenne_wh_reg_{}'.format(regcode)]-weekly_cons['energie_soutiree_std_wh_reg_{}'.format(regcode)],
+                                alpha=0.2,color=regions_color.get(regcode))
+            
+            ylims = ax.get_ylim()
+            ylims = (0.,cons[[e for e in cons.columns if 'par_point_soutirage' in e]].max().max())
+            ylims = (0.,600)
+            for e in range(1,7):
+                ax.plot([e*24]*2,ylims,color='k',ls=':',zorder=-1)
+            ax.set_ylim(ylims)
+            
+            xticks = list(range(0,weekly_cons['weekday_hour'].max()+6,6))
+            ax.set_xlim([0,24*7])
+            ax.set_xticks(xticks)
+            ax.set_xticklabels([e%24 if e%24!=12 else '12\n{}'.format(dayofweek_dict.get(e//24)) for e in xticks])
+            
+            ax.set_ylabel('Mean hourly consumption by connection point (Wh)')
+            plt.legend()
+            # ax.set_ylim
+            
+            plt.savefig(os.path.join(figs_folder,'{}.png'.format('hourly_consumption_over_week_regions_{}_season_{}'.format('-'.join(map(str, regions)),season))), bbox_inches='tight')
+            plt.show()
         
-        mean_weekly = cons[cons.index.month.isin(season_dict.get(season))][list_cols].groupby(by=['weekday','hour']).mean()
-        std_weekly = cons[cons.index.month.isin(season_dict.get(season))][list_cols].groupby(by=['weekday','hour']).std()
+    # Profil de Valentin Moreau
+    if True:
+        ninja = pd.read_excel("data/Ninja/41560_2023_1341_MOESM9_ESM.xlsx",sheet_name='Figure ED3')
+        moreau = pd.read_csv('data/Res-IRF/hourly_profile_moreau.csv')
+        moreau['value'] = moreau['value']/moreau['value'].mean()
         
-        mean_weekly = mean_weekly.rename(columns=mean_col_dict)
-        std_weekly = std_weekly.rename(columns=std_col_dict)
-        
-        weekly_cons = weekly_cons.join(mean_weekly)
-        weekly_cons = weekly_cons.join(std_weekly)
-        
-        weekly_cons['weekday_hour'] = [hour + 24*dow for dow,hour in weekly_cons.index]
-        
-        fig,ax = plt.subplots(figsize=(15,5),dpi=300)
-        
-        for regcode in regions:
-            if regcode == 94:
-                continue
-            ax.plot(weekly_cons.weekday_hour, weekly_cons['energie_soutiree_moyenne_wh_reg_{}'.format(regcode)],
-                    label=dict_region_code_region_name.get(regcode)+' ({})'.format(season))
-            ax.fill_between(weekly_cons.weekday_hour, 
-                            weekly_cons['energie_soutiree_moyenne_wh_reg_{}'.format(regcode)]+weekly_cons['energie_soutiree_std_wh_reg_{}'.format(regcode)],
-                            weekly_cons['energie_soutiree_moyenne_wh_reg_{}'.format(regcode)]-weekly_cons['energie_soutiree_std_wh_reg_{}'.format(regcode)],alpha=0.2)
-        
-        ylims = ax.get_ylim()
-        for e in range(1,7):
-            ax.plot([e*24]*2,ylims,color='k',ls=':',zorder=-1)
-        ax.set_ylim(ylims)
-        
-        xticks = list(range(0,weekly_cons['weekday_hour'].max()+6,6))
-        ax.set_xlim([0,24*7])
-        ax.set_xticks(xticks)
-        ax.set_xticklabels([e%24 if e%24!=12 else '12\n{}'.format(dayofweek_dict.get(e//24)) for e in xticks])
-        
-        ax.set_ylabel('Mean hourly consumption by connection point (Wh)')
-        plt.legend()
-        
-        plt.savefig(os.path.join(figs_folder,'{}.png'.format('hourly_consumption_over_week_regions_{}_season_{}'.format('-'.join(map(str, regions)),season))), bbox_inches='tight')
+        fig,ax = plt.subplots(figsize=(5,5),dpi=300)
+        ax.plot(moreau.hour,moreau['value'],label='Moreau (2024)',color='tab:blue')
+        ax.plot(ninja.Hour,ninja['Heating (mean)'],label='Staffell et al. (2023)',color='tab:red')
+        ax.fill_between(ninja.Hour,ninja['Heating (mean)']+ninja['Heating (stdev)'],ninja['Heating (mean)']-ninja['Heating (stdev)'],color='tab:red',alpha=0.2)
+        ax.legend()
+        ax.set_ylim(bottom=0.)
         plt.show()
         
         
-        
-        
+    
+            
     tac = time.time()
     print("Done in {:.2f}s.".format(tac-tic))
     

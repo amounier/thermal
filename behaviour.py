@@ -198,7 +198,10 @@ class Behaviour():
         ax.plot(data.index,data.cooling_temperature,label='Cooling',color='tab:blue')
         ax.legend()
         ax.set_ylim(bottom=10.,top=31)
+        ax.set_xlim([start_date,end_date])
         ax.set_ylabel('Setpoint temperature (°C)')
+        
+        # data.to_csv('heating_cooling_conventionnel.csv')
         
         locator = mdates.AutoDateLocator()
         # formatter = mdates.ConciseDateFormatter(locator)
@@ -278,6 +281,7 @@ def main():
             ax.legend()
             ax.set_ylim(bottom=0.)
             ax.set_ylabel('Internal gains for a 80m$^2$ single-family house (W)')
+            ax.set_xlim([start_date,end_date])
             
             locator = mdates.AutoDateLocator()
             # formatter = mdates.ConciseDateFormatter(locator)
