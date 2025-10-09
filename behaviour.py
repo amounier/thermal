@@ -13,6 +13,9 @@ from datetime import date
 import matplotlib.pyplot as plt
 import numpy as np
 import matplotlib.dates as mdates
+from scipy.ndimage import gaussian_filter
+
+from meteorology import get_coordinates, open_meteo_historical_data
 
 class Behaviour():
     def __init__(self,name):
@@ -55,6 +58,14 @@ class Behaviour():
                                    6:[1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1],
                                    7:[1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1],}
             
+        elif self.name == 'conventionnel_th-bce_2020_gaussian_noise':
+            # defintion ocnventionnel puis application d'un filtre gaussien sigma = 5h dans la fct get_set_point_temperature
+            conventionnel = Behaviour('conventionnel_th-bce_2020')
+            self.heating_rules = conventionnel.heating_rules
+            self.cooling_rules = conventionnel.cooling_rules
+            self.presence_rules = conventionnel.presence_rules
+            self.sleeping_rules = conventionnel.sleeping_rules
+            
         elif self.name == 'conventionnel_th-bce_2020_cst':
             self.heating_rules = {i:[19]*24 for i in range(1,8)}
             self.cooling_rules = {i:[26]*24 for i in range(1,8)}
@@ -77,8 +88,15 @@ class Behaviour():
     
     def get_set_point_temperature(self, weather_data):
         
-        heating_temperature = [self.heating_rules[d.dayofweek+1][d.hour] for d in weather_data.index]
-        cooling_temperature = [self.cooling_rules[d.dayofweek+1][d.hour] for d in weather_data.index]
+        heating_temperature = list(map(float,[self.heating_rules[d.dayofweek+1][d.hour] for d in weather_data.index]))
+        cooling_temperature = list(map(float,[self.cooling_rules[d.dayofweek+1][d.hour] for d in weather_data.index]))
+        
+        if self.name == 'conventionnel_th-bce_2020_gaussian_noise':
+            sigma = 5 #h
+            res = np.timedelta64(weather_data.index[1]-weather_data.index[0],'s').astype(float)
+            window = sigma*3600/res
+            heating_temperature = gaussian_filter(heating_temperature, sigma=window)
+            cooling_temperature = gaussian_filter(cooling_temperature, sigma=window)
         
         return heating_temperature, cooling_temperature
     
@@ -105,7 +123,7 @@ class Behaviour():
                 return nb_max
             return 
         
-        if self.name in ['conventionnel_th-bce_2020' ,'conventionnel_3cl-dpe_2021', 'conventionnel_th-bce_2020_cst']:
+        if self.name in ['conventionnel_th-bce_2020' ,'conventionnel_3cl-dpe_2021', 'conventionnel_th-bce_2020_cst','conventionnel_th-bce_2020_gaussian_noise']:
             nb_max = get_nb_max(surface, building_type)
             if nb_max < 1.75:
                 nb_ea = nb_max
@@ -121,14 +139,15 @@ class Behaviour():
             n_ea_list_sf = [self.get_number_equivalent_adults(s,'SFH',None) for s in surface_list]
             n_ea_list_mf = [self.get_number_equivalent_adults(s,'MFH',None) for s in surface_list]
             
+            colors = plt.get_cmap('viridis')
             fig,ax = plt.subplots(figsize=(5,5),dpi=300)
             # ax.plot(surface_list, n_max_list, color='tab:red',label='N$_{max}$')
             # ax.plot(surface_list, n_ea_list, color='tab:blue',label='N$_{adeq}$')
-            ax.plot(surface_list, n_ea_list_sf, color='tab:blue',label='Single-family')
-            ax.plot(surface_list, n_ea_list_mf, color='tab:red',label='Multi-family')
+            ax.plot(surface_list, n_ea_list_sf, color=colors(0),label='Single-family')
+            ax.plot(surface_list, n_ea_list_mf, color=colors(0.5),label='Multi-family')
             ax.legend()
             ax.set_ylim(bottom=0.)
-            ax.set_ylabel('Number of equivalents adults')
+            ax.set_ylabel('Number of equivalents adults (unit)')
             ax.set_xlabel('Surface (m$^2$)')
             
             plt.savefig(os.path.join(figs_folder,'{}.png'.format('{}_nb_adulte_eq'.format(self.name))),bbox_inches='tight')
@@ -137,7 +156,7 @@ class Behaviour():
         
     
     def get_internal_gains(self, surface, building_type, weather_data):
-        if self.name in ['conventionnel_th-bce_2020' ,'conventionnel_3cl-dpe_2021', 'conventionnel_th-bce_2020_cst']:
+        if self.name in ['conventionnel_th-bce_2020' ,'conventionnel_3cl-dpe_2021', 'conventionnel_th-bce_2020_cst','conventionnel_th-bce_2020_gaussian_noise']:
             internal_gains = []
             
             for d in weather_data.index:
@@ -171,6 +190,13 @@ class Behaviour():
         else:
             internal_gains = [None]*len(weather_data)
             
+        if self.name == 'conventionnel_th-bce_2020_gaussian_noise':
+            #TODO : flou gaussien sur les apports internes
+            sigma = 5 #h
+            res = np.timedelta64(weather_data.index[1]-weather_data.index[0],'s').astype(float)
+            window = sigma*3600/res
+            internal_gains = gaussian_filter(internal_gains, sigma=window)
+            
         if self.cst_internal_gains is not None:
             gains = self.cst_internal_gains*surface
             internal_gains = [gains]*len(weather_data)
@@ -178,7 +204,7 @@ class Behaviour():
         return internal_gains
         
         
-    def plot_rules(self,figs_folder=None):
+    def plot_rules(self,figs_folder=None,daily=False):
         year=date.today().year
         
         start_date = pd.to_datetime('{}-01-01'.format(year)) # de préférence commençant un lundi
@@ -187,32 +213,100 @@ class Behaviour():
             
         end_date = start_date + 7 * np.timedelta64(1, 'D')
         
-        data = pd.DataFrame(index=pd.date_range(start=start_date,end=end_date,freq='h'))
-        heating_temperature = [self.heating_rules[d.dayofweek+1][d.hour] for d in data.index]
-        cooling_temperature = [self.cooling_rules[d.dayofweek+1][d.hour] for d in data.index]
+        data = pd.DataFrame(index=pd.date_range(start=start_date,end=end_date,freq='10min'))
+        # heating_temperature = [self.heating_rules[d.dayofweek+1][d.hour] for d in data.index]
+        # cooling_temperature = [self.cooling_rules[d.dayofweek+1][d.hour] for d in data.index]
+        
+        heating_temperature, cooling_temperature = self.get_set_point_temperature(data)
+        
         data['heating_temperature'] = heating_temperature
         data['cooling_temperature'] = cooling_temperature
         
-        fig, ax = plt.subplots(dpi=300,figsize=(5,5))
-        ax.plot(data.index,data.heating_temperature,label='Heating',color='tab:red')
-        ax.plot(data.index,data.cooling_temperature,label='Cooling',color='tab:blue')
-        ax.legend()
+        data['weekday'] = data.index.dayofweek
+        data['hour'] = data.index.hour
+        
+        weekdays = [x for xs in [[i]*24 for i in range(7)] for x in xs]
+        hours = list(range(24))*7
+
+        dayofweek_dict = {0:'Monday',
+                          1:'Tuesday',
+                          2:'Wednesday',
+                          3:'Thursday',
+                          4:'Friday',
+                          5:'Saturday',
+                          6:'Sunday'}
+        
+        weekly_cons = pd.DataFrame().from_dict({'weekday':weekdays,'hour':hours}).set_index(['weekday','hour'])
+        
+        temp_weekly = data[['weekday','hour','heating_temperature','cooling_temperature']].groupby(by=['weekday','hour']).mean()
+        
+        weekly_cons = weekly_cons.join(temp_weekly)
+        weekly_cons['weekday_hour'] = [hour + 24*dow for dow,hour in weekly_cons.index]
+        
+        fig,ax = plt.subplots(figsize=(10,5),dpi=300)
+        ax.plot(weekly_cons.weekday_hour, weekly_cons['heating_temperature'],
+                label='Heating',color='tab:red')
+        ax.plot(weekly_cons.weekday_hour, weekly_cons['cooling_temperature'],
+                label='Cooling',color='tab:blue')
+        
         ax.set_ylim(bottom=10.,top=31)
-        ax.set_xlim([start_date,end_date])
+        ylims = ax.get_ylim()
+        for e in range(1,7):
+            ax.plot([e*24]*2,ylims,color='k',ls=':',zorder=-1)
+        ax.set_ylim(ylims)
+        xticks = list(range(0,weekly_cons['weekday_hour'].max()+6,6))
+        ax.set_xlim([0,24*7])
+        ax.set_xticks(xticks)
+        ax.set_xticklabels([e%24 if e%24!=12 else '12\n{}'.format(dayofweek_dict.get(e//24)) for e in xticks])
         ax.set_ylabel('Setpoint temperature (°C)')
         
-        # data.to_csv('heating_cooling_conventionnel.csv')
-        
-        locator = mdates.AutoDateLocator()
-        # formatter = mdates.ConciseDateFormatter(locator)
-        formatter = mdates.DateFormatter('%a')
-        ax.xaxis.set_major_locator(locator)
-        ax.xaxis.set_major_formatter(formatter)
-        
+        plt.legend()
         if figs_folder is not None:
             plt.savefig(os.path.join(figs_folder,'{}.png'.format('{}_heating_cooling_rules'.format(self.name))),bbox_inches='tight')
-            
         plt.show()
+        
+        
+        if daily:
+            data['hour'] = data.index.hour
+            hours = list(range(24))
+            
+            daily_cons = pd.DataFrame().from_dict({'hour':hours}).set_index(['hour'])
+            temp_daily = data[['hour','heating_temperature','cooling_temperature']].groupby(by=['hour']).mean()
+            
+            daily_cons = daily_cons.join(temp_daily)
+            
+            fig,ax = plt.subplots(figsize=(5,5),dpi=300)
+            ax.plot(daily_cons.index, daily_cons['heating_temperature'],
+                    label='Heating',color='tab:red')
+            ax.plot(daily_cons.index, daily_cons['cooling_temperature'],
+                    label='Cooling',color='tab:blue')
+            
+            ax.set_ylim(bottom=10.,top=31)
+            ylims = ax.get_ylim()
+            ax.set_ylim(ylims)
+            ax.set_xlim([0,24])
+            ax.legend()
+            ax.set_ylabel('Setpoint temperature (°C)')
+            plt.show()
+            
+        # fig, ax = plt.subplots(dpi=300,figsize=(5,5))
+        # ax.plot(data.index,data.heating_temperature,label='Heating',color='tab:red')
+        # ax.plot(data.index,data.cooling_temperature,label='Cooling',color='tab:blue')
+        # ax.legend()
+        # ax.set_ylim(bottom=10.,top=31)
+        # ax.set_xlim([start_date,end_date])
+        # ax.set_ylabel('Setpoint temperature (°C)')
+        
+        # # data.to_csv('heating_cooling_conventionnel.csv')
+        
+        # locator = mdates.AutoDateLocator()
+        # # formatter = mdates.ConciseDateFormatter(locator)
+        # formatter = mdates.DateFormatter('%a')
+        # ax.xaxis.set_major_locator(locator)
+        # ax.xaxis.set_major_formatter(formatter)
+        
+        
+        # plt.show()
     
     
 #%% ===========================================================================
@@ -240,32 +334,39 @@ def main():
         behaviour = 'conventionnel_th-bce_2020'
         conventionnel = Behaviour(behaviour)
         
+        behaviour_noise = 'conventionnel_th-bce_2020_gaussian_noise'
+        conventionnel_noise = Behaviour(behaviour_noise)
         
         # Affichage des règles de consommation conventionnelle
         if True:
+            behaviour = 'conventionnel_th-bce_2020'
+            conventionnel = Behaviour(behaviour)
             # conventionnel.heating_rules = {i:[19]*24 for i in range(1,8)}
             # conventionnel.cooling_rules = {i:[26]*24 for i in range(1,8)}
+            conventionnel.plot_rules(figs_folder,daily=True)
             
-            conventionnel.plot_rules(figs_folder)
+            behaviour_noise = 'conventionnel_th-bce_2020_gaussian_noise'
+            conventionnel_noise = Behaviour(behaviour_noise)
+            conventionnel_noise.plot_rules(figs_folder,daily=True)
+            
             # conventionnel.get_number_equivalent_adults(0,figs_folder)
         
-        from meteorology import get_coordinates, open_meteo_historical_data
-        
-        city = 'Marseille'
-        year = 2021
-        variables = ['temperature_2m']
-        coordinates = get_coordinates(city)
-        weather_data = open_meteo_historical_data(longitude=coordinates[0], latitude=coordinates[1], year=year, hourly_variables=variables)
-        
-        # Graphe pour des apports internes constants
-        # conventionnel.cst_internal_gains = 4.17 # W/m2
-        
-        heating_setpoint, cooling_setpoint = conventionnel.get_set_point_temperature(weather_data)
-        internal_gains = conventionnel.get_internal_gains(80,'SFH',weather_data)
-        weather_data['internal_gains'] = internal_gains
         
         # Graphe des apports internes
         if True:
+            city = 'Marseille'
+            year = 2021
+            variables = ['temperature_2m']
+            coordinates = get_coordinates(city)
+            weather_data = open_meteo_historical_data(longitude=coordinates[0], latitude=coordinates[1], year=year, hourly_variables=variables)
+            
+            # Graphe pour des apports internes constants
+            # conventionnel.cst_internal_gains = 4.17 # W/m2
+            
+            heating_setpoint, cooling_setpoint = conventionnel.get_set_point_temperature(weather_data)
+            internal_gains = conventionnel.get_internal_gains(80,'SFH',weather_data)
+            weather_data['internal_gains'] = internal_gains
+            
             start_date = pd.to_datetime('{}-01-01'.format(year)) # de préférence commençant un lundi
             while start_date.dayofweek > 0:
                 start_date += np.timedelta64(1, 'D')
@@ -275,25 +376,134 @@ def main():
             data = pd.DataFrame(index=pd.date_range(start=start_date,end=end_date,freq='h'))
             data = data.join(weather_data[['internal_gains']])
             
+            data['weekday'] = data.index.dayofweek
+            data['hour'] = data.index.hour
             
-            fig, ax = plt.subplots(dpi=300,figsize=(5,5))
-            ax.plot(data.index,data.internal_gains,label='Internal gains',color='k')
-            ax.legend()
+            weekdays = [x for xs in [[i]*24 for i in range(7)] for x in xs]
+            hours = list(range(24))*7
+
+            dayofweek_dict = {0:'Monday',
+                              1:'Tuesday',
+                              2:'Wednesday',
+                              3:'Thursday',
+                              4:'Friday',
+                              5:'Saturday',
+                              6:'Sunday'}
+            
+            weekly_cons = pd.DataFrame().from_dict({'weekday':weekdays,'hour':hours}).set_index(['weekday','hour'])
+            
+            # temp_weekly = data[['weekday','hour','internal_gains','internal_gains_noise']].groupby(by=['weekday','hour']).mean()
+            temp_weekly = data[['weekday','hour','internal_gains']].groupby(by=['weekday','hour']).mean()
+            
+            weekly_cons = weekly_cons.join(temp_weekly)
+            weekly_cons['weekday_hour'] = [hour + 24*dow for dow,hour in weekly_cons.index]
+            
+            fig,ax = plt.subplots(figsize=(10,5),dpi=300)
+            ax.plot(weekly_cons.weekday_hour, weekly_cons['internal_gains'],
+                    label='Internal gains',color='k')
+        
+            
             ax.set_ylim(bottom=0.)
+            ylims = ax.get_ylim()
+            
+            for e in range(1,7):
+                ax.plot([e*24]*2,ylims,color='k',ls=':',zorder=-1)
+            ax.set_ylim(ylims)
+            xticks = list(range(0,weekly_cons['weekday_hour'].max()+6,6))
+            ax.set_xlim([0,24*7])
+            ax.set_xticks(xticks)
+            ax.set_xticklabels([e%24 if e%24!=12 else '12\n{}'.format(dayofweek_dict.get(e//24)) for e in xticks])
             ax.set_ylabel('Internal gains for a 80m$^2$ single-family house (W)')
-            ax.set_xlim([start_date,end_date])
             
-            locator = mdates.AutoDateLocator()
-            # formatter = mdates.ConciseDateFormatter(locator)
-            formatter = mdates.DateFormatter('%a')
-            ax.xaxis.set_major_locator(locator)
-            ax.xaxis.set_major_formatter(formatter)
-            
+            plt.legend()
             if figs_folder is not None:
                 plt.savefig(os.path.join(figs_folder,'{}.png'.format('{}_internal_gains_rules'.format(behaviour))),bbox_inches='tight')
-        
-        # graphe du nombre d'adultes équivalent 
+            plt.show()
+            
+            # fig, ax = plt.subplots(dpi=300,figsize=(5,5))
+            # ax.plot(data.index,data.internal_gains,label='Internal gains',color='k')
+            # ax.legend()
+            # ax.set_ylim(bottom=0.)
+            # ax.set_ylabel('Internal gains for a 80m$^2$ single-family house (W)')
+            # ax.set_xlim([start_date,end_date])
+            
+            # locator = mdates.AutoDateLocator()
+            # # formatter = mdates.ConciseDateFormatter(locator)
+            # formatter = mdates.DateFormatter('%a')
+            # ax.xaxis.set_major_locator(locator)
+            # ax.xaxis.set_major_formatter(formatter)
+            
+        # Graphe des apports internes (en flou gaussien)
         if True:
+            city = 'Marseille'
+            year = 2021
+            variables = ['temperature_2m']
+            coordinates = get_coordinates(city)
+            weather_data = open_meteo_historical_data(longitude=coordinates[0], latitude=coordinates[1], year=year, hourly_variables=variables)
+            
+            # Graphe pour des apports internes constants
+            # conventionnel.cst_internal_gains = 4.17 # W/m2
+            
+            heating_setpoint, cooling_setpoint = conventionnel_noise.get_set_point_temperature(weather_data)
+            internal_gains = conventionnel_noise.get_internal_gains(80,'SFH',weather_data)
+            weather_data['internal_gains'] = internal_gains
+            
+            start_date = pd.to_datetime('{}-01-01'.format(year)) # de préférence commençant un lundi
+            while start_date.dayofweek > 0:
+                start_date += np.timedelta64(1, 'D')
+                
+            end_date = start_date + 7 * np.timedelta64(1, 'D')
+            
+            data = pd.DataFrame(index=pd.date_range(start=start_date,end=end_date,freq='h'))
+            data = data.join(weather_data[['internal_gains']])
+            
+            data['weekday'] = data.index.dayofweek
+            data['hour'] = data.index.hour
+            
+            weekdays = [x for xs in [[i]*24 for i in range(7)] for x in xs]
+            hours = list(range(24))*7
+
+            dayofweek_dict = {0:'Monday',
+                              1:'Tuesday',
+                              2:'Wednesday',
+                              3:'Thursday',
+                              4:'Friday',
+                              5:'Saturday',
+                              6:'Sunday'}
+            
+            weekly_cons = pd.DataFrame().from_dict({'weekday':weekdays,'hour':hours}).set_index(['weekday','hour'])
+            
+            # temp_weekly = data[['weekday','hour','internal_gains','internal_gains_noise']].groupby(by=['weekday','hour']).mean()
+            temp_weekly = data[['weekday','hour','internal_gains']].groupby(by=['weekday','hour']).mean()
+            
+            weekly_cons = weekly_cons.join(temp_weekly)
+            weekly_cons['weekday_hour'] = [hour + 24*dow for dow,hour in weekly_cons.index]
+            
+            fig,ax = plt.subplots(figsize=(10,5),dpi=300)
+            ax.plot(weekly_cons.weekday_hour, weekly_cons['internal_gains'],
+                    label='Internal gains',color='k')
+        
+            
+            ax.set_ylim(bottom=0.)
+            ylims = ax.get_ylim()
+            
+            for e in range(1,7):
+                ax.plot([e*24]*2,ylims,color='k',ls=':',zorder=-1)
+            ax.set_ylim(ylims)
+            xticks = list(range(0,weekly_cons['weekday_hour'].max()+6,6))
+            ax.set_xlim([0,24*7])
+            ax.set_xticks(xticks)
+            ax.set_xticklabels([e%24 if e%24!=12 else '12\n{}'.format(dayofweek_dict.get(e//24)) for e in xticks])
+            ax.set_ylabel('Internal gains for a 80m$^2$ single-family house (W)')
+            
+            plt.legend()
+            if figs_folder is not None:
+                plt.savefig(os.path.join(figs_folder,'{}.png'.format('{}_internal_gains_rules'.format(behaviour_noise))),bbox_inches='tight')
+            plt.show()
+            
+            
+        # graphe du nombre d'adultes équivalent 
+        if False:
             conventionnel.get_number_equivalent_adults(20,'SFH',figs_folder=figs_folder)
         
         
