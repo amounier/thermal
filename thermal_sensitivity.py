@@ -37,6 +37,23 @@ dict_region_code_region_name = {11:'Île-de-France',
                                 94:'Corse'}
 dict_region_name_region_code = {v:k for k,v in dict_region_code_region_name.items()}
 
+# pop = pd.read_excel('data/INSEE/base-ic-logement-2021.xlsx',sheet_name='IRIS',header=5)
+# pop.groupby('REG')['P21_RP'].sum().to_dict()
+
+dict_region_code_nb_log = {11: 5335031,
+                           24: 1181699,
+                           27: 1313611,
+                           28: 1524634,
+                           32: 2597977,
+                           44: 2532350,
+                           52: 1736156,
+                           53: 1584802,
+                           75: 2882774,
+                           76: 2840001,
+                           84: 3681163,
+                           93: 2383101,
+                           94: 156046}
+    
 dict_region_code_chef_lieu = {11:'Paris',
                               24:'Orléans',
                               27:'Dijon',
@@ -158,18 +175,21 @@ def identify_thermal_sensitivity(temperature, consumption,C0_init=200,k_init=1):
 
 
 def plot_thermal_sensitivity(temperature,consumption,figs_folder,reg_code,reg_name,year,
-                             C0_init=200,k_init=1,ylabel=None):
+                             C0_init=200,k_init=1,ylabel=None,set_ylim=None):
     Th_opt, Tc_opt, C0_opt, kh_opt, kc_opt, r2_value = identify_thermal_sensitivity(temperature, consumption, C0_init, k_init)
     yd = piecewise_linear(temperature, *(Th_opt, Tc_opt, C0_opt, kh_opt, kc_opt))
 
 
     fig,ax = plt.subplots(figsize=(5,5),dpi=300)
-    ax.plot(temperature,consumption,alpha=0.05, ls='',marker='.',label='raw_data',color='tab:blue')
-    label_fit = 'pw linear (R$^2$ = {:.2f})\n   $k_h$=-{:.1f} Wh/K\n   $k_c$={:.2f} Wh/K\n   $C_0$={:.2f} Wh'.format(r2_value,kh_opt,kc_opt,C0_opt)
+    # ax.plot(temperature,consumption,alpha=0.05, ls='',marker='.',label='Data',color='tab:blue')
+    sns.scatterplot(x=temperature,y=consumption,marker='.',label='Data',color=plt.get_cmap('Blues')(0.66),ax=ax,alpha=0.5,linewidth=0.1)
+    label_fit = 'Piecewise linear (R$^2$ = {:.2f})\n   $k_h$=-{:.1f} Wh/K\n   $k_c$={:.2f} Wh/K\n   $C_0$={:.2f} Wh'.format(r2_value,kh_opt,kc_opt,C0_opt)
     ax.plot(temperature,yd ,label=label_fit,color='k')
     
     ax.set_ylim(bottom=0.)
     ylim = ax.get_ylim()
+    if set_ylim is not None:
+        ylim = [0,set_ylim]
     
     ax.plot([Th_opt,Th_opt],ylim,color='k',alpha=0.4)
     ax.text(Th_opt,10,'{:.1f}°C '.format(Th_opt),horizontalalignment='right',verticalalignment='bottom')
@@ -185,9 +205,81 @@ def plot_thermal_sensitivity(temperature,consumption,figs_folder,reg_code,reg_na
     
     ax.set_title('{} ({})'.format(reg_name, year))
     ax.legend(loc='upper right')
-    plt.savefig(os.path.join(figs_folder,'{}.png'.format('thermosensibilite_reg{}_{}'.format(reg_code, year))),bbox_inches='tight')
+    # plt.savefig(os.path.join(figs_folder,'{}.png'.format('thermosensibilite_reg{}_{}'.format(reg_code, year))),bbox_inches='tight')
     plt.show()
     return yd
+
+
+def plot_daily_consumption(data,figs_folder,col_name=None,normalize=True):
+    data['hour'] = data.index.hour
+    hours = list(range(24))*7
+    
+    seasons = ['DJF','JJA']
+    season_dict = {'JJA':[6,7,8],
+                   'DJF':[12,1,2],
+                   'MAM':[3,4,5],
+                   'SON':[9,10,11]}
+    colors = {'DJF':'tab:red','JJA':'tab:blue'}
+    labels = {'DJF':'Heating','JJA':'Cooling'}
+    
+    fig,ax = plt.subplots(figsize=(5,5),dpi=300)
+    for season in seasons:
+        if col_name is None:
+            col = {'DJF':'heating_needs','JJA':'cooling_needs'}.get(season)
+        else: 
+            col = col_name
+        weekly_cons = pd.DataFrame().from_dict({'hour':hours})
+        
+        mean_weekly = data[data.index.month.isin(season_dict.get(season))][['hour',col]].groupby(by=['hour']).mean()
+        std_weekly = data[data.index.month.isin(season_dict.get(season))][['hour',col]].groupby(by=['hour']).std()
+        
+        mean_weekly = mean_weekly.rename(columns={col:'total_needs_mean'})
+        std_weekly = std_weekly.rename(columns={col:'total_needs_std'})
+        
+        weekly_cons = weekly_cons.join(mean_weekly)
+        weekly_cons = weekly_cons.join(std_weekly)
+        
+        
+        ax.plot(weekly_cons.hour, weekly_cons['total_needs_mean'],
+                label=labels.get(season),color=colors.get(season))
+        ax.fill_between(weekly_cons.hour, 
+                        weekly_cons['total_needs_mean']+weekly_cons['total_needs_std'],
+                        weekly_cons['total_needs_mean']-weekly_cons['total_needs_std'],
+                        alpha=0.2,color=colors.get(season))
+    ylims = ax.get_ylim()
+    ax.set_ylim(ylims)
+    ax.set_xlim([0,24])
+    ax.set_ylabel('Mean hourly consumption by connection point (Wh)')
+    plt.legend()
+    # plt.savefig(os.path.join(figs_folder,'{}.png'.format('hourly_consumption_over_week_regions_{}_season_{}'.format('-'.join(map(str, regions)),season))), bbox_inches='tight')
+    plt.show()
+    return 
+
+
+def get_nationale_meteo(period=[2022,2024]):
+    # meteo de la prefecture de chaque region, pondérée par la population régionale
+    meteo_nationale = None
+    for reg_code in dict_region_code_region_name.keys():
+        city = dict_region_code_chef_lieu.get(reg_code)
+        meteo_data = get_meteo_data(city,period,variables=['temperature_2m'])
+        meteo_data = meteo_data.rename(columns={'temperature_2m':reg_code})
+        
+        if meteo_nationale is None:
+            meteo_nationale = meteo_data
+        else:
+            meteo_nationale = meteo_nationale.join(meteo_data)
+    
+    pop_cols = []
+    for reg_code in dict_region_code_region_name.keys():
+        col = '{}_nb_log'.format(reg_code)
+        pop_cols.append(col)
+        meteo_nationale[col] =  meteo_nationale[reg_code]*dict_region_code_nb_log.get(reg_code)
+            
+    meteo_nationale['france'] = meteo_nationale[pop_cols].sum(axis=1)/sum(list(dict_region_code_nb_log.values()))
+    meteo_nationale = meteo_nationale[['france']]
+    meteo_nationale = meteo_nationale.rename(columns={'france':'temperature'})
+        
+    return meteo_nationale
     
 #%% ===========================================================================
 # script principal
@@ -272,7 +364,7 @@ def main():
             y = data_temperature_sorted['total_energie_soutiree_wh_reg_{}'.format(reg_code)].values/data_temperature_sorted['nb_points_soutirage_reg_{}'.format(reg_code)].values
             
             plot_thermal_sensitivity(temperature=x,consumption=y,figs_folder=figs_folder,
-                                     reg_code=reg_code,reg_name=reg_name,year=year)
+                                     reg_code=reg_code,reg_name=reg_name,year=year,set_ylim=600)
             
             data['month'] = data.index.month
             data['total_energie_per_pdl_wh_reg{}'.format(reg_code)] = data['total_energie_soutiree_wh_reg_{}'.format(reg_code)].values/data['nb_points_soutirage_reg_{}'.format(reg_code)].values
@@ -284,8 +376,20 @@ def main():
             # ax.set_title('{} ({})'.format(reg_name, year))
             # ax.set_ylim(bottom=0.)
             # plt.show()        
-            
     
+    # thermosensibilité nationale 
+    if True:
+        meteo_nationale = get_nationale_meteo()
+        data = meteo_nationale.join(national_consumption_data,how='inner')
+        
+        data = data.dropna(axis=0)#[:20000]
+        data_temperature_sorted = data.copy().sort_values(by='temperature')
+        
+        x = data_temperature_sorted.temperature.values
+        y = data_temperature_sorted['total_energie_soutiree_wh'].values/data_temperature_sorted['nb_points_soutirage'].values
+        
+        plot_thermal_sensitivity(temperature=x,consumption=y,figs_folder=figs_folder,
+                                 reg_code='france',reg_name='France',year='2022-2024',set_ylim=600)
         
         
     #%% Vérification des courbes de charges hebdomadaires 
@@ -374,20 +478,63 @@ def main():
             
             plt.savefig(os.path.join(figs_folder,'{}.png'.format('hourly_consumption_over_week_regions_{}_season_{}'.format('-'.join(map(str, regions)),season))), bbox_inches='tight')
             plt.show()
+    
+    
+    # profil des temperatures extérieures # TODO: à faire au niveau national
+    if False:
+        reg_code = 33 
+        
+        data = open_electricity_consumption(scale='regional')
+        
+        year = None
+        city = dict_region_code_chef_lieu.get(reg_code)
+        reg_name = dict_region_code_region_name.get(reg_code)
+        
+        if year is None:
+            meteo_data = get_meteo_data(city,[2022,2024])
+            year = '2022-2024'
+        else:
+            meteo_data = get_meteo_data(city,[year,year])
+            
+        data = meteo_data.join(data,how='inner')
+        
+        plot_daily_consumption(data, figs_folder=figs_folder, col_name='temperature_2m')
+        
+    # profil des consommations réelles
+    if False:
+        enedis = open_electricity_consumption(scale='national')
+        enedis['total_energie_soutiree_wh_per_pdl'] = enedis.total_energie_soutiree_wh / enedis.nb_points_soutirage
+        enedis_djf = enedis[enedis.index.month.isin([12,1,2])]
+        enedis_jja = enedis[enedis.index.month.isin([6,7,8])]
+        
+        plot_daily_consumption(enedis, figs_folder=figs_folder, col_name='total_energie_soutiree_wh_per_pdl')
         
     # Profil de Valentin Moreau
-    if True:
-        ninja = pd.read_excel("data/Ninja/41560_2023_1341_MOESM9_ESM.xlsx",sheet_name='Figure ED3')
-        moreau = pd.read_csv('data/Res-IRF/hourly_profile_moreau.csv')
+    if False:
+        ninja = pd.read_excel("data/Ninja/41560_2023_1341_MOESM9_ESM_doubled.xlsx",sheet_name='Figure ED3')
+        moreau = pd.read_csv('data/Res-IRF/hourly_profile_moreau_doubled.csv')
         moreau['value'] = moreau['value']/moreau['value'].mean()
         
+        
+        
+        
         fig,ax = plt.subplots(figsize=(5,5),dpi=300)
-        ax.plot(moreau.hour,moreau['value'],label='Moreau (2024)',color='tab:blue')
-        ax.plot(ninja.Hour,ninja['Heating (mean)'],label='Staffell et al. (2023)',color='tab:red')
+        ax.plot(moreau.hour,moreau['value'],color='tab:red',ls=':')
+        ax.plot(ninja.Hour,ninja['Heating (mean)'],color='tab:red')
         ax.fill_between(ninja.Hour,ninja['Heating (mean)']+ninja['Heating (stdev)'],ninja['Heating (mean)']-ninja['Heating (stdev)'],color='tab:red',alpha=0.2)
-        ax.legend()
+        ax.plot(ninja.Hour,ninja['Cooling (mean)'],color='tab:blue')
+        ax.fill_between(ninja.Hour,ninja['Cooling (mean)']+ninja['Cooling (stdev)'],ninja['Cooling (mean)']-ninja['Cooling (stdev)'],color='tab:blue',alpha=0.2)
+        ax.plot([-1],[0],color='k',ls=':',label='Moreau (2024)')
+        ax.plot([-1],[0],color='k',ls='-',label='Staffell et al. (2023)')
+        ax.fill_between([-1],[0],[0],color='tab:red',label='Heating')
+        ax.fill_between([-1],[0],[0],color='tab:blue',label='Cooling')
+        ax.set_xlim([0,24])
         ax.set_ylim(bottom=0.)
+        ax.set_ylabel('Intensity of use (normalized)')
+        ax.set_xlabel('Hour of the day')
+        ax.legend()
         plt.show()
+        
         
         
     
