@@ -611,11 +611,13 @@ def main():
     
     
     #%% Étude de la température du sol en fonction de la température de surface 
-    if False:
+    if True:
         city = 'Marseille'
         # city = 'Chaumont'
         year = 2021
-        year = 2010
+        # year = 2010
+        # year = 2024
+        year = 2023
         # 2021
         variables = ['temperature_2m','soil_temperature_0_to_7cm','soil_temperature_7_to_28cm','soil_temperature_28_to_100cm','soil_temperature_100_to_255cm']
         
@@ -684,7 +686,9 @@ def main():
                 ground_data['kusuda_soil_temperature_{:.0f}cm'.format(depth_list[0]*100)] = get_kusuda_ground_temperature(depth_list[0],data,lambda_th=1.5,cp=1000,rho=2500)
                 ground_data['kusuda_soil_temperature_{:.0f}cm'.format(depth_list[1]*100)] = get_kusuda_ground_temperature(depth_list[1],data,lambda_th=1.5,cp=1000,rho=2500)
                 
-                
+                colors = plt.get_cmap('viridis')
+                color_1 = colors(0.0)
+                color_2 = colors(0.5)
                 print(ground_data)
                 
                 fig,ax = plot_timeserie(ground_data[['soil_temperature_28_to_100cm',
@@ -694,14 +698,14 @@ def main():
                                                      'modelled_soil_temperature_{:.0f}cm'.format(depth_list[1]*100),
                                                      'kusuda_soil_temperature_{:.0f}cm'.format(depth_list[1]*100),
                                                      ]],
-                                        colors = ['tab:blue','tab:blue','tab:blue','tab:red','tab:red','tab:red'],
+                                        colors = [color_2,color_2,color_2,color_1,color_1,color_1],
                                         labels=['']*6,
                                         linestyles=['-','--',':','-','--',':'],show=False,
                                         figsize=(10,5),figs_folder = figs_folder,
                                         xlim=[pd.to_datetime('{}-01-01'.format(year)), pd.to_datetime('{}-12-31'.format(year))])
                 ax.set_ylabel('Soil temperature (°C)')
-                ax.plot(ground_data.iloc[0]['soil_temperature_28_to_100cm'],ls='-',color='tab:blue',label='$d \\in [28,100]~cm$')
-                ax.plot(ground_data.iloc[0]['soil_temperature_100_to_255cm'],ls='-',color='tab:red',label='$d \\in [100,255]~cm$')
+                ax.plot(ground_data.iloc[0]['soil_temperature_28_to_100cm'],ls='-',color=color_2,label='$d \\in [28,100]~cm$')
+                ax.plot(ground_data.iloc[0]['soil_temperature_100_to_255cm'],ls='-',color=color_1,label='$d \\in [100,255]~cm$')
                 
                 # ground_data['kusuda_soil_temperature_{:.0f}cm'.format(0*100)] = get_kusuda_ground_temperature(0,data,lambda_th=1.5,cp=1000,rho=2500)
                 # ax.plot(ground_data['kusuda_soil_temperature_{:.0f}cm'.format(0*100)],ls=':',color='k',label='0')
@@ -884,7 +888,7 @@ def main():
                                xlim=[pd.to_datetime('{}-01-01'.format(year)), pd.to_datetime('{}-12-31'.format(year))],save_fig='{}_{}_{}'.format(c,city,year))
         
         # Étude de l'azimuth et de l'élévation
-        if False:
+        if True:
             warnings.simplefilter("ignore")
     
             dates = data.copy().index
@@ -946,6 +950,10 @@ def main():
                 city_north = 'Brest'
                 city_south = 'Nice'
                 
+                colors = plt.get_cmap('viridis')
+                color_1 = colors(0.0)
+                color_2 = colors(0.5)
+                
                 coordinates_Marseille = get_coordinates(city_south)
                 coordinates_Lille = get_coordinates(city_north)
                 
@@ -985,26 +993,26 @@ def main():
                 data_solstice_summer_Marseille = data_Marseille[(data_Marseille.index.day==21)&(data_Marseille.index.month==6)]
                 data_solstice_winter_Marseille = data_Marseille[(data_Marseille.index.day==21)&(data_Marseille.index.month==12)]
                 
-                ax.plot(2*np.pi/360*data_solstice_summer_Lille.sun_azimuth,data_solstice_summer_Lille.sun_altitude,color='tab:blue',zorder=3)
-                ax.plot(2*np.pi/360*data_solstice_winter_Lille.sun_azimuth,data_solstice_winter_Lille.sun_altitude,color='tab:blue',zorder=3)
-                ax.fill_between(list(2*np.pi/360*data_solstice_summer_Lille.sun_azimuth.values),0,list(data_solstice_summer_Lille.sun_altitude.values), alpha=0.2,color='tab:blue',label=city_north)
+                ax.plot(2*np.pi/360*data_solstice_summer_Lille.sun_azimuth,data_solstice_summer_Lille.sun_altitude,color=color_1,zorder=3)
+                ax.plot(2*np.pi/360*data_solstice_winter_Lille.sun_azimuth,data_solstice_winter_Lille.sun_altitude,color=color_1,zorder=3)
+                ax.fill_between(list(2*np.pi/360*data_solstice_summer_Lille.sun_azimuth.values),0,list(data_solstice_summer_Lille.sun_altitude.values), alpha=0.2,color=color_1,label=city_north)
                 ax.fill_between(list(2*np.pi/360*data_solstice_winter_Lille.sun_azimuth.values),0,list(data_solstice_winter_Lille.sun_altitude.values), color='w')
                 
-                ax.plot(2*np.pi/360*data_solstice_summer_Marseille.sun_azimuth,data_solstice_summer_Marseille.sun_altitude,color='tab:red',zorder=3)
-                ax.plot(2*np.pi/360*data_solstice_winter_Marseille.sun_azimuth,data_solstice_winter_Marseille.sun_altitude,color='tab:red',zorder=3)
-                ax.fill_between(list(2*np.pi/360*data_solstice_summer_Marseille.sun_azimuth.values),0,list(data_solstice_summer_Marseille.sun_altitude.values), alpha=0.2,color='tab:red',label=city_south)
+                ax.plot(2*np.pi/360*data_solstice_summer_Marseille.sun_azimuth,data_solstice_summer_Marseille.sun_altitude,color=color_2,zorder=3)
+                ax.plot(2*np.pi/360*data_solstice_winter_Marseille.sun_azimuth,data_solstice_winter_Marseille.sun_altitude,color=color_2,zorder=3)
+                ax.fill_between(list(2*np.pi/360*data_solstice_summer_Marseille.sun_azimuth.values),0,list(data_solstice_summer_Marseille.sun_altitude.values), alpha=0.2,color=color_2,label=city_south)
                 ax.fill_between(list(2*np.pi/360*data_solstice_winter_Marseille.sun_azimuth.values),0,list(data_solstice_winter_Marseille.sun_altitude.values), color='w')
                 
                 # dessin de l'analemme à 12h UTC (13h en hiver en heure locale)
                 data_analemme_Lille = data_Lille.copy()
                 data_analemme_Lille = data_analemme_Lille.tz_localize(tz='CET',ambiguous='NaT',nonexistent='NaT').tz_convert('UTC')
                 data_analemme_Lille = data_analemme_Lille[(data_analemme_Lille.index.hour==12)]
-                ax.plot(2*np.pi/360*data_analemme_Lille.sun_azimuth,data_analemme_Lille.sun_altitude,color='tab:blue',lw=1,alpha=0.5,zorder=2)
+                ax.plot(2*np.pi/360*data_analemme_Lille.sun_azimuth,data_analemme_Lille.sun_altitude,color=color_1,lw=1,alpha=0.5,zorder=2)
                 
                 data_analemme_Marseille = data_Marseille.copy()
                 data_analemme_Marseille = data_analemme_Marseille.tz_localize(tz='CET',ambiguous='NaT',nonexistent='NaT').tz_convert('UTC')
                 data_analemme_Marseille = data_analemme_Marseille[(data_analemme_Marseille.index.hour==12)]
-                ax.plot(2*np.pi/360*data_analemme_Marseille.sun_azimuth,data_analemme_Marseille.sun_altitude,color='tab:red',lw=1,alpha=0.5,zorder=2)
+                ax.plot(2*np.pi/360*data_analemme_Marseille.sun_azimuth,data_analemme_Marseille.sun_altitude,color=color_2,lw=1,alpha=0.5,zorder=2)
                 
                 ax.legend()
                 plt.savefig(os.path.join(figs_folder,'{}.png'.format('sun_path_{}_{}_{}'.format(city_north,city_south,year))),bbox_inches='tight')

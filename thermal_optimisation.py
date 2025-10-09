@@ -923,7 +923,7 @@ def main():
     
     
     #%% Variation des paramètres d'isolation 
-    if True:
+    if False:
         
         # Caractérisation du temps de calcul
         if False:
@@ -1135,7 +1135,7 @@ def main():
             # typo_code = 'FR.N.SFH.07.Gen'
             
             # premier test
-            if True:
+            if False:
                 # compute_energy_needs_single_actions('roof',typo_code,zcl,
                 #                      output_path=os.path.join(output, folder),
                 #                      behaviour='conventionnel',
@@ -1235,11 +1235,19 @@ def main():
             for zcl_code in zcl_list:
                 zcl = Climat(zcl_code)
                 # for building_type in ['SFH','TH','MFH','AB']:
-                for building_type in ['SFH']:
+                for building_type in ['MFH']:
                     for i in range(1,11):
                         code = 'FR.N.{}.{:02d}.Gen'.format(building_type,i)
                         for level in ['initial','standard','advanced']:
-                            run_list.append((code, level, zcl, os.path.join(output, folder)))
+                            run_list.append((code, 
+                                             level, 
+                                             zcl, 
+                                             os.path.join(output, folder),
+                                             'conventionnel',
+                                             [2000,2020],
+                                             'explore2',
+                                             3,
+                                             True))
                         
             nb_cpu = multiprocessing.cpu_count()
             pool = multiprocessing.Pool(nb_cpu)
@@ -1248,7 +1256,7 @@ def main():
             for zcl_code in zcl_list:
                 zcl = Climat(zcl_code)
                 # for building_type in ['SFH','TH','MFH','AB']:
-                for building_type in ['SFH']:
+                for building_type in ['MFH']:
                     draw_building_type_energy_needs(building_type,zcl=zcl,output_path=os.path.join(output, folder))
                     
 
@@ -1283,7 +1291,7 @@ def main():
                                  model='explore2',nmod=mod)
             
         # evolution des consommations totales pour les typologies
-        if False:
+        if True:
             zcl_list = ['H1b','H3']
             # zcl = Climat('H1b')
             mod = 0
@@ -1316,18 +1324,18 @@ def main():
         
         
         # cadran des rénovations par gestes
-        if False:
+        if True:
             
             # calcul des gains
-            if False:
+            if True:
                 # component = 'shading'
                 zcl_list = ['H1b','H3']
                 
                 run_list = []
                 for mod in list(range(5)):
                 # for mod in [1]:
-                    # for component in ['shading','walls','floor','roof','albedo','windows','ventilation']:
-                    for component in ['walls']:
+                    for component in ['shading','walls','floor','roof','albedo','windows','ventilation']:
+                    # for component in ['walls']:
                         for zcl_code in zcl_list:
                             zcl = Climat(zcl_code)
                             # for building_type in ['SFH','TH','MFH','AB']:
@@ -1356,12 +1364,12 @@ def main():
                                                      False,'reftest',False,False,
                                                      'explore2',mod))
                 
-                nb_cpu = multiprocessing.cpu_count()
+                nb_cpu = multiprocessing.cpu_count()-1
                 pool = multiprocessing.Pool(nb_cpu)
                 pool.starmap(compute_energy_needs_single_actions, run_list)
                 
             # affichage du cadran
-            if True:
+            if False:
 
                 dict_all_components = {'floor':{'var_space':np.logspace(np.log10(0+0.05),np.log10(0.4+0.05),num=10)-0.05,
                                                 'var_label':'Supplementary floor insulation',
@@ -1524,7 +1532,7 @@ def main():
                             plt.show()
                         
             # aggregation des cadrans
-            if False:
+            if True:
                 marker_list = list(Line2D.filled_markers)[1:]
                 marker_list = ['o','^','s','*','d','P','X']
                 cmap_dict = {'H3':plt.colormaps.get_cmap('Reds_r'),
@@ -1689,6 +1697,7 @@ def main():
         # TODO: attention au dossier déclaré
         # folder = '20250331_thermal_optimisation'
         # folder = '20250414_thermal_optimisation'
+        # folder = '20250814_thermal_optimisation'
         figs_folder = os.path.join(output, folder, 'figs')
         
         # first test 
@@ -1773,7 +1782,7 @@ def main():
                 building_type = 'SFH'
                 # building_type = 'TH'
                 # building_type = 'MFH'
-                # building_type = 'AB'
+                building_type = 'AB'
                 # nocturnal_natural_cooling = True
                 nocturnal_natural_cooling = False
                 
@@ -1865,8 +1874,8 @@ def main():
             
             # calcul de l'optimum économique
             if True:
-                zcl_code = 'H1b'
-                zcl_code = 'H3'
+                # zcl_code = 'H1b'
+                # zcl_code = 'H3'
                 building_type = 'SFH'
                 # building_type = 'TH'
                 # building_type = 'MFH'
@@ -2474,6 +2483,7 @@ def main():
                             
                             # prix par logement
                             Y = Y/Typology(code).households
+                            Y_2D = Y_2D/Typology(code).households
                             
                             if not all(Y==0.) or True:
                                 ax.plot(X,Y,label=label,color=color,marker='o')

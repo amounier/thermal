@@ -143,7 +143,7 @@ def main():
             
         
     #%% TREMI
-    if True:
+    if False:
         tremi = pd.read_csv(os.path.join('data','TREMI','tremi_2020_metropole_opda.csv'), na_values=['_NC_', 'NC', '_NR_'], low_memory=False).dropna(axis=1, how='all')
         tremi = tremi[tremi.treg!=7]
         
@@ -295,7 +295,7 @@ def main():
         
         # caractérisation de l'effet de la période de construction sur la réalisation de travaux 
         # (et en séparant par remplacement chauffage et d'isolation)
-        if False:
+        if True:
             tremi['Q102'] = pd.Categorical([dict_tremi_Q102_en.get(e,np.nan) for e in tremi['Q102']], list(dict_tremi_Q102_en.values()))
             tremi_insulation['Q102'] = pd.Categorical([dict_tremi_Q102_en.get(e,np.nan) for e in tremi_insulation['Q102']], list(dict_tremi_Q102_en.values()))
             for nba in range(1,13):
@@ -332,7 +332,7 @@ def main():
             plt.show()
         
         # caractérisation des motivations de travaux ou non
-        if False:
+        if True:
             pd.options.mode.chained_assignment = None  # default='warn'
             
             # pourcentage de non renovation (application des pondérations)
@@ -502,7 +502,7 @@ def main():
             
         
         # Caractérisation des gestes de rénovations
-        if False:
+        if True:
             tremi_insulation = pickle.load(open(os.path.join(tremi_reno_path,tremi_reno_file), 'rb'))
             pd.options.mode.chained_assignment = None  # default='warn'
             
@@ -665,7 +665,7 @@ def main():
                         plt.show()
                     
                 # statistiques pour les actiosn de remplacement d'équipements 
-                if False:
+                if True:
                     # actions_replacement = [l for l in actions if 'replacement' in l]
                     
                     # remplacement de chauffage
@@ -901,7 +901,7 @@ def main():
                 # plt.show()
                 
             
-            if False:
+            if True:
                 actions = list(dict_tremi_Q1_en.values())
                 reverse_actions_dict = {v:k for k,v in dict_tremi_Q1_en.items()}
                 
@@ -1023,6 +1023,35 @@ def main():
                 plt.show()
                 
         # TODO : passer des volumes_CEE en nombre de systèms (estimés)
+        
+    #%% Évolution des prix des CEE
+    if True:
+        resirf = pd.read_csv('data/CEE/cee_value.csv')
+        resirf['Year'] = pd.to_datetime(resirf.Year,format='%Y')
+        
+        data = pd.read_csv('data/CEE/Indices mensuels C2E Market.csv')
+        data['AVERAGE de Prix (€/MWhc)'] = [float(e.replace(',','.')) for e in data['AVERAGE de Prix (€/MWhc)']]
+        data['Année-Mois'] = pd.to_datetime(data['Année-Mois'],format='%Y-%m')
+        data = data[(data.Produit=='CL')&(data.Maturite=='SPOT')]
+        data = data.set_index('Année-Mois')
+        data = data[['AVERAGE de Prix (€/MWhc)']]
+        data_year = data.groupby(pd.Grouper(freq='YS')).mean()
+        
+        # prendre les données du site de emmy 
+        # https://www.emmy.fr/public/donnees-mensuelles?selectedYearCee=2025&precarite=false&selectedYearCotation=2025#graphic-cotation
+        year = 2025
+        emmy = pd.read_html('https://www.emmy.fr/public/donnees-mensuelles?selectedYearCee={}&precarite=false&selectedYearCotation={}#graphic-cotation'.format(year,year))[0]
+        print(emmy.set_index('Unnamed: 0').iloc[0].dropna().apply(int).mean())
+        
+        # fig,ax = plt.subplots(dpi=300,figsize=(5,5))
+        # ax.plot(resirf.Year,resirf['Unnamed: 1'],label='Res-IRF')
+        # ax.plot(data.index,data['AVERAGE de Prix (€/MWhc)'],label='SPOT (monthly)')
+        # ax.plot(data_year.index,data_year['AVERAGE de Prix (€/MWhc)'],label='SPOT (yearly)')
+        # ax.legend()
+        # ax.set_ylim(bottom=0.)
+        # ax.set_xlim([pd.to_datetime(e,format='%Y') for e in [2016,2025]])
+        # plt.show()
+        
         
     tac = time.time()
     print('Done in {:.2f}s.'.format(tac-tic))

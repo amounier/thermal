@@ -242,7 +242,7 @@ def main():
             plt.show()
             
         # profil journalier de tmepérature 
-        if False:
+        if True:
             data['hour'] = data.time.dt.hour
             
             data_jja = data.copy()
@@ -272,7 +272,7 @@ def main():
             plt.show()
         
         # profil journalier de température de consigne
-        if False:
+        if True:
             a_ch = hour_heating_avg.values.mean()/(19-hour_djf_avg.values.mean())
             hour_djf_avg['T_int_ch'] = hour_heating_avg.values/a_ch + hour_djf_avg.values
             
