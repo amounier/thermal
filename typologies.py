@@ -163,12 +163,12 @@ class Typology():
         self.ventilation = ventilation_translator_dict.get(params.get('{}_ventilation'.format(level)))
         self.ventilation_efficiency = self.get_ventilation_efficiency()
         
-        
         ventilation_night_over_list = ['Individual HRV','Collective HRV']
         if self.ventilation in ventilation_night_over_list:
             self.ventilation_night_over = True
         else:
             self.ventilation_night_over = False
+        self.tolerance_nocturnal_ventilation = 1 #°C
         
         # caractéristiques du toit
         self.roof_color = params.get('{}_roof_color'.format(level))
@@ -297,6 +297,14 @@ class Typology():
         self.w3_orientation = dict_angle_orientation.get((dict_orientation_angle.get(self.w2_orientation)+90)%360)
 
     # TODO : créer une fonction qui update toutes les variables (protégées ?)
+    def update_ventilation(self):
+        self.ventilation_efficiency = self.get_ventilation_efficiency()
+        
+        ventilation_night_over_list = ['Individual HRV','Collective HRV']
+        if self.ventilation in ventilation_night_over_list:
+            self.ventilation_night_over = True
+        else:
+            self.ventilation_night_over = False
     
     def get_floor_ground_distance(self,nb_discretize=50):
         X,Y = np.linspace(0, self.w0_length, nb_discretize), np.linspace(0, self.w1_length, nb_discretize)
@@ -732,7 +740,7 @@ def main():
         plt.savefig(os.path.join(figs_folder,'{}.png'.format('{}_TABULA_Umur_tabula_only'.format(building_type))),bbox_inches='tight')
                 
     #%% Statistiques TABULA
-    if True:
+    if False:
 
         building_type ='AB'
         formated_dict_data = ['Category','Variable','Unit'] + ['{}.{:02d}'.format(building_type,i) for i in range(1,11)]#,'standard','advanced']]
@@ -744,18 +752,32 @@ def main():
                 code = 'FR.N.{}.{:02d}.Gen'.format(building_type,i)
                 typo = Typology(code,level)
                 
-                dict_data = [['Building','Households surface','\\SI{}{\\square\\meter}',typo.surface],
-                             ['Building','Households levels','-',typo.levels],
-                             ['Building','Basement','boolean',typo.basement],
-                             ['Building','Converted attic','boolean',typo.converted_attic],
-                             ['Building','\\# semi-detached','-',typo.nb_non_detached],
-                             ['Building','Building orientation','-',typo.w0_orientation],
-                             ['Building','Windows surface','\\SI{}{\\square\\meter}',typo.w0_windows_surface+typo.w1_windows_surface+typo.w2_windows_surface+typo.w3_windows_surface],
-                             ['Insulation','Wall insulation thickness','\\SI{}{\\centi\\meter}',typo.w0_insulation_thickness*100],
-                             ['Insulation','Floor insulation thickness','\\SI{}{\\centi\\meter}',typo.floor_insulation_thickness*100],
-                             ['Insulation','Windows U-value','\\SI{}{\\watt\\per\\square\\meter\\kelvin}',typo.windows_U],
-                             ['Insulation','Roof U-value','\\SI{}{\\watt\\per\\square\\meter\\kelvin}',typo.ceiling_U],
-                             ['Energy needs','Heating needs','\\SI{}{\\kilo\\watthour\\per\\square\\meter\\year}',typo.tabula_heating_needs]
+                # dict_data = [['Building','Households surface','\\SI{}{\\square\\meter}',typo.surface],
+                #              ['Building','Households levels','-',typo.levels],
+                #              ['Building','Basement','boolean',typo.basement],
+                #              ['Building','Converted attic','boolean',typo.converted_attic],
+                #              ['Building','\\# semi-detached','-',typo.nb_non_detached],
+                #              ['Building','Building orientation','-',typo.w0_orientation],
+                #              ['Building','Windows surface','\\SI{}{\\square\\meter}',typo.w0_windows_surface+typo.w1_windows_surface+typo.w2_windows_surface+typo.w3_windows_surface],
+                #              ['Insulation','Wall insulation thickness','\\SI{}{\\centi\\meter}',typo.w0_insulation_thickness*100],
+                #              ['Insulation','Floor insulation thickness','\\SI{}{\\centi\\meter}',typo.floor_insulation_thickness*100],
+                #              ['Insulation','Windows U-value','\\SI{}{\\watt\\per\\square\\meter\\kelvin}',typo.windows_U],
+                #              ['Insulation','Roof U-value','\\SI{}{\\watt\\per\\square\\meter\\kelvin}',typo.ceiling_U],
+                #              ['Energy needs','Heating needs','\\SI{}{\\kilo\\watthour\\per\\square\\meter\\year}',typo.tabula_heating_needs]
+                #              ]
+                
+                dict_data = [['Bâtiment','Surface','\\SI{}{\\square\\meter}',typo.surface],
+                             ['Bâtiment',"Nombre d'étages",'-',typo.levels],
+                             ['Bâtiment','Cave','boolean',typo.basement],
+                             ['Bâtiment','Combles aménagées','boolean',typo.converted_attic],
+                             ['Bâtiment','Nombres murs mitoyens','-',typo.nb_non_detached],
+                             ['Bâtiment','Orientation','-',typo.w0_orientation],
+                             ['Bâtiment','Surface de vitrages','\\SI{}{\\square\\meter}',typo.w0_windows_surface+typo.w1_windows_surface+typo.w2_windows_surface+typo.w3_windows_surface],
+                             ['Isolation',"Épaisseur d'isolant des murs",'\\SI{}{\\centi\\meter}',typo.w0_insulation_thickness*100],
+                             ['Isolation',"Épaisseur d'isolant du sol",'\\SI{}{\\centi\\meter}',typo.floor_insulation_thickness*100],
+                             ['Isolation','Valeur-U des fenêtres','\\SI{}{\\watt\\per\\square\\meter\\kelvin}',typo.windows_U],
+                             ['Isolation','Valeur-U du plancher haut','\\SI{}{\\watt\\per\\square\\meter\\kelvin}',typo.ceiling_U],
+                             ["Besoins d'énergie",'Besoins de chauffage','\\SI{}{\\kilo\\watthour\\per\\square\\meter\\year}',typo.tabula_heating_needs]
                              ]
                 
                 if i == 1 and level =='initial':
