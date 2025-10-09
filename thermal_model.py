@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+ #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
 Created on Thu Oct  3 11:28:45 2024
@@ -142,15 +142,16 @@ def get_P_vmeca(Ti,Te,Tch_cons,Tfr_cons,typology):
     return P_vmeca
 
 
-def get_P_vnat(Ti,Te,Tfr_cons,typology,behaviour):
+def get_P_vnat(Ti,Te,Tfr_cons,Tch_cons,typology,behaviour):
     # comportements de ventilation manuelles par ouverture des fenêtres
     
     P_vnat = 0
     
     # Fracastoro 2022 (10.1016/S0378-7788(02)00099-3)
     if behaviour.nocturnal_ventilation:
-        tolerance_cooler = 1#°C
-        if Ti > Tfr_cons-tolerance_cooler and Ti > Te:
+        # tolerance_cooler = typology.tolerance_nocturnal_ventilation
+        # if Ti > Tfr_cons-tolerance_cooler and Ti > Te:
+        if Ti > Tch_cons and Ti > Te:
             windows_surface = typology.w0_windows_surface + typology.w1_windows_surface + typology.w2_windows_surface + typology.w3_windows_surface
             half_windows_surface = windows_surface/2
             half_windows_height = typology.windows_height/2
@@ -622,7 +623,8 @@ def compute_external_Phi(typology, weather_data, wall):
     diffuse_sun_radiation = weather_data['diffuse_sun_radiation_{}'.format(orientation)].values
     
     solar_env_mask = get_environment_masking(typology,weather_data,wall)
-    Phi_se = (direct_sun_radiation*solar_env_mask + diffuse_sun_radiation) * surface * alpha
+    solar_diffuse_mask = get_diffuse_environment_masking()
+    Phi_se = (direct_sun_radiation*solar_env_mask + diffuse_sun_radiation*solar_diffuse_mask) * surface * alpha
     return Phi_se
 
 
@@ -642,7 +644,9 @@ def get_solar_transmission_factor(typology,weather_data,wall):
     
     sun_angle = np.abs(weather_data.sun_azimuth.values - wall_angle)
     sun_alt = np.asarray([max(e,0) for e in weather_data.sun_altitude.values])
-    sun_angle = sun_angle + sun_alt
+    # sun_angle = sun_angle + sun_alt
+    # correction de la trigo
+    sun_angle = np.rad2deg(np.arccos(np.cos(np.deg2rad(sun_angle))*np.cos(np.deg2rad(sun_alt))))
     sun_angle = np.where(sun_alt==0, 90,sun_angle)
     
     solar_factor = np.maximum(np.cos(np.deg2rad(sun_angle)),0)
@@ -711,6 +715,12 @@ def get_environment_masking(typology,weather_data,wall,minimal_altitude=10):
     return env_mask
 
 
+def get_diffuse_environment_masking(minimal_altitude=10):
+    #  masquage de l'environnement
+    f = ((90-minimal_altitude)/90)**2
+    return f
+
+
 def compute_internal_Phi(typology, weather_data, wall):
     #  à préciser
     # coefficient d'absorption du flux solaire
@@ -718,6 +728,7 @@ def compute_internal_Phi(typology, weather_data, wall):
     solar_factor = get_solar_transmission_factor(typology,weather_data,wall)
     
     solar_env_mask = get_environment_masking(typology,weather_data,wall)
+    solar_diffuse_env_mask = get_diffuse_environment_masking()
     solar_elem_mask, solar_elem_diffuse_mask = get_elements_masking(typology,weather_data,wall)
     
     # orientation de la paroi
@@ -737,8 +748,10 @@ def compute_internal_Phi(typology, weather_data, wall):
     direct_sun_radiation = weather_data['direct_sun_radiation_{}'.format(orientation)].values
     diffuse_sun_radiation = weather_data['diffuse_sun_radiation_{}'.format(orientation)].values
     
-    # solar masks
-    Phi_si = direct_sun_radiation * solar_factor * solar_env_mask * solar_elem_mask * surface + diffuse_sun_radiation * surface * solar_env_mask * solar_elem_diffuse_mask
+    # solar masks 
+    # Phi_si = direct_sun_radiation * solar_factor * solar_env_mask * solar_elem_mask * surface + diffuse_sun_radiation * surface * solar_env_mask * solar_elem_diffuse_mask
+    # modification du masque diffus
+    Phi_si = direct_sun_radiation * solar_factor * solar_env_mask * solar_elem_mask * surface + diffuse_sun_radiation * surface * solar_diffuse_env_mask * solar_elem_diffuse_mask
     return Phi_si
 
 
@@ -1379,7 +1392,7 @@ def run_thermal_model(typology, behaviour, weather_data, progressbar=False, pmax
         P_cooler = get_P_cooler(Ti, Ti_max=Ts_cooler, Pmax=P_max_cooler, method='linear_tolerance', pmax_warning=pmax_warning)
         
         P_vmeca = get_P_vmeca(Ti,Te,Ts_heater,Ts_cooler,typology)
-        P_vnat = get_P_vnat(Ti,Te,Ts_cooler,typology,behaviour)
+        P_vnat = get_P_vnat(Ti,Te,Ts_cooler,Ts_heater,typology,behaviour)
         
         heating_needs[i-1] = P_heater
         cooling_needs[i-1] = -P_cooler
@@ -2821,8 +2834,8 @@ def main():
         # Comparaison entre typologies (consommations et U-values)
         if True:
             
-            for building_type in ['SFH','TH','MFH','AB']:
-            # for building_type in ['TH']:
+            # for building_type in ['SFH','TH','MFH','AB']:
+            for building_type in ['SFH']:
             
                 heating_needs_TABULA = {}
                 Uph_TABULA = {}
@@ -2858,7 +2871,7 @@ def main():
                         # conventionnel.heating_rules = {i:[e*nocturnal_ratio if h in nocturnal_hours else e for h,e in enumerate(conventionnel.heating_rules.get(i))] for i in range(1,8)}
                         
                         # graphe des températures de consigne 
-                        if True:
+                        if False:
                             if building_type == 'SFH' and i == 1 and level == 'initial':
                                 conventionnel.plot_rules(figs_folder=figs_folder)
                         
@@ -2872,6 +2885,7 @@ def main():
                         if tmp_checkfile not in os.listdir():
                             simulation = run_thermal_model(typo, conventionnel, weather_data, pmax_warning=False)
                             simulation = aggregate_resolution(simulation, resolution='h')
+                            # compute_U_values(typo)
                             
                             heating_cooling_modelling = aggregate_resolution(simulation[['heating_needs','cooling_needs']], resolution='YE',agg_method='sum')
                             heating_cooling_modelling = heating_cooling_modelling/1000
@@ -2939,7 +2953,7 @@ def main():
                 plt.show()
 
                 # graphe pour les valeurs U
-                if True:
+                if False:
                     element_GENMOD_dict = {'Umur':Umur_GENMOD,
                                            'Uph':Uph_GENMOD,
                                            'Upb':Upb_GENMOD,
@@ -2955,7 +2969,7 @@ def main():
                     
                     
                     for element in ['Umur', 'Uph', 'Upb', 'Uw']:
-                    # for element in []:
+                    # for element in ['Umur','Upb']:
                         fig,ax = plt.subplots(figsize=(10,5),dpi=300)
                         for i in range(1,11):
                             code = 'FR.N.{}.{:02d}.Gen'.format(building_type,i)
