@@ -14,6 +14,10 @@ import cartopy.crs as ccrs
 import cartopy.feature as cfeature
 import numpy as np
 import random as rd
+import matplotlib.colors as colors
+from scipy.ndimage import zoom
+import pandas as pd
+from datetime import date
 
 
 def plot_timeserie(data,figsize=(5,5),dpi=300,labels=None,figs_folder=None,
@@ -120,13 +124,99 @@ def plot_pie_chart(random_seed=1):
     plt.show()
 
 
+def custom_xycmap(corner_colors=('#de4fa6','#2a1a8a','#dedce8','#4fadd0'), n=(3,3)):
+    """
+    from : https://github.com/rbjansen/xycmap
+    """
+    xn, yn = n
+    if xn < 2 or yn < 2:
+        raise ValueError("Expected n >= 2 categories.")
+    
+    if corner_colors[0].startswith('#'):
+        color_array = np.array(
+            [[list(int(corner_colors[0].lstrip('#')[i:i+2], 16) for i in (0, 2, 4)),
+              list(int(corner_colors[1].lstrip('#')[i:i+2], 16) for i in (0, 2, 4)),],
+             [list(int(corner_colors[2].lstrip('#')[i:i+2], 16) for i in (0, 2, 4)),
+              list(int(corner_colors[3].lstrip('#')[i:i+2], 16) for i in (0, 2, 4)),],],)
+        
+    else:
+        color_array = np.array(
+            [[list(colors.to_rgba(corner_colors[0])),
+              list(colors.to_rgba(corner_colors[1])),],
+             [list(colors.to_rgba(corner_colors[2])),
+              list(colors.to_rgba(corner_colors[3])),],],)
+    
+    zoom_factor_x = xn / 2  # Divide by the original two categories.
+    zoom_factor_y = yn / 2
+    zcolors = zoom(color_array, (zoom_factor_y, zoom_factor_x, 1), order=1)
+
+    return zcolors
+
+
+def get_scenarios_color():
+    cmap = custom_xycmap()
+    
+    dict_scenarios = {'ACP_NOF':cmap[0,0]/255,
+                      'ACP_REF':cmap[0,1]/255,
+                      'ACP_SOF':cmap[0,2]/255,
+                      'REF_NOF':cmap[1,0]/255,
+                      'REF_REF':cmap[1,1]/255,
+                      'REF_SOF':cmap[1,2]/255,
+                      'ACM_NOF':cmap[2,0]/255,
+                      'ACM_REF':cmap[2,1]/255,
+                      'ACM_SOF':cmap[2,2]/255}
+    return dict_scenarios
+
 #%% ===========================================================================
 # script principal
 # =============================================================================
 def main():
     tic = time.time()
     
-    blank_national_map()
+    # Défintion de la date du jour
+    today = pd.Timestamp(date.today()).strftime('%Y%m%d')
+    
+    # Défintion des dossiers de sortie 
+    output = 'output'
+    folder = '{}_utils'.format(today)
+    figs_folder = os.path.join(output, folder, 'figs')
+    
+    # Création des dossiers de sortie 
+    if folder not in os.listdir(output):
+        os.mkdir(os.path.join(output,folder))
+    if 'figs' not in os.listdir(os.path.join(output, folder)):
+        os.mkdir(figs_folder)
+        
+    
+    #%% blank map
+    if False:
+        blank_national_map()
+    
+    #%% bivariate cmap
+    if True:
+        cmap = custom_xycmap()
+        
+        fig,ax = plt.subplots(figsize=(3,3),dpi=300)
+        
+        ax.plot([-1,4],[1.5]*2,color='w')
+        ax.plot([-1,4],[0.5]*2,color='w')
+        ax.plot([1.5]*2,[-1,3],color='w')
+        ax.plot([0.5]*2,[-1,3],color='w')
+
+        ax.imshow(cmap)
+        
+        ax.text(-0.65,0,'More AC',va='center',ha='right')
+        ax.text(-0.65,1,'REF',va='center',ha='right',style='italic')
+        ax.text(-0.65,2,'Less AC',va='center',ha='right')
+        ax.text(0,2.8,'Cold CLZ',ha='center',va='bottom')
+        ax.text(1,2.8,'REF',ha='center',va='bottom',style='italic')
+        ax.text(2,2.8,'Hot CLZ',ha='center',va='bottom')
+        
+        ax.set_xticks([])
+        ax.set_yticks([])
+        plt.savefig(os.path.join(figs_folder,'scenarios.png'), bbox_inches='tight')
+        plt.show()
+    
 
     
     tac = time.time()
