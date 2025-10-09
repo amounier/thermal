@@ -20,7 +20,7 @@ from geopy.geocoders import Nominatim
 from geopy.exc import GeocoderUnavailable
 from scipy.spatial.distance import euclidean
 import numpy as np
-import cmocean
+from matplotlib.colors import LinearSegmentedColormap
 
 from utils import blank_national_map
 
@@ -330,7 +330,7 @@ class France:
 def draw_departement_map(dict_dep,figs_folder,cbar_min=0,cbar_max=1.,
                          automatic_cbar_values=False, cbar_label=None, 
                          map_title=None,save=None,cmap=None,figax=None,
-                         hide_cbar=False,alpha=None):
+                         hide_cbar=False,alpha=None,hatches=None):
     
     if figax is not None:
         fig,ax = figax
@@ -356,8 +356,17 @@ def draw_departement_map(dict_dep,figs_folder,cbar_min=0,cbar_max=1.,
     plotter['color'] = (plotter.vals-cbar_min)/(cbar_max-cbar_min)
     plotter['color'] = plotter['color'].apply(cmap)
     
-    plotter.plot(color=plotter.color, ax=ax, transform=ccrs.PlateCarree(),alpha=alpha)
-    plotter.boundary.plot(ax=ax, transform=ccrs.PlateCarree(), color='k',lw=0.5)
+    if hatches is not None:
+        plotter_hatches = plotter[plotter.departements.isin(hatches)]
+        plotter_nohatches = plotter[~plotter.departements.isin(hatches)]
+        
+        plotter_hatches.plot(color=plotter_hatches.color, ax=ax, transform=ccrs.PlateCarree(),alpha=alpha,hatch='//',ec='w',lw=0.2)
+        plotter_nohatches.plot(color=plotter_nohatches.color, ax=ax, transform=ccrs.PlateCarree(),alpha=alpha)
+        plotter.boundary.plot(ax=ax, transform=ccrs.PlateCarree(), color='k',lw=0.5)
+    else:
+        plotter.plot(color=plotter.color, ax=ax, transform=ccrs.PlateCarree(),alpha=alpha)
+        plotter.boundary.plot(ax=ax, transform=ccrs.PlateCarree(), color='k',lw=0.5)
+    
     
     if not all(plotter.color==(0.0, 0.0, 0.0, 0.0)) and not hide_cbar:
         cbar_ax = fig.add_axes([0, 0, 0.1, 0.1])
@@ -380,7 +389,7 @@ def draw_climat_map(dict_dep,figs_folder,cbar_min=0,cbar_max=1.,
                     automatic_cbar_values=False, cbar_label=None, no_cbar=False,
                     map_title=None,save=None, cmap=None,zcl_label=False,alpha=None,
                     add_city_points=None, add_legend=True,lw=None,figax=None,
-                    border_color='k'):
+                    border_color='k',point_color=None):
     
     if figax is not None:
         fig,ax = figax
@@ -389,6 +398,8 @@ def draw_climat_map(dict_dep,figs_folder,cbar_min=0,cbar_max=1.,
     
     if cmap is None:
         cmap = matplotlib.colormaps.get_cmap('viridis')
+    elif type(cmap) == np.ndarray:
+        cmap = LinearSegmentedColormap.from_list('name', cmap, N=len(cmap))
     
     plotter = pd.DataFrame().from_dict({'climats':dict_dep.keys(),'vals':dict_dep.values()})
     plotter['geometry'] = [d.geometry for d in plotter.climats]
@@ -418,15 +429,23 @@ def draw_climat_map(dict_dep,figs_folder,cbar_min=0,cbar_max=1.,
     if add_city_points is not None:
         if len(add_city_points) == len(dict_dep.keys()):
             for i,city in enumerate(add_city_points):
-                if len(add_city_points)>1:
+                if point_color is None:
                     color = None
+                    mec = 'k'
+                    ms = 6
+                elif point_color == 'same':
+                    color = plotter['color'].iloc[i]
+                    mec = 'w'
+                    ms = 8
                 else:
                     color = cmap(0.5)
+                    mec = None
+                    ms = 6
                 city = City(city)
                 zcl = list(dict_dep.keys())[i]
                 ax.plot(city.coordinates[0],city.coordinates[1], 
-                        transform=ccrs.PlateCarree(), color=color,ls='',
-                        marker='o',label='{} - {}'.format(city.name,zcl.code),mec='k',zorder=5)
+                        transform=ccrs.PlateCarree(), color=color,ls='',ms=ms,
+                        marker='o',label='{} - {}'.format(city.name,zcl.code),mec=mec,zorder=5)
         else:
             for i,city in enumerate(add_city_points):
                 if len(add_city_points)>1:
@@ -502,7 +521,7 @@ def main():
     
     # zone climatique 8
     if True:
-        zcl = Climat('H3')
+        # zcl = Climat('H3')
         # print(zcl.code)
         # print(zcl.codint)
         
@@ -515,10 +534,21 @@ def main():
             if k.code == 'H3':
                 zcl_dict[k] = 0.9
         
+        # draw_climat_map(zcl_dict,zcl_label=False, 
+        #                 figs_folder=figs_folder, save='zcl',cmap=matplotlib.colormaps.get_cmap('coolwarm'),
+        #                 no_cbar=True,alpha=0.5,
+        #                 add_city_points=[Climat(c).center_prefecture for c in france.climats],lw=0.7)
+        
+        cmap = plt.get_cmap('viridis')
+        zcl_dict = {Climat(e):None for e in france.climats}
+        for idx,(k,v) in enumerate(zcl_dict.items()):
+            zcl_dict[k] = idx/len(zcl_dict.keys())
+        
         draw_climat_map(zcl_dict,zcl_label=False, 
-                        figs_folder=figs_folder, save='zcl',cmap=matplotlib.colormaps.get_cmap('coolwarm'),
-                        no_cbar=True,alpha=0.5,
+                        figs_folder=figs_folder, save='zcl_colored',cmap=cmap,
+                        no_cbar=True,alpha=0.9,point_color='same',
                         add_city_points=[Climat(c).center_prefecture for c in france.climats],lw=0.7)
+        
         
         # [print(d) for d in zcl.departements]
         
@@ -544,6 +574,10 @@ def main():
     
     # Pour Pille: zcl winter + departements
     if False:
+        from utils import custom_xycmap
+        
+        cmap = custom_xycmap()[1]
+        
         france = France()
         
         fig,ax = draw_departement_map({dep:None for dep in france.departements}, 
@@ -551,14 +585,17 @@ def main():
         
         climats_winter = [Climat_winter(e) for e in france.climats_winter]
         fig,ax = draw_climat_map({c:i/2 for i,c in enumerate(climats_winter)},zcl_label=False, 
-                                 figs_folder=figs_folder, save=None,no_cbar=True,cmap=cmocean.cm.thermal,
-                                 add_legend=False,lw=0., figax=(fig,ax),alpha=0.4)
+                                 figs_folder=figs_folder, save=None,no_cbar=True,cmap=cmap/255,
+                                 add_legend=False,lw=0., figax=(fig,ax),alpha=0.7)
         
+
         
         leg_handles = []
         for i,zcl in enumerate(climats_winter):
             lon, lat = climats_winter[0].geometry.centroid.x, climats_winter[0].geometry.centroid.y
-            color = cmocean.cm.thermal(i/2)
+            color = cmap[i]
+            color = [e/255 for e in color]
+            # color = cmocean.cm.thermal(i/2)
             patch = mpatches.Patch(color=color, label=zcl.code)
             leg_handles.append(patch)
             # ax.plot([lon],[lat], 
