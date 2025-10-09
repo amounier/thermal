@@ -20,12 +20,18 @@ from scipy import stats
 from scipy import signal
 import matplotlib
 import dask
+import xarray as xr
+from shapely.geometry import mapping
+import pyproj
+from scipy.optimize import curve_fit
+from sklearn.metrics import r2_score
+from statsmodels.stats.weightstats import DescrStatsW
 
 rd.seed(0)
 
-from bdnb_opener import get_bdnb, plot_dpe_distribution, neighbourhood_map
-from administrative import France, Departement, draw_departement_map
-
+from bdnb_opener import get_bdnb, plot_dpe_distribution, neighbourhood_map, download_bdnb
+from administrative import France, Departement, draw_departement_map, get_coordinates
+from meteorology import get_meteo_data
 
 def compute_dpe_representativity(dep_code,external_disk,output_folder):
     dep_stats_name = 'dep{}_representativity.csv'.format(dep_code)
@@ -311,6 +317,242 @@ def main():
 
     external_disk_connection = 'MPBE' in os.listdir('/media/amounier/')
     
+    
+    #%% Statistiques Climatisation dans la base DPE
+    if False:
+        if True and external_disk_connection:
+            departements = France().departements
+            
+            res = {'dep':[], 
+                   'dpe_number_sfh':[], 'dpe_ac_sfh':[],'bdnb_number_sfh':[],
+                   'dpe_number_mfh':[], 'dpe_ac_mfh':[],'bdnb_number_mfh':[],
+                   'bdnb_number_bat_mfh':[],'bdnb_number_bat_sfh':[]}
+            
+            save_name = '.dpe_ac_bdnb.pickle'
+            # save_name = '.dpe_bdnb.pickle'
+            
+            if save_name in os.listdir():
+                res = pickle.load(open(save_name, 'rb'))
+            
+            for dep in tqdm.tqdm(departements):
+                if dep.code in res['dep']:
+                    continue
+                
+                # download_bdnb(dep=dep.code,external_disk=True)
+                _, _, bgc = get_bdnb(dep=dep.code,external_disk=external_disk_connection)
+                
+                bgc = bgc[['batiment_groupe_id','dpe_mix_arrete_identifiant_dpe','dpe_mix_arrete_type_generateur_climatisation','ffo_bat_nb_log','ffo_bat_annee_construction','dpe_mix_arrete_type_generateur_chauffage']]
+                bgc = bgc[(bgc.ffo_bat_annee_construction>=2022)]
+                bgc = bgc.compute()
+                
+                bgc_sfh = bgc[bgc.ffo_bat_nb_log==1]
+                bgc_mfh = bgc[bgc.ffo_bat_nb_log>1]
+                
+                # chiffres en nombre de logements et non nombre de bâtiments
+                nb_log_bdnb_mfh = bgc_mfh.ffo_bat_nb_log.sum()
+                nb_log_dpe_mfh = bgc_mfh[~bgc_mfh.dpe_mix_arrete_identifiant_dpe.isnull()].ffo_bat_nb_log.sum()
+                nb_log_dpe_ac_mfh = bgc_mfh[(~bgc_mfh.dpe_mix_arrete_identifiant_dpe.isnull())&((~bgc_mfh.dpe_mix_arrete_type_generateur_climatisation.isnull())|(bgc_mfh.dpe_mix_arrete_type_generateur_chauffage=='pac air/air'))].ffo_bat_nb_log.sum()
+                
+                nb_log_bdnb_sfh = bgc_sfh.ffo_bat_nb_log.sum()
+                nb_log_dpe_sfh = bgc_sfh[~bgc_sfh.dpe_mix_arrete_identifiant_dpe.isnull()].ffo_bat_nb_log.sum()
+                nb_log_dpe_ac_sfh = bgc_sfh[(~bgc_sfh.dpe_mix_arrete_identifiant_dpe.isnull())&((~bgc_sfh.dpe_mix_arrete_type_generateur_climatisation.isnull())|(bgc_sfh.dpe_mix_arrete_type_generateur_chauffage=='pac air/air'))].ffo_bat_nb_log.sum()
+                
+                res['dep'].append(dep.code)
+                res['dpe_number_sfh'].append(nb_log_dpe_sfh)
+                res['dpe_ac_sfh'].append(nb_log_dpe_ac_sfh)
+                res['bdnb_number_sfh'].append(nb_log_bdnb_sfh)
+                res['dpe_number_mfh'].append(nb_log_dpe_mfh)
+                res['dpe_ac_mfh'].append(nb_log_dpe_ac_mfh)
+                res['bdnb_number_mfh'].append(nb_log_bdnb_mfh)
+                res['bdnb_number_bat_mfh'].append(len(bgc_mfh))
+                res['bdnb_number_bat_sfh'].append(nb_log_bdnb_sfh)
+                
+                pickle.dump(res, open(save_name, "wb"))
+                
+            res = pd.DataFrame().from_dict(res)
+            res['dpe_ac_rate_sfh'] = res.dpe_ac_sfh/res.dpe_number_sfh*100
+            res['dpe_bdnb_rate_sfh'] = res.dpe_number_sfh/res.bdnb_number_sfh*100
+            res['dpe_ac_rate_mfh'] = res.dpe_ac_mfh/res.dpe_number_mfh*100
+            res['dpe_bdnb_rate_mfh'] = res.dpe_number_mfh/res.bdnb_number_mfh*100
+            
+            res.to_csv('dpe_ac_bdnb.csv',index=False)
+            # res = pd.read_csv('dpe_ac_bdnb.csv')
+            res['dep'] = [Departement(dep) for dep in res.dep]
+            
+            list_dep_sfh = res[res.dpe_bdnb_rate_sfh<=20].dep.to_list()
+            list_dep_mfh = res[res.dpe_bdnb_rate_mfh<=20].dep.to_list()
+            
+            print((res.dpe_ac_sfh.sum()+res.dpe_ac_mfh.sum())/(res.dpe_number_sfh.sum()+res.dpe_number_mfh.sum())*100)
+            # print(res.dpe_ac_mfh.sum()/res.dpe_number_mfh.sum()*100)
+            
+            # taux d'équipement et CDD
+            if False:
+                res['city'] = [e.prefecture for e in res.dep]
+                res['city_coordinates'] = [get_coordinates(city) for city in res['city']]
+                 
+                cdd = None
+                models_dict = {0:{'rcp85':'Adjust_France_CNRM-CERFACS-CNRM-CM5_rcp85_r1i1p1_CNRM-ALADIN63_v2_MF-ADAMONT-SAFRAN-1980-2011_day_20060101-21001231.nc',
+                                  'label':'CNRM-CM5 - ALADIN63',},
+                                   
+                               1:{'rcp85':'Adjust_France_CNRM-CERFACS-CNRM-CM5_rcp85_r1i1p1_MOHC-HadREM3-GA7-05_v2_MF-ADAMONT-SAFRAN-1980-2011_day_20060101-21001230.nc',
+                                  'label':'CNRM-CM5 - HadREM3-GA7'},
+                                   
+                               2:{'rcp85':'Adjust_France_ICHEC-EC-EARTH_rcp85_r12i1p1_KNMI-RACMO22E_v1_MF-ADAMONT-SAFRAN-1980-2011_day_20060101-21001231.nc',
+                                  'label':'EC-EARTH - RACMO22E'},
+                                   
+                               3:{'rcp85':'Adjust_France_ICHEC-EC-EARTH_rcp85_r12i1p1_MOHC-HadREM3-GA7-05_v1_MF-ADAMONT-SAFRAN-1980-2011_day_20060101-21001231.nc',
+                                  'label':'EC-EARTH - HadREM3-GA7'},
+                                   
+                               4:{'rcp85':'Adjust_France_MOHC-HadGEM2-ES_rcp85_r1i1p1_MOHC-HadREM3-GA7-05_v1_MF-ADAMONT-SAFRAN-1980-2011_day_20060101-20991219.nc',
+                                  'label':'HadGEM2-ES - HadREM3-GA7'},
+                               }
+                
+                for mod in range(5):
+                    temp = xr.open_dataset(os.path.join('data','SAFRAN','yearly','cdd26'+models_dict.get(mod).get('rcp85').replace('_day_','_YEAR_'))).temperature
+                    if cdd is None:
+                        cdd = temp
+                    else:
+                        cdd += temp
+                cdd = cdd/5
+                cdd = cdd.sel(time=slice(pd.to_datetime('2006-01-01'),pd.to_datetime('2026-01-01'))).mean('time')
+                
+                res['cdd26'] = [float(cdd.sel(lon=lon,lat=lat,method='nearest')) for lon,lat in res['city_coordinates']]
+                
+                # cdd18_list = []
+                # for city in tqdm.tqdm(res.city):
+                #     tem = get_meteo_data(city,[2004,2024],['temperature_2m'])
+                #     tem = tem.groupby(pd.Grouper(freq='d')).mean()
+                #     tem = tem-18
+                #     tem[tem<0] = 0
+                #     tem = tem.groupby(pd.Grouper(freq='YS')).sum()
+                #     tem = tem.mean().iloc[0]
+                #     cdd18_list.append(tem)
+                # res['cdd18'] = cdd18_list
+                
+                temp = xr.open_dataset(os.path.join('/media/amounier/MPBE/heavy_data/Explore2','tasAdjust_France_meanModels_MF-ADAMONT-SAFRAN-1980-2011_day_1950-2100.nc')).tasAdjust
+                temp = temp.sel(time=slice(pd.to_datetime('2006-01-01'),pd.to_datetime('2026-01-01')))
+                temp = temp-18
+                temp = temp.clip(min=0)
+                temp = temp.groupby("time.year").sum(dim='time')
+                temp = temp.mean(dim='year')
+                
+                geom = pd.Series(France().geometry).apply(mapping)
+                temp = temp.rio.clip(geom, 'epsg:4326', drop=False)
+                transformer = pyproj.Transformer.from_crs("EPSG:4326", "EPSG:27572", always_xy=True)
+                
+                cdd18_list = []
+                for lon,lat in tqdm.tqdm(res.city_coordinates):
+                    coords_transformed = transformer.transform(*(lon,lat))
+                    point_data = temp.sel(x=coords_transformed[0], y=coords_transformed[1], method='nearest')
+                    cdd18_list.append(float(point_data.values))
+                res['cdd18'] = cdd18_list
+                
+                def fct_logistique(X,a,r):
+                    return 100/(1+np.exp(-r*(X-a)))
+                
+                p0 = (600,0.01)
+                
+                res_sfh = res[~res.dep.isin(list_dep_sfh)].dropna()
+                res_sfh = res_sfh.sort_values(by='cdd18')
+                
+                res_mfh = res[~res.dep.isin(list_dep_mfh)].dropna()
+                res_mfh = res_mfh.sort_values(by='cdd18')
+                
+                popt_sfh , _ = curve_fit(fct_logistique, res_sfh.cdd18, res_sfh.dpe_ac_rate_sfh, p0=p0)
+                print('sfh', popt_sfh)
+                fit_sfh = fct_logistique(res_sfh.cdd18, *popt_sfh)
+                r2_value_sfh = r2_score(res_sfh.dpe_ac_rate_sfh,fit_sfh)
+                
+                popt_mfh , _ = curve_fit(fct_logistique, res_mfh.cdd18, res_mfh.dpe_ac_rate_mfh, p0=p0)
+                print('mfh', popt_mfh)
+                fit_mfh = fct_logistique(res_mfh.cdd18, *popt_mfh)
+                r2_value_mfh = r2_score(res_mfh.dpe_ac_rate_mfh,fit_mfh)
+                
+                color = plt.get_cmap('viridis')
+                
+                fig,ax = plt.subplots(dpi=300, figsize=(5,5))
+                sns.scatterplot(x=res_sfh.cdd18,y=res_sfh.dpe_ac_rate_sfh,label='SFH',ax=ax,color=color(0.25),zorder=10)
+                ax.plot(np.linspace(0,res_sfh.cdd18.max(),200), fct_logistique(np.linspace(0,res_sfh.cdd18.max(),200), *popt_sfh), label='fit (R$^2$={:.2f})'.format(r2_value_sfh),color=color(0.25),zorder=5)
+                sns.scatterplot(x=res_mfh.cdd18,y=res_mfh.dpe_ac_rate_mfh,label='MFH',ax=ax,color=color(0.75))
+                ax.plot(np.linspace(0,res_mfh.cdd18.max(),200), fct_logistique(np.linspace(0,res_mfh.cdd18.max(),200), *popt_mfh), label='fit (R$^2$={:.2f})'.format(r2_value_mfh),color=color(0.75))
+                ax.legend()
+                ax.set_ylabel('AC equipment rate (%)')
+                ax.set_xlabel('Long-terme CDD18 (°C.days)')
+                plt.savefig(os.path.join(figs_folder,'ac_rate_new_buildings.png'), bbox_inches='tight')
+                plt.show()
+                
+                # fig,ax = plt.subplots(dpi=300, figsize=(5,5))
+                # sns.scatterplot(x=res[~res.dep.isin(list_dep_sfh)].cdd26,y=res[~res.dep.isin(list_dep_sfh)].dpe_ac_rate_sfh,label='SFH',ax=ax)
+                # sns.scatterplot(x=res[~res.dep.isin(list_dep_mfh)].cdd26,y=res[~res.dep.isin(list_dep_mfh)].dpe_ac_rate_mfh,label='MFH',ax=ax)
+                # ax.legend()
+                # plt.show()
+                
+                temp_futur = xr.open_dataset(os.path.join('/media/amounier/MPBE/heavy_data/Explore2','tasAdjust_France_meanModels_MF-ADAMONT-SAFRAN-1980-2011_day_1950-2100.nc')).tasAdjust
+                temp_futur = temp_futur.sel(time=slice(pd.to_datetime('2030-01-01'),pd.to_datetime('2050-01-01')))
+                temp_futur = temp_futur-18
+                temp_futur = temp_futur.clip(min=0)
+                temp_futur = temp_futur.groupby("time.year").sum(dim='time')
+                temp_futur = temp_futur.mean(dim='year')
+                
+                temp_futur = temp_futur.rio.clip(geom, 'epsg:4326', drop=False)
+                
+                gridded_population = xr.open_dataset(os.path.join('data','INSEE','pop_carreaux_met.nc')).population
+                gridded_population_resample = gridded_population.interp(lon=temp_futur.lon,lat=temp_futur.lat)
+                
+                
+                ponderator = (gridded_population_resample/gridded_population_resample.sum())
+                
+                
+                df = pd.DataFrame().from_dict({'cdd':temp_futur.values.flatten(),'pop':ponderator.values.flatten()}).dropna()
+                
+                wdf = DescrStatsW(df.cdd, weights=df['pop']) 
+                
+                decile_cdd = [wdf.quantile(e-0.05).values[0] for e in np.arange(0.1,1.1,0.1)]
+                decile_ac_sfh = fct_logistique(np.asarray(decile_cdd), *popt_sfh)
+                decile_ac_mfh = fct_logistique(np.asarray(decile_cdd), *popt_mfh)
+                
+                print('sfh',decile_ac_sfh, decile_ac_sfh.mean())
+                print('mfh',decile_ac_mfh, decile_ac_mfh.mean())
+                
+                # nb_bins = 15
+                
+                # fig,ax = plt.subplots(figsize=(5,5),dpi=300)
+                # sns.histplot(data=df, x="cdd",weights='pop',ax=ax,bins=nb_bins,
+                #              stat='density',label='Population ponderated histogram',
+                #              ec='w',color='tab:grey')
+                # # ax.set_yscale('log')
+                # plt.show()
+                pass
+    
+            # cartes
+            if False:
+                dict_ac_rate_sfh = res[['dep','dpe_ac_rate_sfh']].set_index('dep').to_dict().get('dpe_ac_rate_sfh')
+                dict_dpe_bdnb_rate_sfh = res[['dep','dpe_bdnb_rate_sfh']].set_index('dep').to_dict().get('dpe_bdnb_rate_sfh')
+                dict_ac_rate_mfh = res[['dep','dpe_ac_rate_mfh']].set_index('dep').to_dict().get('dpe_ac_rate_mfh')
+                
+                draw_departement_map(dict_ac_rate_sfh, figs_folder,
+                                     map_title='Single-family houses',
+                                     cbar_label='AC equipment rate (%)',
+                                     automatic_cbar_values=False,
+                                     cbar_min=0,cbar_max=100.,
+                                     save='carte_AC_SFH_dpe-BDNB',
+                                     hatches=list_dep_sfh)
+                
+                # draw_departement_map(dict_dpe_bdnb_rate_sfh, figs_folder,
+                #                      map_title='Maisons',
+                #                      cbar_label='Représentativité (%)',
+                #                      automatic_cbar_values=True,
+                #                      # cbar_min=0,cbar_max=100.,
+                #                      save='carte_representativity_SFH_dpe-BDNB')
+                
+                draw_departement_map(dict_ac_rate_mfh, figs_folder,
+                                     map_title='Multi-family houses',
+                                     cbar_label='AC equipment rate (%)',
+                                     automatic_cbar_values=False,
+                                     cbar_min=0,cbar_max=100.,
+                                     save='carte_AC_MFH_dpe-BDNB',
+                                     hatches=list_dep_mfh)
+                
     #%% Statistiques sur les systèmes de chauffage de la base DPE
     if False:
         
@@ -782,6 +1024,7 @@ def main():
         #               figsize=10)
         # plt.show()
         
+        pass
         
         
     #%% Statistiques DPE par typologies 
@@ -802,7 +1045,7 @@ def main():
             if True:
                 # TODO : representativity à recalculer
                 
-                if 'representativity2' not in os.listdir(os.path.join('data','BDNB')) and external_disk_connection:
+                if 'representativity2.csv' not in os.listdir(os.path.join('data','BDNB')) and external_disk_connection:
                     for dep in tqdm.tqdm(France().departements):
                         compute_dpe_representativity2(dep.code,
                                                       external_disk=external_disk_connection,
@@ -848,7 +1091,7 @@ def main():
                     matrix_typo_repartition_logements_bgc = matrix_typo_repartition_logements_bgc/matrix_typo_repartition_logements_bgc.sum().sum()*100
                     
                     # vérification/ comparaison avec TABULA
-                    matrix_typo_repartition_logements_bgc[:,-1:] = np.nan
+                    # matrix_typo_repartition_logements_bgc[:,-1:] = np.nan
                     matrix_typo_repartition_logements_bgc = matrix_typo_repartition_logements_bgc/np.nan_to_num(matrix_typo_repartition_logements_bgc).sum()*100
                     
                     
@@ -864,7 +1107,7 @@ def main():
                     # matrix_typo_repartition_pouget = matrix_typo_repartition_pouget/np.nan_to_num(matrix_typo_repartition_pouget).sum()*100
                     
                     ratio_SFH_TH_pouget = matrix_typo_repartition_pouget[0]/(matrix_typo_repartition_pouget[0]+matrix_typo_repartition_pouget[1])
-                    print(np.nanmean(ratio_SFH_TH_pouget))
+                    print(ratio_SFH_TH_pouget, np.nanmean(ratio_SFH_TH_pouget)*100, np.nanstd(ratio_SFH_TH_pouget)*100)
                     
                     matrix_typo_repartition_tabula = pd.read_csv(os.path.join('data','TABULA','tabula_typologies_stats.csv'))
                     matrix_typo_repartition_tabula = matrix_typo_repartition_tabula.set_index('construction year class')
@@ -872,7 +1115,7 @@ def main():
                     matrix_typo_repartition_tabula = matrix_typo_repartition_tabula/np.nan_to_num(matrix_typo_repartition_tabula).sum()*100
                     
                     ratio_SFH_TH_tabula = matrix_typo_repartition_tabula[0]/(matrix_typo_repartition_tabula[0]+matrix_typo_repartition_tabula[1])
-                    print(ratio_SFH_TH_tabula, np.nanmean(ratio_SFH_TH_tabula))
+                    print(ratio_SFH_TH_tabula, np.nanmean(ratio_SFH_TH_tabula)*100, np.nanstd(ratio_SFH_TH_tabula)*100)
                     
                     try:
                         matrix_typo_repartition_logements,_ = pickle.load(open('.bdnb_dpe_matrix_typo_rep.pickle', 'rb'))
