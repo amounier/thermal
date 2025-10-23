@@ -13,6 +13,8 @@ import os
 import matplotlib.pyplot as plt
 import tqdm
 import numpy as np
+from scipy import signal
+from scipy import stats
 import matplotlib
 
 from bdnb_opener import get_bdnb, neighbourhood_map
@@ -110,11 +112,9 @@ class Typology():
         
         # je considère les RDC LNC comme des caves
         if self.type in ['SFH'] and not self.rdc:
-            # self.levels = self.levels - 0.5
             self.basement = True
         
         if self.type in ['TH'] and not self.rdc:
-            # self.levels = self.levels + 1 
             self.basement = True
             
         # caractérisation de la mitoyenneté
@@ -295,6 +295,7 @@ class Typology():
         self.w1_orientation = dict_angle_orientation.get((dict_orientation_angle.get(self.w0_orientation)+90)%360)
         self.w2_orientation = dict_angle_orientation.get((dict_orientation_angle.get(self.w1_orientation)+90)%360)
         self.w3_orientation = dict_angle_orientation.get((dict_orientation_angle.get(self.w2_orientation)+90)%360)
+        
 
     # TODO : créer une fonction qui update toutes les variables (protégées ?)
     def update_ventilation(self):
@@ -305,6 +306,37 @@ class Typology():
             self.ventilation_night_over = True
         else:
             self.ventilation_night_over = False
+            
+    def update_surface(self):
+        self.ground_surface = self.surface/self.levels
+        self.roof_surface = self.ground_surface * self.roof_ratio
+        self.w0_length = np.sqrt(self.ground_surface/self.form_factor)
+        self.w1_length = self.w0_length*self.form_factor
+        self.perimeter = 2*(self.w0_length + self.w1_length)
+        self.w0_surface = self.w0_length*self.height*self.levels - self.w0_windows_surface
+        self.w1_surface = self.w1_length*self.height*self.levels - self.w1_windows_surface
+        self.w2_surface = self.w0_length*self.height*self.levels - self.w2_windows_surface
+        self.w3_surface = self.w1_length*self.height*self.levels - self.w3_windows_surface
+        self.ground_section = self.perimeter * self.ground_depth
+        
+    def update_levels(self):
+        self.update_surface()
+        
+    def update_basement(self):
+        self.floor_ground_depth = 0.3
+        if self.basement:
+            self.floor_ground_depth += 3
+        
+        self.ground_depth = self.floor_ground_depth + self.floor_ground_distance 
+        self.ground_section = self.perimeter * self.ground_depth
+        self.ground_volume = self.ground_surface * self.ground_depth
+        
+    def update_windows_surface(self):
+        self.w0_surface = self.w0_length*self.height*self.levels - self.w0_windows_surface
+        self.w1_surface = self.w1_length*self.height*self.levels - self.w1_windows_surface
+        self.w2_surface = self.w0_length*self.height*self.levels - self.w2_windows_surface
+        self.w3_surface = self.w1_length*self.height*self.levels - self.w3_windows_surface
+        
     
     def get_floor_ground_distance(self,nb_discretize=50):
         X,Y = np.linspace(0, self.w0_length, nb_discretize), np.linspace(0, self.w1_length, nb_discretize)
@@ -532,7 +564,8 @@ def main():
         # Carte des stats de type de catégories (SFH,TH,MFH,AB) par départements 
         # TODO à recoder dans statistics_building
         if False:
-            stats = {}
+            pass
+            # stats = {}
             
             # # list_dep_code = ['75','2A']
             # for dep in tqdm.tqdm(France().departements):
@@ -555,6 +588,7 @@ def main():
             #         stats_type[d] = sum([ratio_typo.get(t) for t in typos])
             #     # stats_typo = {e:v.get(k) for e,v in stats.items()}
             #     draw_departement_map(stats_type,figs_folder=figs_folder,save='{}_ratio_dep'.format(th),cbar_label='{} ratio by department'.format(th))
+        
         
         # Carte des stats en multithreading # trop long, saturation en mémoire à comprendre
         # TODO à faire dans statistics_building
@@ -611,7 +645,7 @@ def main():
         
     #%% Tests de la classe Typology
     if False:
-        code = 'FR.N.TH.03.Gen'
+        code = 'FR.N.TH.09.Gen'
         typo = Typology(code)
         print(typo)
         
@@ -792,6 +826,132 @@ def main():
         # printer_data = data.split()
         printer_data = printer_data.replace("True",'\\checkmark').replace('False','')
         print(printer_data)
+        
+        
+    #%% Graphes des distribution des U global pour les typologies
+    if True:
+        typo_list = [['FR.N.{}.{:02d}.Gen'.format(typo_group,n) for typo_group in ['SFH', 'TH', 'MFH', 'AB']] for n in range(1,11)]
+        
+        distribution_typo = pd.read_csv(os.path.join('data','distribution_typologies_zcl8.csv'))
+        distrib = distribution_typo.groupby(['bt','period'])['ratio'].sum()
+        levels = ['initial']
+        # levels = ['initial','standard','advanced']
+        
+        typo_df = None
+        level_weight = {1:{'initial':0.48715},
+                        2:{'initial':0.4},
+                        3:{'initial':0.28},
+                        4:{'initial':0.3},
+                        5:{'initial':1},
+                        6:{'initial':1},
+                        7:{'initial':1},
+                        8:{'initial':0.7},
+                        9:{'initial':1},
+                        10:{'initial':1},}
+        for n in range(1,11):
+            level_weight[n]['standard'] = 1 - level_weight[n]['initial']
+            level_weight[n]['advanced'] = 1 - level_weight[n]['initial'] - level_weight[n]['standard']
+        print(level_weight)
+        
+        for bt in ['SFH','TH','MFH','AB']:
+            print(bt)
+            print('np.mean([')
+            for n in range(1,11):
+                typo_code = 'FR.N.{}.{:02d}.Gen'.format(bt,n)
+                
+                
+                # for level in ['initial','standard','advanced']:
+                for level in levels:
+                    typo = Typology(typo_code, level)
+                    
+                    walls_surface = typo.w0_surface 
+                    windows_surface = typo.w0_windows_surface
+                    if not typo.w1_adiabatic:
+                        walls_surface += typo.w1_surface 
+                        windows_surface += typo.w1_windows_surface 
+                    if not typo.w2_adiabatic:
+                        walls_surface += typo.w2_surface 
+                        windows_surface += typo.w2_windows_surface 
+                    if not typo.w3_adiabatic:
+                        walls_surface += typo.w3_surface
+                        windows_surface += typo.w3_windows_surface 
+                    # windows_surface = typo.w0_windows_surface + typo.w1_windows_surface + typo.w2_windows_surface + typo.w3_windows_surface
+                    total_surface = walls_surface + windows_surface + typo.ground_surface + typo.roof_surface
+                    
+                    if bt is not None:
+                        print( windows_surface/(walls_surface+windows_surface),',')
+                        
+                    
+                    u_tot = (windows_surface*typo.tabula_Uw + 
+                             walls_surface*typo.tabula_Umur + 
+                             typo.ground_surface*typo.tabula_Upb + 
+                             typo.roof_surface*typo.tabula_Uph)/total_surface
+                    
+                    # TODO: ponderation
+                    weight = distrib.loc[(bt,n)] * level_weight.get(n).get(level)
+                    
+                    typo_typo_df = pd.DataFrame().from_dict({'typology':[typo_code],'u_tot':[u_tot],'w':[weight]})
+                    
+                    if typo_df is None:
+                        typo_df = typo_typo_df
+                    else:
+                        typo_df = pd.concat([typo_df, typo_typo_df])
+            print('])')
+        
+        ls_dict = ['solid','dotted','dashed','dashdot',]
+        cmap = matplotlib.colormaps.get_cmap('viridis')
+        dict_variables = {'u_tot':{'peak_height':0.15,
+                                   'label':'Global U-value (W.m$^{-2}$.K$^{-1}$)'},
+                          }
+        
+        fig,ax = plt.subplots(figsize=(5,5),dpi=300)
+        
+        for i,ty in enumerate(typo_list):
+            df = typo_df[typo_df.typology.isin(ty)][['u_tot','w']].dropna()
+            values = df.u_tot.values
+            weights = df.w.values
+            
+            # ax.hist(values)
+            
+            kde_estim = stats.gaussian_kde(values, bw_method='scott',weights=weights)
+            
+            X0, X1 = 0, 3 #typo_df['u_tot'].quantile(0.99)
+            X = np.linspace(X0,X1*1.5,300)
+            Y = kde_estim(X)
+            
+            peaks_x,_ = signal.find_peaks(Y, height=dict_variables.get('u_tot').get('peak_height'))
+            
+            ax.plot(X,Y, label='{:02d}'.format(i+1), color=cmap(i/len(typo_list)), ls=ls_dict[i%4])
+            ax.plot(X[peaks_x],Y[peaks_x],marker='v',ls='',color=cmap(i/len(typo_list)))
+        
+        ax.set_title('TABULA initial typologies')
+        ax.legend(title='Construction period',ncol=2)
+        ax.set_xlim([X0,X1])
+        ax.set_ylim(bottom=-0.2,top=5)
+        ax.set_xlabel(dict_variables.get('u_tot').get('label'))
+        ax.set_ylabel('Density')
+        plt.savefig(os.path.join(figs_folder,'distribution_{}_tabula_{}.png'.format('u_tot','-'.join(levels))), bbox_inches='tight')
+        plt.show()
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
         
     tac = time.time()
     print('Done in {:.2f}s.'.format(tac-tic))
