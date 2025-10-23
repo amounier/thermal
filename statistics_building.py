@@ -30,7 +30,7 @@ from statsmodels.stats.weightstats import DescrStatsW
 rd.seed(0)
 
 from bdnb_opener import get_bdnb, plot_dpe_distribution, neighbourhood_map, download_bdnb
-from administrative import France, Departement, draw_departement_map, get_coordinates
+from administrative import France, Departement, draw_departement_map, get_coordinates, Climat
 from meteorology import get_meteo_data
 
 def compute_dpe_representativity(dep_code,external_disk,output_folder):
@@ -1037,10 +1037,12 @@ def main():
             for dep in tqdm.tqdm(france.departements):
                 concatenate_dpe_statistics(dep.code, 
                                            external_disk=external_disk_connection)
-                
+        
+        test = pd.read_parquet(os.path.join('data','BDNB',reformat_bdnb_dpe_file))
+        # TODO: faire le truc pour Gaetan : carnet p205
         
         # représentativité et écarts par rapport à la distribution par étiquette
-        if True:
+        if False:
             # cartes 
             if True:
                 # TODO : representativity à recalculer
@@ -1069,6 +1071,54 @@ def main():
                 
                 # representativity['tabula'] = ['FR.N.{}.{:02d}.Gen'.format(bt,dict_tabula_period.get(p)).replace('SFH','SFH+TH') for bt,p in zip(representativity.ffo_type_batiment,representativity.ffo_periode_construction_tabula)]
                 
+                # heatmap par zcl8
+                if True:
+                    typology_category_list = ['SFH','TH','MFH','AB']
+                    tabula_period_list = list(dict_tabula_period.keys())
+                        
+                    distribution_df = {'zcl':[],'bt':[],'period':[],'ratio':[]}
+                    
+                    for zcl in France().climats:
+                        print(zcl)
+                        matrix_typo_repartition_logements_bgc = np.zeros((len(typology_category_list),len(tabula_period_list)))
+                        departements = [e.code for e in Climat(zcl).departements]
+                        
+                        representativity_zcl = representativity[representativity.dep_code.isin(departements)]
+                        
+                        for i,cpt in enumerate(tabula_period_list):
+                            for j,typ in enumerate(typology_category_list):
+                                data_cpt_typ = representativity_zcl[(representativity_zcl.ffo_type_batiment==typ)&(representativity_zcl.ffo_periode_construction_tabula==cpt)]
+                                count_logements = data_cpt_typ.ffo_bat_nb_log_bgc.sum()
+                                matrix_typo_repartition_logements_bgc[j,i] = count_logements
+                                
+                        matrix_typo_repartition_logements_bgc = matrix_typo_repartition_logements_bgc/representativity.ffo_bat_nb_log_bgc.sum()
+                        
+                        ratio_SFH_TH = np.asarray([0.79523309]*11)
+                        
+                        matrix_typo_repartition_logements_bgc2 = matrix_typo_repartition_logements_bgc.copy()
+                        matrix_typo_repartition_logements_bgc2[0,:] = matrix_typo_repartition_logements_bgc[0,:]*ratio_SFH_TH
+                        matrix_typo_repartition_logements_bgc2[1,:] = matrix_typo_repartition_logements_bgc[0,:]*(1-ratio_SFH_TH)
+                        matrix_typo_repartition_logements_bgc = matrix_typo_repartition_logements_bgc2
+                        
+                        
+                        for bt,elem in zip(typology_category_list, matrix_typo_repartition_logements_bgc):
+                            for p,e in zip(tabula_period_list,elem):
+                                distribution_df['zcl'].append(zcl)
+                                distribution_df['bt'].append(bt)
+                                distribution_df['period'].append(dict_tabula_period.get(p))
+                                distribution_df['ratio'].append(e)
+                                
+                    distribution_df = pd.DataFrame().from_dict(distribution_df)
+                    # distribution_df.to_csv('distribution_typologies_zcl8.csv')
+                    # print(distribution_df, distribution_df.ratio.sum())
+                    
+                    distribution_df['bt'] = pd.Categorical(distribution_df.bt, ordered=True, categories=['SFH', 'TH', 'MFH', 'AB'])
+                    distribution_df = distribution_df.set_index(['zcl','bt','period']).unstack(-1)
+                    print(distribution_df)
+                    
+                    print((distribution_df*100).to_latex(float_format='%.2f'))
+                    
+                    
                 # heatmap
                 if True:
                     typology_category_list = ['SFH','TH','MFH','AB']
@@ -1121,6 +1171,8 @@ def main():
                         matrix_typo_repartition_logements,_ = pickle.load(open('.bdnb_dpe_matrix_typo_rep.pickle', 'rb'))
                         ratio_SFH_TH = matrix_typo_repartition_logements[0,:]/(matrix_typo_repartition_logements[0,:]+matrix_typo_repartition_logements[1,:])
                         ratio_SFH_TH = np.asarray([np.mean([np.nanmean(ratio_SFH_TH_pouget),np.nanmean(ratio_SFH_TH_tabula)])]*len(ratio_SFH_TH))
+                        
+                        print(ratio_SFH_TH)
                         
                         matrix_typo_repartition_logements_bgc2 = matrix_typo_repartition_logements_bgc.copy()
                         matrix_typo_repartition_logements_bgc2[0,:] = matrix_typo_repartition_logements_bgc[0,:]*ratio_SFH_TH
@@ -1302,9 +1354,7 @@ def main():
                 
                 
         # Statistiques des typologies en France
-        # TODO à refaire avec les données complètes
-        # TODO : à reprendre avec les stats de représentativité 
-        if False:
+        if True:
             dpe = pd.read_parquet(os.path.join('data','BDNB',reformat_bdnb_dpe_file))
             
             mask = dpe["dpe_mix_arrete_surface_habitable_logement"] > 1e3
@@ -1361,6 +1411,7 @@ def main():
             typology_category_list = ['SFH','TH','MFH','AB']
             tabula_period_list = list(dict_tabula_period.keys())
             
+            # repartition typologies 
             if False:
                 dpe['group_typology_cat'] = pd.Categorical(dpe['group_typology'], typology_category_list)
                 # dpe['typology_cat'] = pd.Categorical(dpe['typology'], sorted(list(set(typo_list))))
@@ -1424,7 +1475,7 @@ def main():
             if False:
                 for typo_group in ['SFH', 'TH', 'MFH', 'AB']:
                 # typo_group = 'AB' # SFH, TH, MFH, AB
-                    hue_order = ['FR.N.{}.{:02d}.Gen'.format(typo_group,n) for n in range(1,12)]
+                    hue_order = ['FR.N.{}.{:02d}.Gen'.format(typo_group,n) for n in range(1,11)]
                     
                     # sns.histplot(dpe_typology_group, x='dpe_mix_arrete_u_mur_exterieur',
                     #              binwidth=0.05, hue='typology',kde=True,stat='density',
@@ -1436,12 +1487,13 @@ def main():
                     
                     dict_variables = {'dpe_mix_arrete_u_mur_exterieur':{'peak_height':0.15,
                                                                         'label':'Walls U-value (W.m$^{-2}$.K$^{-1}$)'},
-                                      'dpe_mix_arrete_uw':{'peak_height':0.15,
-                                                           'label':'Windows U-value (W.m$^{-2}$.K$^{-1}$)'},
-                                      'dpe_mix_arrete_u_plancher_bas_final_deperditif':{'peak_height':0.15,
-                                                                                        'label':'Floor U-value (W.m$^{-2}$.K$^{-1}$)'},
-                                      'dpe_mix_arrete_u_plancher_haut_deperditif':{'peak_height':0.15,
-                                                                                   'label':'Roof U-value (W.m$^{-2}$.K$^{-1}$)'},}
+                                      # 'dpe_mix_arrete_uw':{'peak_height':0.15,
+                                      #                      'label':'Windows U-value (W.m$^{-2}$.K$^{-1}$)'},
+                                      # 'dpe_mix_arrete_u_plancher_bas_final_deperditif':{'peak_height':0.15,
+                                      #                                                   'label':'Floor U-value (W.m$^{-2}$.K$^{-1}$)'},
+                                      # 'dpe_mix_arrete_u_plancher_haut_deperditif':{'peak_height':0.15,
+                                      #                                              'label':'Roof U-value (W.m$^{-2}$.K$^{-1}$)'},
+                                      }
                     
                     for var in dict_variables.keys():
                         fig,ax = plt.subplots(figsize=(10,5),dpi=300)
@@ -1465,6 +1517,81 @@ def main():
                         ax.set_ylabel('Density')
                         plt.savefig(os.path.join(figs_folder,'bdnb_distribution_{}_{}.png'.format(typo_group,var)), bbox_inches='tight')
                         plt.show()
+                        
+            # statistiques sur les valeurs U par typologie
+            if True:
+                
+                # ajout du U moyen (surfacique)
+                
+                dpe = dpe[['typology',
+                           'dpe_mix_arrete_u_mur_exterieur',
+                           'dpe_mix_arrete_surface_mur_deperditif',
+                           'dpe_mix_arrete_u_plancher_bas_final_deperditif',
+                           'dpe_mix_arrete_surface_plancher_bas_deperditif',
+                           'dpe_mix_arrete_u_plancher_haut_deperditif',
+                           'dpe_mix_arrete_surface_plancher_haut_deperditif',
+                           'dpe_mix_arrete_uw',
+                           'dpe_mix_arrete_surface_vitree_nord',
+                           'dpe_mix_arrete_surface_vitree_sud',
+                           'dpe_mix_arrete_surface_vitree_ouest',
+                           'dpe_mix_arrete_surface_vitree_est',
+                           'dpe_mix_arrete_surface_vitree_horizontal']]
+                
+                dpe['surface_vitrages'] = dpe['dpe_mix_arrete_surface_vitree_nord'] + dpe['dpe_mix_arrete_surface_vitree_sud'] + dpe['dpe_mix_arrete_surface_vitree_ouest'] + dpe['dpe_mix_arrete_surface_vitree_est'] + dpe['dpe_mix_arrete_surface_vitree_horizontal']
+                dpe['surface_tot'] = dpe['surface_vitrages'] + dpe['dpe_mix_arrete_surface_mur_deperditif'] + dpe['dpe_mix_arrete_surface_plancher_bas_deperditif'] + dpe['dpe_mix_arrete_surface_plancher_haut_deperditif']
+                
+                dpe['u_tot'] = (dpe['surface_vitrages']*dpe['dpe_mix_arrete_uw'] + dpe['dpe_mix_arrete_surface_mur_deperditif']*dpe['dpe_mix_arrete_u_mur_exterieur'] + dpe['dpe_mix_arrete_surface_plancher_bas_deperditif']*dpe['dpe_mix_arrete_u_plancher_bas_final_deperditif'] + dpe['dpe_mix_arrete_surface_plancher_haut_deperditif']*dpe['dpe_mix_arrete_u_plancher_haut_deperditif'])/dpe['surface_tot']
+                
+                hue_order = [['FR.N.{}.{:02d}.Gen'.format(typo_group,n) for typo_group in ['SFH', 'TH', 'MFH', 'AB']] for n in range(1,11)]
+                
+                # sns.histplot(dpe_typology_group, x='dpe_mix_arrete_u_mur_exterieur',
+                #              binwidth=0.05, hue='typology',kde=True,stat='density',
+                #              palette='viridis',hue_order=hue_order, common_norm=False,
+                #              ec=None,legend=False)
+                
+                ls_dict = ['solid','dotted','dashed','dashdot',]
+                cmap = matplotlib.colormaps.get_cmap('viridis')
+                
+                # dict_variables = {'dpe_mix_arrete_u_mur_exterieur':{'peak_height':0.15,
+                #                                                     'label':'Walls U-value (W.m$^{-2}$.K$^{-1}$)'},
+                #                   'dpe_mix_arrete_uw':{'peak_height':0.15,
+                #                                        'label':'Windows U-value (W.m$^{-2}$.K$^{-1}$)'},
+                #                   'dpe_mix_arrete_u_plancher_bas_final_deperditif':{'peak_height':0.15,
+                #                                                                     'label':'Floor U-value (W.m$^{-2}$.K$^{-1}$)'},
+                #                   'dpe_mix_arrete_u_plancher_haut_deperditif':{'peak_height':0.15,
+                #                                                                'label':'Roof U-value (W.m$^{-2}$.K$^{-1}$)'},
+                #                   }
+                
+                dict_variables = {'u_tot':{'peak_height':0.15,
+                                           'label':'Global U-value (W.m$^{-2}$.K$^{-1}$)'},
+                                  }
+                
+                for var in dict_variables.keys():
+                    fig,ax = plt.subplots(figsize=(5,5),dpi=300)
+                    
+                    for i,ty in enumerate(hue_order):
+                        values = dpe[dpe.typology.isin(ty)][var].dropna().values
+                        
+                        # ax.hist(values)
+                        
+                        kde_estim = stats.gaussian_kde(values, bw_method='scott')
+                        
+                        X0, X1 = 0,3 #round(dpe[var].quantile(0.99))
+                        X = np.linspace(X0,X1*1.5,300)
+                        Y = kde_estim(X)
+                        
+                        peaks_x,_ = signal.find_peaks(Y, height=dict_variables.get(var).get('peak_height'))
+                        
+                        ax.plot(X,Y, label='{:02d}'.format(i+1), color=cmap(i/len(hue_order)), ls=ls_dict[i%4])
+                        ax.plot(X[peaks_x],Y[peaks_x],marker='v',ls='',color=cmap(i/len(hue_order)))
+                    
+                    ax.set_title('EPC data')
+                    ax.legend(title='Construction period',ncol=2)
+                    ax.set_xlim([X0,X1])
+                    ax.set_xlabel(dict_variables.get(var).get('label'))
+                    ax.set_ylabel('Density')
+                    plt.savefig(os.path.join(figs_folder,'distribution_{}_bdnb.png'.format(var)), bbox_inches='tight')
+                    plt.show()
             
             # densité cumulée inverse
             if False:
@@ -1501,7 +1628,7 @@ def main():
                 # print(dpe[dpe.group_typology==typo_group].dpe_mix_arrete_epaisseur_isolation_mur_exterieur_estim.value_counts())
             
             # statistiques sur les systèmes de chauffage par typologie
-            if True:
+            if False:
                 # for typo_group in ['SFH', 'TH', 'MFH', 'AB']:
                 for typo_group in ['SFH']:
                 # typo_group = 'AB' # SFH, TH, MFH, AB
