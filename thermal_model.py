@@ -2678,7 +2678,7 @@ def main():
                 plt.show()
     
     #%% Comparaisons des typologies TABULA
-    if True:
+    if False:
         # Génération du fichier météo
         zcl_code = 'H1a'
         # zcl_code = 'H3'
@@ -2834,8 +2834,8 @@ def main():
         # Comparaison entre typologies (consommations et U-values)
         if True:
             
-            # for building_type in ['SFH','TH','MFH','AB']:
-            for building_type in ['SFH']:
+            for building_type in ['SFH','TH','MFH','AB']:
+            # for building_type in ['SFH']:
             
                 heating_needs_TABULA = {}
                 Uph_TABULA = {}
@@ -2860,13 +2860,13 @@ def main():
                         # "Facteur de réduction de température nocturne pour des locaux partiellement chauffés"
                         nocturnal_hours = list(range(7)) + [22,23]
                         if typo.w0_insulation_thickness == 0.:
-                            nocturnal_ratio = 0.8
-                            if typo.type in ['MFH','AB']:
-                                nocturnal_ratio += 0.05
+                            nocturnal_ratio = 1
+                            # if typo.type in ['MFH','AB']:
+                            #     nocturnal_ratio += 0.05
                         else:
-                            nocturnal_ratio = 0.9
-                            if typo.type in ['MFH','AB']:
-                                nocturnal_ratio += 0.05
+                            nocturnal_ratio = 1
+                            # if typo.type in ['MFH','AB']:
+                            #     nocturnal_ratio += 0.05
                         conventionnel.heating_rules = {i:[20]*24 for i in range(1,8)}
                         # conventionnel.heating_rules = {i:[e*nocturnal_ratio if h in nocturnal_hours else e for h,e in enumerate(conventionnel.heating_rules.get(i))] for i in range(1,8)}
                         
@@ -2953,7 +2953,7 @@ def main():
                 plt.show()
 
                 # graphe pour les valeurs U
-                if False:
+                if True:
                     element_GENMOD_dict = {'Umur':Umur_GENMOD,
                                            'Uph':Uph_GENMOD,
                                            'Upb':Upb_GENMOD,
@@ -3008,6 +3008,308 @@ def main():
                         plt.show()
 
             
+    #%% Analyse de sensibilité H1a SFH.01  
+    if False:
+        zcl_code = 'H1c'
+        city = Climat(zcl_code).center_prefecture
+        # period = [2010,2010]
+        period = [2000,2020]
+        weather_source = 'SAFRAN' # ERA5
+        
+        # Checkpoint weather data
+        if weather_source == 'ERA5':
+            weather_data_checkfile = ".weather_data_{}_{}_{}_".format(city,period[0],period[1]) + today + ".pickle"
+            if weather_data_checkfile not in os.listdir():
+                weather_data = get_historical_weather_data(city,period)
+                weather_data = refine_resolution(weather_data, resolution='600s')
+                pickle.dump(weather_data, open(weather_data_checkfile, "wb"))
+            else:
+                weather_data = pickle.load(open(weather_data_checkfile, 'rb'))
+        elif weather_source == 'SAFRAN':
+            weather_data = get_safran_hourly_weather_data(zcl_code,period)
+            weather_data = refine_resolution(weather_data, resolution='600s')
+            
+        code = 'FR.N.{}.{:02d}.Gen'.format('SFH',5)
+        typo = Typology(code,'initial')
+        
+        
+        conventionnel = Behaviour('conventionnel_th-bce_2020')
+        
+        simulation = run_thermal_model(typo, conventionnel, weather_data, pmax_warning=False)
+        simulation = aggregate_resolution(simulation, resolution='h')
+        # compute_U_values(typo)
+        
+        heating_cooling_modelling = aggregate_resolution(simulation[['heating_needs','cooling_needs']], resolution='YE',agg_method='sum')
+        heating_cooling_modelling = heating_cooling_modelling/1000
+        heating_cooling_modelling = heating_cooling_modelling/typo.surface
+        heating_cooling_modelling.index = heating_cooling_modelling.index.year
+        
+        #TODO: à organiser en tableau (attention aux unités) : effets marginaux 
+        ref_heating = heating_cooling_modelling.heating_needs.mean()
+        ref_cooling = heating_cooling_modelling.cooling_needs.mean()
+        
+        print(ref_heating, ref_cooling)
+        
+        results_dict_heating = {}
+        results_dict_cooling = {}
+        
+        # orientation 
+        results_dict_heating['orientation'] = {}
+        results_dict_cooling['orientation'] = {}
+        for o in tqdm.tqdm(['N','W','E','S'],desc='orientation'):
+            typo = Typology(code,'initial')
+            
+            typo.w0_orientation = o 
+            typo.update_orientation()
+            
+            simulation = run_thermal_model(typo, conventionnel, weather_data, pmax_warning=False)
+            simulation = aggregate_resolution(simulation, resolution='h')
+            # compute_U_values(typo)
+            
+            heating_cooling_modelling = aggregate_resolution(simulation[['heating_needs','cooling_needs']], resolution='YE',agg_method='sum')
+            heating_cooling_modelling = heating_cooling_modelling/1000
+            heating_cooling_modelling = heating_cooling_modelling/typo.surface
+            heating_cooling_modelling.index = heating_cooling_modelling.index.year
+            
+            results_dict_heating['orientation'][o] = heating_cooling_modelling.heating_needs.mean()
+            results_dict_cooling['orientation'][o] = heating_cooling_modelling.cooling_needs.mean()
+            
+        # surface 
+        results_dict_heating['surface'] = {}
+        results_dict_cooling['surface'] = {}
+        for surface_factor in tqdm.tqdm([0.9,1,1.1],desc='surface'):
+            typo = Typology(code,'initial')
+            
+            typo.surface = typo.surface*surface_factor
+            typo.update_surface()
+            
+            simulation = run_thermal_model(typo, conventionnel, weather_data, pmax_warning=False)
+            simulation = aggregate_resolution(simulation, resolution='h')
+            # compute_U_values(typo)
+            
+            heating_cooling_modelling = aggregate_resolution(simulation[['heating_needs','cooling_needs']], resolution='YE',agg_method='sum')
+            heating_cooling_modelling = heating_cooling_modelling/1000
+            heating_cooling_modelling = heating_cooling_modelling/typo.surface
+            heating_cooling_modelling.index = heating_cooling_modelling.index.year
+            
+            results_dict_heating['surface'][typo.surface] = heating_cooling_modelling.heating_needs.mean()
+            results_dict_cooling['surface'][typo.surface] = heating_cooling_modelling.cooling_needs.mean()
+            
+        # nombre de niveaux
+        results_dict_heating['niveaux'] = {}
+        results_dict_cooling['niveaux'] = {}
+        for niv in tqdm.tqdm([1,2],desc='niveaux'):
+            typo = Typology(code,'initial')
+            
+            typo.levels = niv
+            typo.update_levels()
+            
+            simulation = run_thermal_model(typo, conventionnel, weather_data, pmax_warning=False)
+            simulation = aggregate_resolution(simulation, resolution='h')
+            # compute_U_values(typo)
+            
+            heating_cooling_modelling = aggregate_resolution(simulation[['heating_needs','cooling_needs']], resolution='YE',agg_method='sum')
+            heating_cooling_modelling = heating_cooling_modelling/1000
+            heating_cooling_modelling = heating_cooling_modelling/typo.surface
+            heating_cooling_modelling.index = heating_cooling_modelling.index.year
+            
+            results_dict_heating['niveaux'][typo.levels] = heating_cooling_modelling.heating_needs.mean()
+            results_dict_cooling['niveaux'][typo.levels] = heating_cooling_modelling.cooling_needs.mean()
+            
+        # cave
+        results_dict_heating['cave'] = {}
+        results_dict_cooling['cave'] = {}
+        for niv in tqdm.tqdm([False,True],desc='cave'):
+            typo = Typology(code,'initial')
+            
+            typo.basement = niv
+            typo.update_basement()
+            
+            simulation = run_thermal_model(typo, conventionnel, weather_data, pmax_warning=False)
+            simulation = aggregate_resolution(simulation, resolution='h')
+            # compute_U_values(typo)
+            
+            heating_cooling_modelling = aggregate_resolution(simulation[['heating_needs','cooling_needs']], resolution='YE',agg_method='sum')
+            heating_cooling_modelling = heating_cooling_modelling/1000
+            heating_cooling_modelling = heating_cooling_modelling/typo.surface
+            heating_cooling_modelling.index = heating_cooling_modelling.index.year
+            
+            results_dict_heating['cave'][typo.basement] = heating_cooling_modelling.heating_needs.mean()
+            results_dict_cooling['cave'][typo.basement] = heating_cooling_modelling.cooling_needs.mean()
+            
+        
+        # combles
+        results_dict_heating['combles'] = {}
+        results_dict_cooling['combles'] = {}
+        for niv in tqdm.tqdm([False,True],desc='combles'):
+            typo = Typology(code,'initial')
+            
+            typo.converted_attic = niv
+            
+            simulation = run_thermal_model(typo, conventionnel, weather_data, pmax_warning=False)
+            simulation = aggregate_resolution(simulation, resolution='h')
+            # compute_U_values(typo)
+            
+            heating_cooling_modelling = aggregate_resolution(simulation[['heating_needs','cooling_needs']], resolution='YE',agg_method='sum')
+            heating_cooling_modelling = heating_cooling_modelling/1000
+            heating_cooling_modelling = heating_cooling_modelling/typo.surface
+            heating_cooling_modelling.index = heating_cooling_modelling.index.year
+            
+            results_dict_heating['combles'][typo.converted_attic] = heating_cooling_modelling.heating_needs.mean()
+            results_dict_cooling['combles'][typo.converted_attic] = heating_cooling_modelling.cooling_needs.mean()
+            
+        # epaisseur structure
+        results_dict_heating['structure_ep'] = {}
+        results_dict_cooling['structure_ep'] = {}
+        for surface_factor in tqdm.tqdm([0.9,1,1.1],desc='structure_ep'):
+            typo = Typology(code,'initial')
+            
+            typo.w0_structure_thickness = typo.w0_structure_thickness*surface_factor
+            typo.w1_structure_thickness = typo.w1_structure_thickness*surface_factor
+            typo.w2_structure_thickness = typo.w2_structure_thickness*surface_factor
+            typo.w3_structure_thickness = typo.w3_structure_thickness*surface_factor
+            typo.floor_structure_thickness = typo.floor_structure_thickness*surface_factor
+            
+            simulation = run_thermal_model(typo, conventionnel, weather_data, pmax_warning=False)
+            simulation = aggregate_resolution(simulation, resolution='h')
+            # compute_U_values(typo)
+            
+            heating_cooling_modelling = aggregate_resolution(simulation[['heating_needs','cooling_needs']], resolution='YE',agg_method='sum')
+            heating_cooling_modelling = heating_cooling_modelling/1000
+            heating_cooling_modelling = heating_cooling_modelling/typo.surface
+            heating_cooling_modelling.index = heating_cooling_modelling.index.year
+            
+            results_dict_heating['structure_ep'][typo.w0_structure_thickness] = heating_cooling_modelling.heating_needs.mean()
+            results_dict_cooling['structure_ep'][typo.w0_structure_thickness] = heating_cooling_modelling.cooling_needs.mean()
+            
+        
+        # epaisseur isolant murs
+        results_dict_heating['wall_iso'] = {}
+        results_dict_cooling['wall_iso'] = {}
+        for surface_factor in tqdm.tqdm([0.9,1,1.1],desc='wall_iso'):
+            typo = Typology(code,'initial')
+            
+            typo.w0_insulation_thickness = typo.w0_insulation_thickness*surface_factor
+            typo.w1_insulation_thickness = typo.w1_insulation_thickness*surface_factor
+            typo.w2_insulation_thickness = typo.w2_insulation_thickness*surface_factor
+            typo.w3_insulation_thickness = typo.w3_insulation_thickness*surface_factor
+            
+            simulation = run_thermal_model(typo, conventionnel, weather_data, pmax_warning=False)
+            simulation = aggregate_resolution(simulation, resolution='h')
+            # compute_U_values(typo)
+            
+            heating_cooling_modelling = aggregate_resolution(simulation[['heating_needs','cooling_needs']], resolution='YE',agg_method='sum')
+            heating_cooling_modelling = heating_cooling_modelling/1000
+            heating_cooling_modelling = heating_cooling_modelling/typo.surface
+            heating_cooling_modelling.index = heating_cooling_modelling.index.year
+            
+            results_dict_heating['wall_iso'][typo.w0_insulation_thickness] = heating_cooling_modelling.heating_needs.mean()
+            results_dict_cooling['wall_iso'][typo.w0_insulation_thickness] = heating_cooling_modelling.cooling_needs.mean()
+        
+        # epaisseur isolant sols
+        results_dict_heating['floor_iso'] = {}
+        results_dict_cooling['floor_iso'] = {}
+        for surface_factor in tqdm.tqdm([0.9,1,1.1],desc='floor_iso'):
+            typo = Typology(code,'initial')
+            
+            typo.floor_insulation_thickness = typo.floor_insulation_thickness*surface_factor
+            
+            simulation = run_thermal_model(typo, conventionnel, weather_data, pmax_warning=False)
+            simulation = aggregate_resolution(simulation, resolution='h')
+            # compute_U_values(typo)
+            
+            heating_cooling_modelling = aggregate_resolution(simulation[['heating_needs','cooling_needs']], resolution='YE',agg_method='sum')
+            heating_cooling_modelling = heating_cooling_modelling/1000
+            heating_cooling_modelling = heating_cooling_modelling/typo.surface
+            heating_cooling_modelling.index = heating_cooling_modelling.index.year
+            
+            results_dict_heating['floor_iso'][typo.floor_insulation_thickness] = heating_cooling_modelling.heating_needs.mean()
+            results_dict_cooling['floor_iso'][typo.floor_insulation_thickness] = heating_cooling_modelling.cooling_needs.mean()
+        
+        
+        # surface fenêtre
+        results_dict_heating['surface_windows'] = {}
+        results_dict_cooling['surface_windows'] = {}
+        for surface_factor in tqdm.tqdm([0.9,1,1.1],desc='surface_windows'):
+            typo = Typology(code,'initial')
+            
+            typo.w0_windows_surface = typo.w0_windows_surface*surface_factor
+            typo.w1_windows_surface = typo.w1_windows_surface*surface_factor
+            typo.w2_windows_surface = typo.w2_windows_surface*surface_factor
+            typo.w3_windows_surface = typo.w3_windows_surface*surface_factor
+            typo.update_windows_surface()
+            
+            simulation = run_thermal_model(typo, conventionnel, weather_data, pmax_warning=False)
+            simulation = aggregate_resolution(simulation, resolution='h')
+            # compute_U_values(typo)
+            
+            heating_cooling_modelling = aggregate_resolution(simulation[['heating_needs','cooling_needs']], resolution='YE',agg_method='sum')
+            heating_cooling_modelling = heating_cooling_modelling/1000
+            heating_cooling_modelling = heating_cooling_modelling/typo.surface
+            heating_cooling_modelling.index = heating_cooling_modelling.index.year
+            
+            results_dict_heating['surface_windows'][typo.w0_windows_surface] = heating_cooling_modelling.heating_needs.mean()
+            results_dict_cooling['surface_windows'][typo.w0_windows_surface] = heating_cooling_modelling.cooling_needs.mean()
+            
+        #  u windows
+        results_dict_heating['U_windows'] = {}
+        results_dict_cooling['U_windows'] = {}
+        for surface_factor in tqdm.tqdm([0.9,1,1.1],desc='U_windows'):
+            typo = Typology(code,'initial')
+            
+            typo.windows_U = typo.windows_U*surface_factor
+            
+            simulation = run_thermal_model(typo, conventionnel, weather_data, pmax_warning=False)
+            simulation = aggregate_resolution(simulation, resolution='h')
+            # compute_U_values(typo)
+            
+            heating_cooling_modelling = aggregate_resolution(simulation[['heating_needs','cooling_needs']], resolution='YE',agg_method='sum')
+            heating_cooling_modelling = heating_cooling_modelling/1000
+            heating_cooling_modelling = heating_cooling_modelling/typo.surface
+            heating_cooling_modelling.index = heating_cooling_modelling.index.year
+            
+            results_dict_heating['U_windows'][typo.windows_U] = heating_cooling_modelling.heating_needs.mean()
+            results_dict_cooling['U_windows'][typo.windows_U] = heating_cooling_modelling.cooling_needs.mean()
+            
+        #  u ceiling
+        results_dict_heating['U_ceiling'] = {}
+        results_dict_cooling['U_ceiling'] = {}
+        for surface_factor in tqdm.tqdm([0.9,1,1.1],desc='U_ceiling'):
+            typo = Typology(code,'initial')
+            
+            typo.ceiling_U = typo.ceiling_U*surface_factor
+            
+            simulation = run_thermal_model(typo, conventionnel, weather_data, pmax_warning=False)
+            simulation = aggregate_resolution(simulation, resolution='h')
+            # compute_U_values(typo)
+            
+            heating_cooling_modelling = aggregate_resolution(simulation[['heating_needs','cooling_needs']], resolution='YE',agg_method='sum')
+            heating_cooling_modelling = heating_cooling_modelling/1000
+            heating_cooling_modelling = heating_cooling_modelling/typo.surface
+            heating_cooling_modelling.index = heating_cooling_modelling.index.year
+            
+            results_dict_heating['U_ceiling'][typo.ceiling_U] = heating_cooling_modelling.heating_needs.mean()
+            results_dict_cooling['U_ceiling'][typo.ceiling_U] = heating_cooling_modelling.cooling_needs.mean()
+            
+        
+        print()
+        print('heating')
+        print(results_dict_heating)
+        
+        print('cooling')
+        print(results_dict_cooling)
+        
+        for var,dict_var in results_dict_heating.items():
+            print(var)
+            for k,v in dict_var.items():
+                print('{} : {:.1f}%'.format(k, ((v/ref_heating)-1)*100))
+            print()
+            
+        for var,dict_var in results_dict_cooling.items():
+            print(var)
+            for k,v in dict_var.items():
+                print('{} : {:.1f}%'.format(k, ((v/ref_cooling)-1)*100))
+            print()
         
     #%% Résolution de matrice singulière 
     if False:
