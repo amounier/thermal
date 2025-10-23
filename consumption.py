@@ -17,6 +17,7 @@ import multiprocessing
 from sklearn.metrics import r2_score
 import seaborn as sns
 from scipy.optimize import curve_fit
+import matplotlib.patheffects as pe
 
 from administrative import France, Climat
 from typologies import Typology
@@ -1008,7 +1009,7 @@ def main():
     
     
     # affichage des thermosensibilités
-    if False:
+    if True:
         climate_models_list = list(CLIMATE_MODELS_NUMBERS.keys())
         scenarios = None
         color = None
@@ -1021,7 +1022,8 @@ def main():
                 temp['heating_cons'] = temp['heating_cons']*0.5 # TODO transferts de vecteurs à mieux faire !
                 if scenarios is None:
                     scenarios = s.ac_pz_scenario
-                    color = s.scenario_color
+                    # color_sce = s.scenario_color
+                    color_sce = plt.get_cmap('viridis')(0.5)
                 del s
                 if df_consumption is None:
                     df_consumption = temp
@@ -1084,7 +1086,7 @@ def main():
         kc_list_2050_mean = np.mean(kc_list_2050)
         kc_list_2050_std = np.std(kc_list_2050)
         
-        T = np.linspace(-5,35)
+        T = np.linspace(0,35)
         Yh_2020_mean = piecewise_linear_heating(T, th_list_2020_mean, kh_list_2020_mean)
         Yh_2020_upper = piecewise_linear_heating(T, th_list_2020_mean, kh_list_2020_mean+kh_list_2020_std)
         Yh_2020_lower = piecewise_linear_heating(T, th_list_2020_mean, kh_list_2020_mean-kh_list_2020_std)
@@ -1101,15 +1103,26 @@ def main():
         
         fig,ax = plt.subplots(figsize=(5,5),dpi=300)
         
-        ax.plot(T,Yh_2020_mean,color='k',label='2018-2023',zorder=-1)
+        ax.plot(T,Yh_2020_mean,color='k',label='2018-2023',zorder=-1,path_effects=[pe.Stroke(linewidth=2, foreground='w'), pe.Normal()])
         ax.fill_between(T,Yh_2020_upper,Yh_2020_lower,color='k',alpha=0.37,zorder=-1)
-        ax.plot(T,Yh_2050_mean,color=color,label='2045-2050')
-        ax.fill_between(T,Yh_2050_upper,Yh_2050_lower,color=color,alpha=0.37)
+        ax.plot(T,Yh_2050_mean,color=color_sce,label='2045-2050',path_effects=[pe.Stroke(linewidth=2, foreground='w'), pe.Normal()])
+        ax.fill_between(T,Yh_2050_upper,Yh_2050_lower,color=color_sce,alpha=0.37)
         
-        ax.plot(T,Yc_2020_mean,color='k',zorder=-1)
-        ax.fill_between(T,Yc_2020_upper,Yc_2020_lower,color='k',alpha=0.37,zorder=-1)
-        ax.plot(T,Yc_2050_mean,color=color)
-        ax.fill_between(T,Yc_2050_upper,Yc_2050_lower,color=color,alpha=0.37)
+        ax.plot(T,Yc_2020_mean,color='k',zorder=-1,path_effects=[pe.Stroke(linewidth=2, foreground='w'), pe.Normal()])
+        ax.fill_between(T,Yc_2020_upper,Yc_2020_lower,color='k',alpha=0.37,zorder=-1,)
+        ax.plot(T,Yc_2050_mean,color=color_sce,path_effects=[pe.Stroke(linewidth=2, foreground='w'), pe.Normal()])
+        ax.fill_between(T,Yc_2050_upper,Yc_2050_lower,color=color_sce,alpha=0.37)
+        
+        for cm in climate_models_list:
+            for y in [2023,2050]:
+                if y == 2023:
+                    color = 'k'
+                else: 
+                    color = color_sce
+                df = df_consumption_agg_zcl[(df_consumption_agg_zcl.index.get_level_values('index').year.isin(list(range(y-5,y+1))))&(df_consumption_agg_zcl.index.get_level_values('climate_model')==cm)]
+                df.loc[:,'total_cons'] = df.heating_cons + df.cooling_cons
+                sns.scatterplot(data=df,x='temperature',y='total_cons',alpha=0.005,ax=ax,color=color,zorder=-2)
+        ax.set_xlim([T[0],T[-1]])
         
         ax.legend()
         ax.set_ylabel('Daily electricity consumption (Wh)')

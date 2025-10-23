@@ -167,6 +167,16 @@ def get_scenarios_color():
                       'ACM_SOF':cmap[2,2]/255}
     return dict_scenarios
 
+
+def get_zcl_colors():
+    cmap = plt.get_cmap('viridis')
+    
+    zcl_dict = {e:None for e in ['H1a', 'H1b', 'H1c', 'H2a', 'H2b', 'H2c', 'H2d', 'H3']}
+    for idx,(k,v) in enumerate(zcl_dict.items()):
+        zcl_dict[k] = cmap(idx/len(zcl_dict.keys()))
+        
+    return zcl_dict
+
 #%% ===========================================================================
 # script principal
 # =============================================================================

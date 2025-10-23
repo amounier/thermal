@@ -143,7 +143,7 @@ def main():
             
         
     #%% TREMI
-    if False:
+    if True:
         tremi = pd.read_csv(os.path.join('data','TREMI','tremi_2020_metropole_opda.csv'), na_values=['_NC_', 'NC', '_NR_'], low_memory=False).dropna(axis=1, how='all')
         tremi = tremi[tremi.treg!=7]
         
@@ -1025,7 +1025,7 @@ def main():
         # TODO : passer des volumes_CEE en nombre de systèms (estimés)
         
     #%% Évolution des prix des CEE
-    if True:
+    if False:
         resirf = pd.read_csv('data/CEE/cee_value.csv')
         resirf['Year'] = pd.to_datetime(resirf.Year,format='%Y')
         
