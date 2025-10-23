@@ -31,6 +31,366 @@ from behaviour import Behaviour
 from administrative import France, Climat
 
 
+AUXILIARY_CONSUMPTION = 3
+CONVERSION = 2.3
+C_LIGHT = 0.9
+P_LIGHT = 1.4 # W/m2
+HOURS_LIGHT = 1500 # h
+CONSUMPTION_LIGHT = (C_LIGHT * P_LIGHT * HOURS_LIGHT) / 1e3 # kWh/m2.a
+
+def find_certificate(primary_consumption, heating_system, other_consumptions=None):
+    """Returns energy performance certificate from A to G.
+
+    Parameters
+    ----------
+    primary_consumption: float or pd.Series or pd.DataFrame
+        Space heating energy consumption (kWh PE / m2.year)
+    Returns
+    -------
+    float or pd.Series or pd.DataFrame
+        Energy performance certificate.
+    """
+    CERTIFICATE_5USES_BOUNDARIES_ENERGY = {'A': [0, 70],
+                                           'B': [70, 110],
+                                           'C': [110, 180],
+                                           'D': [180, 250],
+                                           'E': [250, 330],
+                                           'F': [330, 420],
+                                           'G': [420, 9999],}
+    
+    CERTIFICATE_5USES_BOUNDARIES_EMISSION = {'A': [0, 6],
+                                             'B': [6, 11],
+                                             'C': [11, 30],
+                                             'D': [30, 50],
+                                             'E': [50, 70],
+                                             'F': [70, 100],
+                                             'G': [100, 1000],}
+    
+    CARBON_CONTENT = {'Electricity-Direct electric': 0.079,
+                      'Electricity-Wood stove': 0.079,
+                      'Electricity-Heat pump air': 0.079,
+                      'Electricity-Heat pump': 0.079,
+                      'Electricity-Heat pump water': 0.079,
+                      'Natural gas-Performance boiler': 0.227,
+                      'Natural gas-Standard boiler': 0.227,
+                      'Natural gas-Collective boiler': 0.227,
+                      'Oil fuel-Performance boiler': 0.324,
+                      'Oil fuel-Standard boiler': 0.324,
+                      'Oil fuel-Collective boiler': 0.324,
+                      'Wood fuel-Performance boiler': 0.03,
+                      'Wood fuel-Standard boiler': 0.03,
+                      'Heating-District heating': 0.03}
+    
+
+    carbon_content = CARBON_CONTENT.get(heating_system)
+    emission = primary_consumption * carbon_content
+    primary_consumption += other_consumptions
+    emission += other_consumptions * carbon_content
+
+    if isinstance(primary_consumption, pd.Series):
+        certificate_energy = pd.Series(dtype=str, index=primary_consumption.index)
+        for key, item in CERTIFICATE_5USES_BOUNDARIES_ENERGY.items():
+            cond = (primary_consumption > item[0]) & (primary_consumption <= item[1])
+            certificate_energy[cond] = key
+
+        certificate_emission = pd.Series(dtype=str, index=primary_consumption.index)
+        for key, item in CERTIFICATE_5USES_BOUNDARIES_EMISSION.items():
+            cond = (emission > item[0]) & (emission <= item[1])
+            certificate_emission[cond] = key
+
+        # maximum between energy and emission
+        temp = pd.concat([certificate_energy, certificate_emission], axis=1, keys=['Energy', 'Emission'])
+        certificate = temp.max(axis=1)
+
+        return certificate
+            
+
+def reindex_mi(df, mi_index, levels=None, axis=0):
+    """Return re-indexed DataFrame based on miindex using only few labels.
+
+    Parameters
+    -----------
+    df: pd.DataFrame, pd.Series
+        data to reindex
+    mi_index: pd.MultiIndex, pd.Index
+        master to index to reindex df
+    levels: list, default df.index.names
+        list of levels to use to reindex df
+    axis: {0, 1}, default 0
+        axis to reindex df
+
+    Returns
+    --------
+    pd.DataFrame, pd.Series
+
+    Example
+    -------
+        reindex_mi(surface_ds, segments, ['Occupancy status', 'Housing type']))
+        reindex_mi(cost_invest_ds, segments, ['Heating energy final', 'Heating energy']))
+    """
+
+    if isinstance(df, (float, int)):
+        return pd.Series(df, index=mi_index)
+
+    if levels is None:
+        if axis == 0:
+            levels = df.index.names
+        else:
+            levels = df.columns.names
+
+    if len(levels) > 1:
+        tuple_index = (mi_index.get_level_values(level).tolist() for level in levels)
+        new_miindex = pd.MultiIndex.from_tuples(list(zip(*tuple_index)))
+        if axis == 0:
+            df = df.reorder_levels(levels)
+        else:
+            df = df.reorder_levels(levels, axis=1)
+    else:
+        new_miindex = mi_index.get_level_values(levels[0])
+    df_reindex = df.reindex(new_miindex, axis=axis)
+    if axis == 0:
+        df_reindex.index = mi_index
+    elif axis == 1:
+        df_reindex.columns = mi_index
+    else:
+        raise AttributeError('Axis can only be 0 or 1')
+
+    return df_reindex
+            
+            
+def conventional_heating_need(u_wall, u_floor, u_roof, u_windows, 
+                              ratio_surface=pd.read_csv(os.path.join('data','Res-IRF','ratio_surface.csv')).set_index('Housing type'),
+                              th_bridging='Medium', vent_types='Ventilation naturelle', infiltration='Medium',
+                              air_rate=None, unobserved=None, climate=None, smooth=False, freq='year',
+                              hourly_profile=None, temp_indoor=None, gain_utilization_factor=False,
+                              zcl_thermal_parameters=None
+                  ):
+    """Seasonal method for space heating need.
+
+
+    We apply a seasonal method according to EN ISO 13790 to estimate annual space heating demand by building type.
+    The detailed calculation can be found in the TABULA project documentation (Loga, 2013).
+    In a nutshell, the energy need for heating is the difference between the heat losses and the heat gain.
+    The total heat losses result from heat transfer by transmission and ventilation during the heating season
+    respectively proportional to the heat transfer coefficient $H_tr$ and $H_ve$.
+
+    To not consider gain_utilization_factor create a difference of 5%. For consistency between results and
+
+    Parameters
+    ----------
+    u_wall: pd.Series
+        Index should include Housing type {'Single-family', 'Multi-family'}.
+    u_floor: pd.Series
+    u_roof: pd.Series
+    u_windows: pd.Series
+    ratio_surface: pd.Series
+    th_bridging: {'Minimal', 'Low', 'Medium', 'High'}, default None
+    vent_types: {'Ventilation naturelle', 'VMC SF auto et VMC double flux', 'VMC SF hydrogérable'}, default None
+    infiltration: {'Minimal', 'Low', 'Medium', 'High'}, default None
+    air_rate: pd.Series, default None
+    unobserved: {'Minimal', 'High'}, default None
+    climate: int, default None
+        Climatic year to use to calculate heating need.
+    smooth: bool, default False
+        Use smooth daily data to calculate heating need.
+    freq
+    hourly_profile: optional, pd.Series
+    temp_indoor: optional, default temp_indoor
+    gain_utilization_factor: bool, default False
+        If False, for simplification we use gain_utilization_factor = 1.
+
+    Returns
+    -------
+    Conventional heating need (kWh/m2.a)
+    """
+
+    temp_ext = 7.1 # °C
+    days_heating_season = 209
+    solar_radiation = 306.4
+    if temp_indoor is None:
+        temp_indoor = 19
+
+
+    surface_components = ratio_surface.copy()
+    surface_components = {k:[v] for k,v in surface_components.items()}
+    surface_components = pd.DataFrame(surface_components)
+
+    df = pd.concat([u_wall, u_floor, u_roof, u_windows], axis=1, keys=['Wall', 'Floor', 'Roof', 'Windows'])
+    surface_components.loc[0,'Floor'] *= 0.5
+    surface_components = reindex_mi(surface_components, df.index)
+
+    coefficient_transmission_transfer = (surface_components * df).sum(axis=1)
+    coefficient_transmission_transfer += surface_components.sum(axis=1) * {'Minimal': 0,'Low': 0.05,'Medium': 0.1,'High': 0.15}[th_bridging]
+
+    if air_rate is None:
+        ventilation_dict = {'natural': 0.4,'Individual MV': 0.3,'Collective MV':0.3,'Individual DCV': 0.2,'Collective DCV':0.2,'Individual HRV':0.2,'Collective HRV':0.2}
+        air_rate = ventilation_dict[vent_types] + {'minimal': 0.05,'low': 0.1,'medium': 0.2,'high': 0.5}[infiltration]
+
+    coefficient_ventilation_transfer = 0.34 * air_rate * 2.5
+    heat_transfer_coefficient = coefficient_ventilation_transfer + coefficient_transmission_transfer
+
+    solar_coefficient = 0.6 * (1 - 0.3) * 0.9 * 0.62 * surface_components.loc[:, 'Windows']
+
+    coefficient = 24 / 1000 * 0.9 * days_heating_season
+    coefficient_climatic = coefficient * (temp_indoor - temp_ext)
+    internal_heat_sources = 24 / 1000 * 4.17 * days_heating_season
+
+    heat_transfer = heat_transfer_coefficient * coefficient_climatic
+    solar_load = solar_coefficient * solar_radiation
+    heat_gains = solar_load + internal_heat_sources
+
+    if gain_utilization_factor is True:
+        time_constant = 45 / (coefficient_transmission_transfer + coefficient_ventilation_transfer)
+        a_h = 0.8 + time_constant / 30
+        heat_balance_ratio = (internal_heat_sources + solar_load) / heat_transfer
+        gain_utilization_factor = (1 - heat_balance_ratio ** a_h) / (1 - heat_balance_ratio ** (a_h + 1))
+    else:
+        gain_utilization_factor = 1
+
+    heat_need = (heat_transfer - heat_gains * gain_utilization_factor) * 0.9
+
+    return heat_need
+
+
+def conventional_heating_final(u_wall, u_floor, u_roof, u_windows, ratio_surface, efficiency,
+                               th_bridging='Medium', vent_types='Ventilation naturelle', infiltration='Medium',
+                               air_rate=None, unobserved=None, climate=None, freq='year', smooth=False,
+                               temp_indoor=None, gain_utilization_factor=False,
+                               efficiency_hour=False, hourly_profile=None, temp_sink=None,
+                               zcl_thermal_parameters=None):
+    """Monthly stead-state space heating final energy delivered.
+
+
+    Heat-pump formula come from Stafell et al., 2012.
+
+    Parameters
+    ----------
+    u_wall: pd.Series
+    u_floor: pd.Series
+    u_roof: pd.Series
+    u_windows: pd.Series
+    ratio_surface: pd.Series
+    efficiency: pd.Series
+    th_bridging: {'Minimal', 'Low', 'Medium', 'High'}
+    vent_types: {'Ventilation naturelle', 'VMC SF auto et VMC double flux', 'VMC SF hydrogérable'}
+    infiltration: {'Minimal', 'Low', 'Medium', 'High'}
+    air_rate: default None
+    unobserved: {'Minimal', 'High'}, default None
+    climate: int, default None
+        Climatic year to use to calculate heating need.
+    freq
+    smooth: bool, default False
+        Use smooth daily data to calculate heating need.
+    temp_indoor
+    gain_utilization_factor: bool, default False
+        If False, for simplification we use gain_utilization_factor = 1.
+    efficiency_hour
+
+    Returns
+    -------
+
+    """
+    heat_need = conventional_heating_need(u_wall, u_floor, u_roof, u_windows, ratio_surface,
+                                          th_bridging=th_bridging, vent_types=vent_types,
+                                          infiltration=infiltration, air_rate=air_rate, unobserved=unobserved,
+                                          climate=climate, freq=freq, smooth=smooth,
+                                          temp_indoor=temp_indoor, gain_utilization_factor=gain_utilization_factor,
+                                          hourly_profile=hourly_profile,zcl_thermal_parameters=zcl_thermal_parameters)
+
+    return heat_need / efficiency
+        
+
+def conventional_dhw_final(building_type, heating_system):
+    """Calculate dhw final energy consumption.
+
+    Parameters
+    ----------
+    index: pd.MultiIndex
+
+    Returns
+    -------
+
+    """
+    DHW_EFFICIENCY = {'Electricity-Direct electric': 0.95,
+                      'Electricity-Wood stove': 0.95,
+                      'Electricity-Heat pump air': 2.5, # previously at 0.95
+                      'Electricity-Heat pump': 2.5,
+                      'Electricity-Heat pump water': 2.5,
+                      'Natural gas-Performance boiler': 0.6,
+                      'Natural gas-Standard boiler': 0.6,
+                      'Natural gas-Collective boiler': 0.6,
+                      'Oil fuel-Performance boiler': 0.6,
+                      'Oil fuel-Standard boiler': 0.6,
+                      'Oil fuel-Collective boiler': 0.6,
+                      'Wood fuel-Performance boiler': 0.6,
+                      'Wood fuel-Standard boiler': 0.6,
+                      'Heating-District heating': 0.6}
+    
+    DHW_NEED = {'SFH':15.3,'TH':15.3,'MFH':19.8,'AB':19.8}
+    
+    efficiency = DHW_EFFICIENCY.get(heating_system)
+    dhw_need = DHW_NEED.get(building_type)
+    return dhw_need / efficiency
+
+
+def final2primary(heat_consumption, energy, conversion=2.3):
+    if energy == 'Electricity':
+        return heat_consumption * conversion
+    else:
+        return heat_consumption
+            
+
+
+def get_EPC(typology, heating_system='Electricity-Direct electric'):
+    ratio_surface_dict = {'SFH':{'Wall':1.42,
+                                 'Floor':0.75,
+                                 'Roof':0.77,
+                                 'Windows':0.17},
+                          'MFH':{'Wall':0.78,
+                                 'Floor':0.28,
+                                 'Roof':0.29,
+                                 'Windows':0.19}}
+    ratio_surface_dict['TH'] = ratio_surface_dict['SFH']
+    ratio_surface_dict['AB'] = ratio_surface_dict['MFH']
+    
+    dict_energy_efficiency = {'Electricity-Direct electric':0.95, 
+                              'Electricity-Heat pump air':2,
+                              'Electricity-Heat pump water':2.5,
+                              'Heating-District heating':0.76,
+                              'Natural gas-Performance boiler':0.76, 
+                              'Oil fuel-Performance boiler':0.76,
+                              'Wood fuel-Performance boiler':0.76,} 
+    
+    u_wall = pd.Series(data=[typology.tabula_Umur])
+    u_floor = pd.Series(data=[typology.tabula_Upb])
+    u_roof = pd.Series(data=[typology.tabula_Uph])
+    u_windows = pd.Series(data=[typology.tabula_Uw])
+    ratio_surface = ratio_surface_dict.get(typology.type)
+    efficiency = dict_energy_efficiency.get(heating_system)
+    vent_types = typology.ventilation
+    infiltration = typology.air_infiltration
+    
+    heating_final = conventional_heating_final(u_wall, u_floor, u_roof, u_windows, ratio_surface, efficiency,
+                                               th_bridging='Medium', vent_types=vent_types,
+                                               infiltration=infiltration, air_rate=None, unobserved=None,
+                                               zcl_thermal_parameters=None,)
+    dhw_final = conventional_dhw_final(typology.type, heating_system)
+    
+    final_cons = heating_final + dhw_final
+    
+    primary_cons = final2primary(final_cons, heating_system.split('-')[0])
+    other_consumptions = (CONSUMPTION_LIGHT + AUXILIARY_CONSUMPTION) * CONVERSION
+    
+    # print(primary_cons)
+    certificate = find_certificate(primary_cons, heating_system, other_consumptions=other_consumptions)
+    
+    return certificate.iloc[0]
+
+
+
+# =============================================================================
+#                 
+# =============================================================================
 def get_complete_save_name(save_name, zcl, behaviour='conventionnel',period=[2020,2024],
                            model='explore2',nmod=0,natnocvent=True):
     
@@ -285,97 +645,6 @@ def get_nb_resprinc_zcl():
     return dict_ratio_res_princ_per_zcl
 
 
-# def compute_use_intensity(energy_price,consumption_standard,zeta=5):
-#     # TODO à corriger et attention aux unités
-#     return (energy_price*consumption_standard)**(-1/zeta)
-    
-    
-# def aggregate_energy_consumption_old(stock,output_path,energy_filter=None,ac_filter=False,
-#                                      behaviour='conventionnel',period=[2020,2024],
-#                                      model='explore2',nmod=0,natnocvent=True):
-#     #TODO: à refaire differemment pour les filtres par energie etc 
-#     # un pandas avec des colonnes par zcl, par énergie etc 
-    
-#     # prix de l'énergie tq Reference Res-IRF
-#     energy_prices = get_energy_prices()
-    
-#     # efficacité des systèmes tq Res-IRF
-#     dict_energy_efficiency = get_energy_efficiency()
-    
-#     # izuba étude confort été 2025
-#     dict_ratio_res_princ_per_zcl = get_nb_resprinc_zcl()
-    
-#     zcl_list = France().climats
-    
-#     national_consumption = None
-#     for idx in tqdm.tqdm(range(len(stock))):
-#         _,_,_,_,_,hs,cs,num,typo,save = stock.iloc[idx].values
-        
-#         if cs == 'No AC':
-#             cs = 'Electricity-No AC'
-            
-#         heating_energy_vector = hs.split('-')[0]
-#         cooling_energy_vector = cs.split('-')[0]
-        
-#         test_temperature = None
-        
-#         for zcl in zcl_list:
-#             complete_save = get_complete_save_name(save, Climat(zcl),behaviour=behaviour,period=period,model=model,nmod=nmod)
-
-#             temp = pickle.load(open(os.path.join(os.path.join(output_path),'{}.pickle'.format(complete_save)), 'rb'))
-#             temp = temp[['cooling_needs','heating_needs','temperature_2m']]
-            
-#             if test_temperature is None:
-#                 test_temperature = temp.copy()[['temperature_2m']].reset_index()
-#                 test_temperature['zcl'] = [zcl]*len(test_temperature)
-#             else:
-#                 test_temp = temp.copy()[['temperature_2m']].reset_index()
-#                 test_temp['zcl'] = [zcl]*len(test_temp)
-#                 test_temperature = pd.concat([test_temperature,test_temp])
-            
-#             if energy_filter is not None:
-#                 if energy_filter != heating_energy_vector:
-#                     temp['heating_needs'] = [0]*len(temp)
-#                 if energy_filter != cooling_energy_vector:
-#                     temp['cooling_needs'] = [0]*len(temp)
-                    
-#             temp = temp/typo.households
-            
-#             # passage des besoins aux consommatiosn standards
-#             temp['heating_consumption_standard'] = temp['heating_needs']*dict_energy_efficiency.get(hs)
-#             temp['cooling_consumption_standard'] = temp['cooling_needs']*dict_energy_efficiency.get(cs)
-            
-#             # passage de conventionnel à réel 
-#             energy_price_heating_vector_dict = energy_prices[heating_energy_vector].to_dict()
-#             energy_price_heating_vector = np.asarray([energy_price_heating_vector_dict.get(y,np.nan) for y in temp.index.year])
-#             heating_use_intensity = compute_use_intensity(energy_price_heating_vector, temp['heating_consumption_standard'])
-#             heating_use_intensity = heating_use_intensity.replace([np.inf, -np.inf], 0)
-#             temp['heating_consumption'] = temp['heating_consumption_standard']*heating_use_intensity
-            
-#             energy_price_cooling_vector_dict = energy_prices[cooling_energy_vector].to_dict()
-#             energy_price_cooling_vector = np.asarray([energy_price_cooling_vector_dict.get(y,np.nan) for y in temp.index.year])
-#             cooling_use_intensity = compute_use_intensity(energy_price_cooling_vector, temp['cooling_consumption_standard'])
-#             cooling_use_intensity = cooling_use_intensity.replace([np.inf, -np.inf], 0)
-#             temp['cooling_consumption'] = temp['cooling_consumption_standard']*cooling_use_intensity
-            
-#             for col in ['heating_needs','heating_consumption_standard','heating_consumption',
-#                         'cooling_needs','cooling_consumption_standard','cooling_consumption']:
-#                 temp[col] = temp[col]*num*dict_ratio_res_princ_per_zcl.get(zcl)
-#             # temp['temperature_2m'] = temp['temperature_2m']*dict_ratio_res_princ_per_zcl.get(zcl)
-            
-#             temp['total_needs'] = temp['heating_needs'] + temp['cooling_needs']
-#             temp['total_consumption_standard'] = temp['heating_consumption_standard'] + temp['cooling_consumption_standard']
-#             temp['total_consumption'] = temp['heating_consumption'] + temp['cooling_consumption']
-            
-#             if national_consumption is None:
-#                 national_consumption = temp
-#             else:
-#                 national_consumption = national_consumption + temp
-    
-#     national_consumption['temperature_2m'] = national_consumption['temperature_2m'] / len(stock) / len(zcl_list)
-#     return national_consumption
-
-
 def compute_consumption(needs,typology,heating,cooling,year,zcl):
     return 
 
@@ -462,9 +731,41 @@ def main():
         os.mkdir(os.path.join(output,folder))
     if 'figs' not in os.listdir(os.path.join(output, folder)):
         os.mkdir(figs_folder)
-        
-    #%% Premier essai sur le stock initial
+    
+    
+    #%% Détermination des étiquettes énergétiques des typologies 
     if True:
+        heating_system_list = ['Electricity-Direct electric', 
+                               'Electricity-Heat pump air',
+                               'Electricity-Heat pump water',
+                               'Heating-District heating',
+                               'Natural gas-Performance boiler', 
+                               'Oil fuel-Performance boiler',
+                               'Wood fuel-Performance boiler']
+        
+        letter2int= {chr(a):i+1 for i,a in enumerate(range(65, 91))}
+        int2letter= {i+1:chr(a) for i,a in enumerate(range(65, 91))}
+        
+        dict_epc_typologies = {}
+        for building_type in ['SFH','TH','MFH','AB']:
+            for i in range(1,11):
+                for level in ['initial']:##,'standard','advanced']:
+                
+                    code = 'FR.N.{}.{:02d}.Gen'.format(building_type,i)
+                    typo = Typology(code,level)
+                    
+                    dict_epc_typologies[typo.code] = []
+                    
+                    for hs in heating_system_list:
+                        epc = letter2int.get(get_EPC(typo,hs))
+                        dict_epc_typologies[typo.code].append(epc)
+        
+        for typ,epc in dict_epc_typologies.items():
+            mean = np.asarray(epc).mean()
+            print(typ, [int2letter.get(int(np.floor(mean))),int2letter.get(int(np.ceil(mean)))])
+                
+    #%% Premier essai sur le stock initial
+    if False:
         stock = pd.read_csv(os.path.join('data','Res-IRF','buildingstock_sdes2018_update_hpdiff_ac_reduced.csv'))
         stock_init = stock.copy()
         mf_stock = stock[stock['Housing type']=='Multi-family']
@@ -662,160 +963,6 @@ def main():
 
         # comparaison avec les besoins de chauffage annuel res_irf
         if False:
-            
-            def reindex_mi(df, mi_index, levels=None, axis=0):
-                """Return re-indexed DataFrame based on miindex using only few labels.
-            
-                Parameters
-                -----------
-                df: pd.DataFrame, pd.Series
-                    data to reindex
-                mi_index: pd.MultiIndex, pd.Index
-                    master to index to reindex df
-                levels: list, default df.index.names
-                    list of levels to use to reindex df
-                axis: {0, 1}, default 0
-                    axis to reindex df
-            
-                Returns
-                --------
-                pd.DataFrame, pd.Series
-            
-                Example
-                -------
-                    reindex_mi(surface_ds, segments, ['Occupancy status', 'Housing type']))
-                    reindex_mi(cost_invest_ds, segments, ['Heating energy final', 'Heating energy']))
-                """
-            
-                if isinstance(df, (float, int)):
-                    return pd.Series(df, index=mi_index)
-            
-                if levels is None:
-                    if axis == 0:
-                        levels = df.index.names
-                    else:
-                        levels = df.columns.names
-            
-                if len(levels) > 1:
-                    tuple_index = (mi_index.get_level_values(level).tolist() for level in levels)
-                    new_miindex = pd.MultiIndex.from_tuples(list(zip(*tuple_index)))
-                    if axis == 0:
-                        df = df.reorder_levels(levels)
-                    else:
-                        df = df.reorder_levels(levels, axis=1)
-                else:
-                    new_miindex = mi_index.get_level_values(levels[0])
-                df_reindex = df.reindex(new_miindex, axis=axis)
-                if axis == 0:
-                    df_reindex.index = mi_index
-                elif axis == 1:
-                    df_reindex.columns = mi_index
-                else:
-                    raise AttributeError('Axis can only be 0 or 1')
-            
-                return df_reindex
-            
-            def conventional_heating_need(u_wall, u_floor, u_roof, u_windows, 
-                                          ratio_surface=pd.read_csv(os.path.join('data','Res-IRF','ratio_surface.csv')).set_index('Housing type'),
-                                          th_bridging='Medium', vent_types='Ventilation naturelle', infiltration='Medium',
-                                          air_rate=None, unobserved=None, climate=None, smooth=False, freq='year',
-                                          hourly_profile=None, temp_indoor=None, gain_utilization_factor=False,
-                                          zcl_thermal_parameters=None
-                              ):
-                """Seasonal method for space heating need.
-            
-            
-                We apply a seasonal method according to EN ISO 13790 to estimate annual space heating demand by building type.
-                The detailed calculation can be found in the TABULA project documentation (Loga, 2013).
-                In a nutshell, the energy need for heating is the difference between the heat losses and the heat gain.
-                The total heat losses result from heat transfer by transmission and ventilation during the heating season
-                respectively proportional to the heat transfer coefficient $H_tr$ and $H_ve$.
-            
-                To not consider gain_utilization_factor create a difference of 5%. For consistency between results and
-            
-                Parameters
-                ----------
-                u_wall: pd.Series
-                    Index should include Housing type {'Single-family', 'Multi-family'}.
-                u_floor: pd.Series
-                u_roof: pd.Series
-                u_windows: pd.Series
-                ratio_surface: pd.Series
-                th_bridging: {'Minimal', 'Low', 'Medium', 'High'}, default None
-                vent_types: {'Ventilation naturelle', 'VMC SF auto et VMC double flux', 'VMC SF hydrogérable'}, default None
-                infiltration: {'Minimal', 'Low', 'Medium', 'High'}, default None
-                air_rate: pd.Series, default None
-                unobserved: {'Minimal', 'High'}, default None
-                climate: int, default None
-                    Climatic year to use to calculate heating need.
-                smooth: bool, default False
-                    Use smooth daily data to calculate heating need.
-                freq
-                hourly_profile: optional, pd.Series
-                temp_indoor: optional, default temp_indoor
-                gain_utilization_factor: bool, default False
-                    If False, for simplification we use gain_utilization_factor = 1.
-            
-                Returns
-                -------
-                Conventional heating need (kWh/m2.a)
-                """
-            
-                temp_ext = 7.1 # °C
-                days_heating_season = 209
-                solar_radiation = 306.4
-                if temp_indoor is None:
-                    temp_indoor = 19
-        
-                if unobserved == 'Minimal':
-                    th_bridging = 'Minimal'
-                    vent_types = 'VMC SF hydrogérable'
-                    infiltration = 'Minimal'
-                elif unobserved == 'High':
-                    th_bridging = 'High'
-                    vent_types = 'Ventilation naturelle'
-                    infiltration = 'High'
-            
-                surface_components = ratio_surface.copy()
-            
-                df = pd.concat([u_wall, u_floor, u_roof, u_windows], axis=1, keys=['Wall', 'Floor', 'Roof', 'Windows'])
-                surface_components.loc[:, 'Floor'] *= 0.5
-                surface_components = reindex_mi(surface_components, df.index)
-            
-                coefficient_transmission_transfer = (surface_components * df).sum(axis=1)
-                coefficient_transmission_transfer += surface_components.sum(axis=1) * {'Minimal': 0,'Low': 0.05,'Medium': 0.1,'High': 0.15}[th_bridging]
-            
-                if air_rate is None:
-                    air_rate = {'Ventilation naturelle': 0.4,'VMC SF auto et VMC double flux': 0.3,'VMC SF hydrogérable': 0.2}[vent_types] + {'Minimal': 0.05,'Low': 0.1,'Medium': 0.2,'High': 0.5}[infiltration]
-            
-                coefficient_ventilation_transfer = 0.34 * air_rate * 2.5
-                heat_transfer_coefficient = coefficient_ventilation_transfer + coefficient_transmission_transfer
-            
-                solar_coefficient = 0.6 * (1 - 0.3) * 0.9 * 0.62 * surface_components.loc[:, 'Windows']
-            
-                coefficient = 24 / 1000 * 0.9 * days_heating_season
-                coefficient_climatic = coefficient * (temp_indoor - temp_ext)
-                internal_heat_sources = 24 / 1000 * 4.17 * days_heating_season
-            
-                if freq == 'year':
-            
-                    heat_transfer = heat_transfer_coefficient * coefficient_climatic
-                    solar_load = solar_coefficient * solar_radiation
-                    heat_gains = solar_load + internal_heat_sources
-            
-                    if gain_utilization_factor is True:
-                        time_constant = 45 / (coefficient_transmission_transfer + coefficient_ventilation_transfer)
-                        a_h = 0.8 + time_constant / 30
-                        heat_balance_ratio = (internal_heat_sources + solar_load) / heat_transfer
-                        gain_utilization_factor = (1 - heat_balance_ratio ** a_h) / (1 - heat_balance_ratio ** (a_h + 1))
-                    else:
-                        gain_utilization_factor = 1
-            
-                    heat_need = (heat_transfer - heat_gains * gain_utilization_factor) * 0.9
-            
-                    return heat_need
-    
-            
             stock_init = stock_init.set_index(['Housing type', 'Wall', 'Floor', 'Roof', 'Windows', 'Heating system','Cooling system'])
             
             idx = stock_init.index
