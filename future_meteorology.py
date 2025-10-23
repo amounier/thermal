@@ -1217,7 +1217,7 @@ def main():
                 del array
                 
     # Réalisation des cartes 
-    if False:
+    if True:
         
         # calib_method = 'CDFt'
         calib_method = 'ADAMONT'
@@ -1498,6 +1498,41 @@ def main():
                 
                 del mean_array
                 
+        # enregistrement d'un netCDF avec chaque model en variable (juste moyenne periode +4)
+        if False:
+            climate_vars = ['tas','tasmax','tasmin','rsds']
+            climate_vars = ['rsds']
+            
+            for climate_var in climate_vars:
+                print(climate_var)
+                
+                mean_array = None
+                
+                for idx,mod in enumerate(range(0,5)):
+                    
+                    Explore2 = os.path.join(data_folder,climate_var+models_dict.get(mod).get('historical_rcp85'))
+                    array = xr.open_dataset(Explore2)
+                    period = models_period_dict.get(mod).get(4)
+                    array = array.sel(time=slice("{}-01-01".format(period[0]), "{}-12-31".format(period[1]))).mean('time')
+                    
+                    array = array.rename({'{}Adjust'.format(climate_var):'mod{}'.format(mod)})
+                    array.rio.write_crs('epsg:27572', inplace=True)
+                    
+                    geom = pd.Series(France().geometry).apply(mapping)
+                    array = array.rio.clip(geom, 'epsg:4326', drop=False)
+                    
+                    if mean_array is None:
+                        mean_array = array
+                    else:
+                        mean_array['mod{}'.format(mod)] = array['mod{}'.format(mod)]
+                    
+                    del array
+                    
+                mean_array.to_netcdf(os.path.join(data_folder,'{}Adjust_France_p4deg_MF-ADAMONT-SAFRAN-1980-2011_day_1950-2100.nc'.format(climate_var)),'w',format='NETCDF4')
+                
+                del mean_array
+                        
+                
         # carte moyenne des 5 modèles
         if True:
             climate_vars = ['tas','rsds']
@@ -1559,30 +1594,38 @@ def main():
                     plt.close()
                 
                 # carte des difference à +2, +4
-                if False:
-                    # ne marche pas, il faut trouver une période moyenne
-                    proj2_period = models_period_dict.get(mod).get(2)
-                    proj27_period = models_period_dict.get(mod).get(2.7)
-                    proj4_period = models_period_dict.get(mod).get(4)
+                # TODO à refaire
+                if True:
                     
-                    proj2 = array.sel(time=slice("{}-01-01".format(proj2_period[0]), "{}-12-31".format(proj2_period[1]))).mean('time')
-                    proj27 = array.sel(time=slice("{}-01-01".format(proj27_period[0]), "{}-12-31".format(proj27_period[1]))).mean('time')
-                    proj4 = array.sel(time=slice("{}-01-01".format(proj4_period[0]), "{}-12-31".format(proj4_period[1]))).mean('time')
+                    fdeg = os.path.join(data_folder,'{}Adjust_France_p4deg_MF-ADAMONT-SAFRAN-1980-2011_day_1950-2100.nc'.format(climate_var))
+                    fdeg = xr.open_dataset(fdeg)
+                    diff = fdeg-hist
                     
-                    diff2 = proj2 - hist
-                    diff27 = proj27 - hist
-                    diff4 = proj4 - hist
+                    mean = diff.to_array(dim='new').mean('new')
+                    stan = diff.to_array(dim='new').std('new')
+                    diff = diff.assign(avg=mean)
+                    diff = diff.assign(sta=stan)
+                    diff = diff.assign(sig=((abs(mean)-abs(stan))<0))
+                    # diff['sig'] = diff.sig.where(diff.sig == True, np.nan)
+                    
+                    # diff.rio.write_crs('epsg:27572', inplace=True)
+                    # geom = pd.Series(France().geometry).apply(mapping)
+                    # diff['sig'] = diff.sig.rio.clip(geom, 'epsg:4326', drop=False)
+                    # diff['avg'] = diff.avg.rio.clip(geom, 'epsg:4326', drop=False)
                     
                     cmap = cmocean.cm.balance
                     
                     fig,ax = blank_national_map()
                     
-                    vmin = diff4.min()
-                    vmax = diff4.max()
+                    vmin = diff.avg.min()
+                    vmax = diff.avg.max()
                     vmax = max(abs(vmin),vmax)
                     
-                    img = diff4.plot(ax=ax,transform=ccrs.epsg('27572'),add_colorbar=False,
-                                   cmap=cmap,vmin=-vmax,vmax=vmax)
+                    img = diff.avg.plot(ax=ax,transform=ccrs.epsg('27572'),add_colorbar=False,
+                                        cmap=cmap,vmin=-vmax,vmax=vmax)
+                    
+                    # h = diff.sig.plot(ax=ax,transform=ccrs.epsg('27572'),add_colorbar=False,hatch='/')
+                    ax.contourf(diff.x, diff.y, diff.sig,transform=ccrs.epsg('27572'),colors='none',levels=[.5,1.5],hatches=[5*'/',5*'/'],)
                     
                     ax.set_title('+4°C period')
                     
@@ -1704,7 +1747,7 @@ def main():
         print(agg.direct_sun_radiation_H.plot())
     
     # caractérisation des évolutions de températures
-    if True:
+    if False:
         zcl = Climat('H1a')
         var = 'temperature_2m'
         # var = 'direct_sun_radiation_H'

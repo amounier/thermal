@@ -611,7 +611,7 @@ def main():
     
     
     #%% Étude de la température du sol en fonction de la température de surface 
-    if True:
+    if False:
         city = 'Marseille'
         # city = 'Chaumont'
         year = 2021
@@ -1597,7 +1597,7 @@ def main():
         
         
         # comparaison avec les données open meteo (attetnion aux unitées)
-        if True:
+        if False:
             
             # premier test
             if False:
@@ -1676,33 +1676,35 @@ def main():
                     period = [data_MF.index.year[0],data_MF.index.year[-1]]
                     climate_zcl_period[zcl.code] = period
                     
-                    data_OM_daily = get_historical_weather_data(zcl.center_prefecture, period=period)
-                    data_OM = pd.DataFrame()
-                    data_OM['TX'] = data_OM_daily.groupby(pd.Grouper(freq='D')).temperature_2m.max().groupby(pd.Grouper(freq='MS')).mean()
-                    data_OM['TM'] = ((data_OM_daily.groupby(pd.Grouper(freq='D')).temperature_2m.max() + data_OM_daily.groupby(pd.Grouper(freq='D')).temperature_2m.min())/2).groupby(pd.Grouper(freq='MS')).mean()
-                    data_OM['TN'] = data_OM_daily.groupby(pd.Grouper(freq='D')).temperature_2m.min().groupby(pd.Grouper(freq='MS')).mean()
-                    data_OM['GLOT'] = data_OM_daily.groupby(pd.Grouper(freq='MS')).direct_sun_radiation_H.sum() + data_OM_daily.groupby(pd.Grouper(freq='MS')).diffuse_sun_radiation_H.sum()
-                    data_OM['GLOT'] = data_OM.GLOT * 3600 * 1e-4 # from Wh.m-2 to J.cm-2
-                    data_OM['GLOT'] = data_OM.GLOT * 1e-3 # from J.cm-2 to kJ.cm-2
+                    # data_OM_daily = get_historical_weather_data(zcl.center_prefecture, period=period)
+                    # data_OM = pd.DataFrame()
+                    # data_OM['TX'] = data_OM_daily.groupby(pd.Grouper(freq='D')).temperature_2m.max().groupby(pd.Grouper(freq='MS')).mean()
+                    # data_OM['TM'] = ((data_OM_daily.groupby(pd.Grouper(freq='D')).temperature_2m.max() + data_OM_daily.groupby(pd.Grouper(freq='D')).temperature_2m.min())/2).groupby(pd.Grouper(freq='MS')).mean()
+                    # data_OM['TN'] = data_OM_daily.groupby(pd.Grouper(freq='D')).temperature_2m.min().groupby(pd.Grouper(freq='MS')).mean()
+                    # data_OM['GLOT'] = data_OM_daily.groupby(pd.Grouper(freq='MS')).direct_sun_radiation_H.sum() + data_OM_daily.groupby(pd.Grouper(freq='MS')).diffuse_sun_radiation_H.sum()
+                    # data_OM['GLOT'] = data_OM.GLOT * 3600 * 1e-4 # from Wh.m-2 to J.cm-2
+                    # data_OM['GLOT'] = data_OM.GLOT * 1e-3 # from J.cm-2 to kJ.cm-2
                     
                     
                     data_safran_daily = get_safran_weather_data(zcl.center_prefecture,period,param=['SSI_Q','TINF_H_Q','TSUP_H_Q'])
                     data_safran = pd.DataFrame()
-                    data_safran['GLOT_SF'] = data_safran_daily.groupby(pd.Grouper(freq='MS')).SSI_Q.sum()
-                    data_safran['GLOT_SF'] = data_safran.GLOT_SF * 1e-3 # from J.cm-2 to kJ.cm-2
+                    data_safran['GLOT'] = data_safran_daily.groupby(pd.Grouper(freq='MS')).SSI_Q.sum()
+                    data_safran['GLOT'] = data_safran.GLOT * 1e-3 # from J.cm-2 to kJ.cm-2
+                    
+                    print(data_safran.GLOT.mean())
                     # data_safran['TX_SF'] = [np.nan]*len(data_safran)
-                    data_safran['TM_SF'] = ((data_safran_daily.TSUP_H_Q + data_safran_daily.TINF_H_Q)/2).groupby(pd.Grouper(freq='MS')).mean()
+                    data_safran['TM'] = ((data_safran_daily.TSUP_H_Q + data_safran_daily.TINF_H_Q)/2).groupby(pd.Grouper(freq='MS')).mean()
                     # data_safran['TN_SF'] = [np.nan]*len(data_safran)
                     
-                    data_plot = data_MF.join(data_OM,how='outer',lsuffix='_MF',rsuffix='_OM')
-                    data_plot = data_plot.join(data_safran,how='outer')
+                    # data_plot = data_MF.join(data_OM,how='outer',lsuffix='_MF',rsuffix='_OM')
+                    data_plot = data_MF.join(data_safran,how='outer', lsuffix='_MF',rsuffix='_SF')
                     data_plot['Climate zone'] = ['{} ({}-{})'.format(zcl.code,period[0],period[1])]*len(data_plot)
                     
                     error_stats['period'].append(period)
                     for var in ['TM','GLOT'] :
                         
-                        test_rea = 'OM' # ERA5
-                        # test_rea = 'SF' # SAFRAN
+                        # test_rea = 'OM' # ERA5
+                        test_rea = 'SF' # SAFRAN
                         
                         test = data_plot[['{}_MF'.format(var),'{}_{}'.format(var,test_rea)]].dropna()
                         
@@ -1714,27 +1716,28 @@ def main():
                         data_plot_all = pd.concat([data_plot_all,data_plot])
                 
                 df_error_stats = pd.DataFrame().from_dict(error_stats).set_index('zcl').T
-                print(df_error_stats.to_latex())
+                print(df_error_stats.to_latex(float_format='%.2f'))
                 
                 data_plot_all = data_plot_all.dropna()
                 
+                if False:
+                    for var in ['TM','GLOT']:
+                        min_val = min(data_plot_all["{}_MF".format(var)])*0.99
+                        max_val = max(data_plot_all["{}_MF".format(var)])*1.01
+                        
+                        fig,ax = plt.subplots(figsize=(5,5),dpi=300)
+                        sns.scatterplot(data=data_plot_all, x="{}_MF".format(var), 
+                                        y="{}_OM".format(var),ax=ax,hue='Climate zone',alpha=0.5)
+                        ax.plot([min_val,max_val],[min_val,max_val],color='k',ls='-')
+                        ax.set_ylim([min_val,max_val])
+                        ax.set_xlim([min_val,max_val])
+                        ax.set_xlabel('Météo-France observations')
+                        ax.set_ylabel('ERA5 reanalysis')
+                        ax.set_title(label_dict.get(var),wrap=True)
+                        plt.savefig(os.path.join(figs_folder,'comparison_{}_MF_ERA5.png'.format(var)), bbox_inches='tight')
+                        plt.show()
+                    
                 for var in ['TM','GLOT']:
-                    min_val = min(data_plot_all["{}_MF".format(var)])*0.99
-                    max_val = max(data_plot_all["{}_MF".format(var)])*1.01
-                    
-                    fig,ax = plt.subplots(figsize=(5,5),dpi=300)
-                    sns.scatterplot(data=data_plot_all, x="{}_MF".format(var), 
-                                    y="{}_OM".format(var),ax=ax,hue='Climate zone',alpha=0.5)
-                    ax.plot([min_val,max_val],[min_val,max_val],color='k',ls='-')
-                    ax.set_ylim([min_val,max_val])
-                    ax.set_xlim([min_val,max_val])
-                    ax.set_xlabel('Météo-France observations')
-                    ax.set_ylabel('ERA5 reanalysis')
-                    ax.set_title(label_dict.get(var),wrap=True)
-                    plt.savefig(os.path.join(figs_folder,'comparison_{}_MF_ERA5.png'.format(var)), bbox_inches='tight')
-                    plt.show()
-                    
-                for var in ['GLOT']:
                     min_val = min(data_plot_all["{}_MF".format(var)])*0.99
                     max_val = max(data_plot_all["{}_MF".format(var)])*1.01
                     
@@ -1750,17 +1753,18 @@ def main():
                     plt.savefig(os.path.join(figs_folder,'comparison_{}_MF_safran.png'.format(var)), bbox_inches='tight')
                     plt.show()
                     
-                    fig,ax = plt.subplots(figsize=(5,5),dpi=300)
-                    sns.scatterplot(data=data_plot_all, x="{}_SF".format(var), 
-                                    y="{}_OM".format(var),ax=ax,hue='Climate zone',alpha=0.5)
-                    ax.plot([min_val,max_val],[min_val,max_val],color='k',ls='-')
-                    ax.set_ylim([min_val,max_val])
-                    ax.set_xlim([min_val,max_val])
-                    ax.set_xlabel('SAFRAN reanalysis')
-                    ax.set_ylabel('ERA5 reanalysis')
-                    ax.set_title(label_dict.get(var),wrap=True)
-                    plt.savefig(os.path.join(figs_folder,'comparison_{}_safran_ERA5.png'.format(var)), bbox_inches='tight')
-                    plt.show()
+                    if False:
+                        fig,ax = plt.subplots(figsize=(5,5),dpi=300)
+                        sns.scatterplot(data=data_plot_all, x="{}_SF".format(var), 
+                                        y="{}_OM".format(var),ax=ax,hue='Climate zone',alpha=0.5)
+                        ax.plot([min_val,max_val],[min_val,max_val],color='k',ls='-')
+                        ax.set_ylim([min_val,max_val])
+                        ax.set_xlim([min_val,max_val])
+                        ax.set_xlabel('SAFRAN reanalysis')
+                        ax.set_ylabel('ERA5 reanalysis')
+                        ax.set_title(label_dict.get(var),wrap=True)
+                        plt.savefig(os.path.join(figs_folder,'comparison_{}_safran_ERA5.png'.format(var)), bbox_inches='tight')
+                        plt.show()
                 
         # print(test)
         
