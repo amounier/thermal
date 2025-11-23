@@ -103,28 +103,79 @@ def main():
     # https://www.statistiques.developpement-durable.gouv.fr/les-renovations-energetiques-aidees-du-secteur-residentiel-entre-2016-et-2021?rubrique=&dossier=843982
     
     # moins de rénovations car climat doux dans le sud : vraiment ?
-    if False:
+    if True:
         data = pd.read_excel(os.path.join('data','SDES','graphiques_onre_2016_2021.xlsx'), sheet_name='Carte1', skiprows=2)
         data['Département'] = [Departement(dep) for dep in data.Département]
         
         data['zcl'] = [dep.climat for dep in data.Département]
         data['zcl'] = pd.Categorical(data.zcl, France().climats)
         
-        data['housing_surface'] = [np.nan]*len(data)
-        data['households'] = [np.nan]*len(data)
-        data['temperature_DJF'] = get_departement_temperature(period='DJF').temperature
-        data['temperature_JJA'] = get_departement_temperature(period='JJA').temperature
+        # data['housing_surface'] = [np.nan]*len(data)
+        # data['households'] = [np.nan]*len(data)
+        # data['temperature_DJF'] = get_departement_temperature(period='DJF').temperature
+        # data['temperature_JJA'] = get_departement_temperature(period='JJA').temperature
+        
+        data['dep_code'] = [d.code for d in data.Département]
+        data = data.set_index('dep_code')
+        
+        
+        logements = pd.read_excel('data/INSEE/base-ic-logement-2021.xlsx',sheet_name='IRIS', skiprows=5)
+        logements = logements.groupby('DEP').sum()
+        logements = logements[['P21_RP','P21_RPMAISON','P21_RP_M30M2','P21_RP_3040M2','P21_RP_4060M2',  'P21_RP_6080M2','P21_RP_80100M2','P21_RP_100120M2', 'P21_RP_120M2P',]]
+        
+        dict_surface = {'P21_RP_M30M2':20,'P21_RP_3040M2': 35, 'P21_RP_4060M2': 50, 'P21_RP_6080M2': 70, 'P21_RP_80100M2': 90, 'P21_RP_100120M2': 110, 'P21_RP_120M2P': 150}
+        
+        for k,s in dict_surface.items():
+            if 'surface_RP' not in logements.columns:
+                logements['surface_RP'] = logements[k] * s
+            else:
+                logements['surface_RP'] = logements['surface_RP'] + logements[k] * s
+        
+        data = data.join(logements[['P21_RP','surface_RP','P21_RPMAISON']])
+        data['gains'] = data['Intensité energétique']/100 *  data['surface_RP']
+        data['gains_per_RP'] = data['gains']*1e3 / data['P21_RP'] #Wh par logements
+        data['mean_surface'] = data['surface_RP'] / data['P21_RP']
+        data['mean_maison'] = data['P21_RPMAISON'] / data['P21_RP']
+        data['mean_appart'] = 1-data['mean_maison']
         
         # carte des données étudiées
         if True:
-            france = France()
-            climats = [Climat(e) for e in france.climats]
-            draw_climat_map({c:None for c in climats},zcl_label=True, 
-                            figs_folder=figs_folder, save='zcl',
-                            add_legend=False,lw=0.7)
+            # france = France()
+            # climats = [Climat(e) for e in france.climats]
+            # draw_climat_map({c:None for c in climats},zcl_label=True, 
+            #                 figs_folder=figs_folder, save='zcl',
+            #                 add_legend=False,lw=0.7)
             
-            data_dict = {d:v for d,v in zip(data.Département,data['Intensité energétique'])}
-            draw_departement_map(data_dict, figs_folder, automatic_cbar_values=True)
+            data_dict = {d:v for d,v in zip(data.Département,data['mean_surface'])}
+            draw_departement_map(data_dict, figs_folder, automatic_cbar_values=True,
+                                 save='surface_RP',
+                                 cbar_label='Households surface (m$^{2}$)')
+            
+            data_dict = {d:v for d,v in zip(data.Département,data['mean_maison'])}
+            draw_departement_map(data_dict, figs_folder, automatic_cbar_values=True,
+                                 save='indiv',
+                                 cbar_label='Ratio of individual households (ratio)')
+            
+            data_dict = {d:v for d,v in zip(data.Département,data['mean_appart'])}
+            draw_departement_map(data_dict, figs_folder, automatic_cbar_values=True,
+                                 save='collectiv',
+                                 cbar_label='Ratio of collective dwellings (ratio)')
+            
+            data_dict = {d:v*1e3/100 for d,v in zip(data.Département,data['Intensité energétique'])}
+            draw_departement_map(data_dict, figs_folder, automatic_cbar_values=True,
+                                 save='energy_savings_dep_per_area',
+                                 cbar_label='Energy savings per department dwelling surface area (kWh.yr$^{-1}$.m$^{-2}$)')
+            
+            data_dict = {d:v*1e-3 for d,v in zip(data.Département,data['gains_per_RP'])}
+            draw_departement_map(data_dict, figs_folder, automatic_cbar_values=True,
+                                 save='energy_savings_dep_per_RP',
+                                 cbar_label='Energy savings per department households (kWh.yr$^{-1}$.h$^{-1}$)')
+            
+            data_dict = {d:v*1e-6 for d,v in zip(data.Département,data['gains'])}
+            draw_departement_map(data_dict, figs_folder, automatic_cbar_values=True,cbar_norm='log',
+                                 save='energy_savings_dep',cbar_ticks=[e*1e-2 for e in range(2,11)]+[0.2,0.3],
+                                 cbar_label='Energy savings (TWh.yr$^{-1}$)')
+            
             
         # graphes des interactions avec le climat
         if False:
@@ -143,7 +194,7 @@ def main():
             
         
     #%% TREMI
-    if True:
+    if False:
         tremi = pd.read_csv(os.path.join('data','TREMI','tremi_2020_metropole_opda.csv'), na_values=['_NC_', 'NC', '_NR_'], low_memory=False).dropna(axis=1, how='all')
         tremi = tremi[tremi.treg!=7]
         
