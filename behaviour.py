@@ -228,13 +228,13 @@ class Behaviour():
         weekdays = [x for xs in [[i]*24 for i in range(7)] for x in xs]
         hours = list(range(24))*7
 
-        dayofweek_dict = {0:'Monday',
-                          1:'Tuesday',
-                          2:'Wednesday',
-                          3:'Thursday',
-                          4:'Friday',
-                          5:'Saturday',
-                          6:'Sunday'}
+        dayofweek_dict = {0:'Mon',
+                          1:'Tue',
+                          2:'Wed',
+                          3:'Thu',
+                          4:'Fri',
+                          5:'Sat',
+                          6:'Sun'}
         
         weekly_cons = pd.DataFrame().from_dict({'weekday':weekdays,'hour':hours}).set_index(['weekday','hour'])
         
@@ -243,7 +243,7 @@ class Behaviour():
         weekly_cons = weekly_cons.join(temp_weekly)
         weekly_cons['weekday_hour'] = [hour + 24*dow for dow,hour in weekly_cons.index]
         
-        fig,ax = plt.subplots(figsize=(10,5),dpi=300)
+        fig,ax = plt.subplots(figsize=(7,5),dpi=300)
         ax.plot(weekly_cons.weekday_hour, weekly_cons['heating_temperature'],
                 label='Heating',color='tab:red')
         ax.plot(weekly_cons.weekday_hour, weekly_cons['cooling_temperature'],
@@ -338,7 +338,7 @@ def main():
         conventionnel_noise = Behaviour(behaviour_noise)
         
         # Affichage des règles de consommation conventionnelle
-        if True:
+        if False:
             behaviour = 'conventionnel_th-bce_2020'
             conventionnel = Behaviour(behaviour)
             # conventionnel.heating_rules = {i:[19]*24 for i in range(1,8)}
@@ -463,13 +463,13 @@ def main():
             weekdays = [x for xs in [[i]*24 for i in range(7)] for x in xs]
             hours = list(range(24))*7
 
-            dayofweek_dict = {0:'Monday',
-                              1:'Tuesday',
-                              2:'Wednesday',
-                              3:'Thursday',
-                              4:'Friday',
-                              5:'Saturday',
-                              6:'Sunday'}
+            dayofweek_dict = {0:'Mon',
+                              1:'Tue',
+                              2:'Wed',
+                              3:'Thu',
+                              4:'Fri',
+                              5:'Sat',
+                              6:'Sun'}
             
             weekly_cons = pd.DataFrame().from_dict({'weekday':weekdays,'hour':hours}).set_index(['weekday','hour'])
             
@@ -479,7 +479,7 @@ def main():
             weekly_cons = weekly_cons.join(temp_weekly)
             weekly_cons['weekday_hour'] = [hour + 24*dow for dow,hour in weekly_cons.index]
             
-            fig,ax = plt.subplots(figsize=(10,5),dpi=300)
+            fig,ax = plt.subplots(figsize=(7,5),dpi=300)
             ax.plot(weekly_cons.weekday_hour, weekly_cons['internal_gains'],
                     label='Internal gains',color='k')
         
