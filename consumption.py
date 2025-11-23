@@ -1086,7 +1086,7 @@ def main():
         
     
     #%% lancement des calculs pour tous les modèles climatiques 
-    if True:
+    if False:
         climate_models_list = list(CLIMATE_MODELS_NUMBERS.keys())
         # climate_models_list = ['EC-EARTH_HadREM3-GA7'] 
         # ac_scenarios = ['REF'] # ['ACM','REF','ACP']
