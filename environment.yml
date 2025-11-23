@@ -33,6 +33,7 @@ dependencies:
   - fastparquet
   - pytables
   - pyarrow
+  - utm
  # - requests_cache
  # - pip:
  # 	- openmeteo-requests
