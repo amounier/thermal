@@ -330,7 +330,8 @@ class France:
 def draw_departement_map(dict_dep,figs_folder,cbar_min=0,cbar_max=1.,
                          automatic_cbar_values=False, cbar_label=None, 
                          map_title=None,save=None,cmap=None,figax=None,
-                         hide_cbar=False,alpha=None,hatches=None):
+                         hide_cbar=False,alpha=None,hatches=None,
+                         cbar_format=None,cbar_norm=None,cbar_ticks=None):
     
     if figax is not None:
         fig,ax = figax
@@ -353,7 +354,12 @@ def draw_departement_map(dict_dep,figs_folder,cbar_min=0,cbar_max=1.,
     else:
         cbar_extend = 'neither'
     
-    plotter['color'] = (plotter.vals-cbar_min)/(cbar_max-cbar_min)
+    if cbar_norm is None:
+        norm = matplotlib.colors.Normalize(vmin=cbar_min, vmax=cbar_max)
+    elif cbar_norm == 'log': 
+        norm = matplotlib.colors.LogNorm(vmin=cbar_min, vmax=cbar_max)
+        
+    plotter['color'] = norm(plotter.vals)
     plotter['color'] = plotter['color'].apply(cmap)
     
     if hatches is not None:
@@ -372,12 +378,27 @@ def draw_departement_map(dict_dep,figs_folder,cbar_min=0,cbar_max=1.,
         cbar_ax = fig.add_axes([0, 0, 0.1, 0.1])
         posn = ax.get_position()
         cbar_ax.set_position([posn.x0+posn.width+0.02, posn.y0, 0.04, posn.height])
-        norm = matplotlib.colors.Normalize(vmin=cbar_min, vmax=cbar_max)
+        if cbar_norm is None:
+            norm = matplotlib.colors.Normalize(vmin=cbar_min, vmax=cbar_max)
+        elif cbar_norm == 'log': 
+            norm = matplotlib.colors.LogNorm(vmin=cbar_min, vmax=cbar_max)
         mappable = matplotlib.cm.ScalarMappable(norm=norm, cmap=cmap)
         
         cbar_label_var = cbar_label
-        _ = plt.colorbar(mappable, cax=cbar_ax, label=cbar_label_var, extend=cbar_extend, extendfrac=0.02)
-    
+        cbar = plt.colorbar(mappable, cax=cbar_ax, label=cbar_label_var, extend=cbar_extend, 
+                         extendfrac=0.02,format=None)
+        
+        if cbar_ticks is not None:
+            minor_all = cbar.get_ticks(minor=True)
+            
+            major_to_plot = [e for e in cbar_ticks if e not in minor_all]
+            minor_to_plot = [e for e in cbar_ticks if e in minor_all]
+            
+            cbar.set_ticks(ticks=major_to_plot,labels=major_to_plot, minor=False)
+            cbar.set_ticks(ticks=minor_to_plot,labels=minor_to_plot, minor=True, fontsize='small')
+            
+            # cbar_ax.set_major_formatter('sci')
+            # cbar_ax.set_minor_formatter('sci')
 
     ax.set_title(map_title)
     if save is not None:
