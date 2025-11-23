@@ -76,10 +76,10 @@ def map_xarray(data, cmap='viridis',cbar_label=None, value_max=None,
 def get_departement_temperature(period='DJF'):
     
     if period == 'DJF':
-        temperature = xr.open_dataset(os.path.join('data','CORDEX','CORDEX Europe - Mean temperature (T) deg C - 1981-2010 - December to February (49 models)','map.nc'))
+        temperature = xr.open_dataset(os.path.join('data','CORDEX','DJF','map.nc'))
         
     elif period == 'JJA':
-        temperature = xr.open_dataset(os.path.join('data','CORDEX','CORDEX Europe - Mean temperature (T) deg C - 1981-2010 - June to August (49 models)','map.nc'))
+        temperature = xr.open_dataset(os.path.join('data','CORDEX','JJA','map.nc'))
         
     temperature = temperature.tas
     tempertaure = temperature.rio.write_crs("epsg:4326")
@@ -127,15 +127,15 @@ def main():
     
     
     #%% Caractérisation des zones climatiques et de leur pertinence par rapport aux données météo
-    if True:
+    if False:
         france = France()
         
-        temperature_DJF = xr.open_dataset(os.path.join('data','CORDEX','CORDEX Europe - Mean temperature (T) deg C - 1981-2010 - December to February (49 models)','map.nc'))
+        temperature_DJF = xr.open_dataset(os.path.join('data','CORDEX','DJF','map.nc'))
         # temperature_DJF = xr.open_dataset(os.path.join('data','CORDEX','E-OBS (Europe) - Mean temperature (T) deg C - 1980-2015 Observations - December to February ','map.nc'))
         temperature_DJF = temperature_DJF.tas
         temperature_DJF = temperature_DJF.rio.write_crs("epsg:4326")
     
-        temperature_JJA = xr.open_dataset(os.path.join('data','CORDEX','CORDEX Europe - Mean temperature (T) deg C - 1981-2010 - June to August (49 models)','map.nc'))
+        temperature_JJA = xr.open_dataset(os.path.join('data','CORDEX','JJA','map.nc'))
         temperature_JJA = temperature_JJA.tas
         temperature_JJA = temperature_JJA.rio.write_crs("epsg:4326")
         
