@@ -10,6 +10,7 @@ import os
 import time
 from datetime import date, datetime
 import pandas as pd
+import geopandas as gpd
 import tqdm
 import numpy as np
 import matplotlib.pyplot as plt
@@ -20,11 +21,13 @@ from scipy import stats
 from scipy import signal
 import matplotlib
 import dask
+import cartopy.crs as ccrs
 import xarray as xr
 from shapely.geometry import mapping
 import pyproj
 from scipy.optimize import curve_fit
 from sklearn.metrics import r2_score
+import statsmodels.api as sm
 from statsmodels.stats.weightstats import DescrStatsW
 
 rd.seed(0)
@@ -32,6 +35,7 @@ rd.seed(0)
 from bdnb_opener import get_bdnb, plot_dpe_distribution, neighbourhood_map, download_bdnb
 from administrative import France, Departement, draw_departement_map, get_coordinates, Climat
 from meteorology import get_meteo_data
+from utils import blank_national_map
 
 def compute_dpe_representativity(dep_code,external_disk,output_folder):
     dep_stats_name = 'dep{}_representativity.csv'.format(dep_code)
@@ -554,7 +558,7 @@ def main():
                                      hatches=list_dep_mfh)
                 
     #%% Statistiques sur les systèmes de chauffage de la base DPE
-    if False:
+    if True:
         
         # Génération des fichiers statistiques par départements
         if False and external_disk_connection:
@@ -610,19 +614,93 @@ def main():
                                      save='carte_repr_appartement_dpe-BDNB')
                 plt.show()
         
-        # statistiques nationale (fusion des fichiers par csvstack sur terminal)
-        if True:
-            stats_heater_all_path = os.path.join('data','BDNB','stats_heater_all.csv')
-            stats_heater_sec_path = os.path.join('data','BDNB','stats_heater_sec.csv')
+        # carte du réseau gazier
+        if False:
+            import utm 
+            from pyproj import CRS
+        
+            path = 'data/ORE/infrastructures-reseau-gaz.geojson'
+            data = gpd.read_file(path, driver='GeoJSON')
             
+            # line_shape = data.geometry.values[0]
+            # utm_crs = utm_crs_from_latlon(lat = line_shape.centroid.y,
+            #                               lon = line_shape.centroid.x)
+            
+            lon_list = data.geometry.centroid.x
+            lat_list = data.geometry.centroid.y
+            zone_list = [utm.latlon_to_zone_number(lat,lon) for lat,lon in zip(lat_list,lon_list)]
+            crs_dict = {z:CRS.from_dict({'proj':'utm','zone':z,'south':False}) for z in set(zone_list)}
+            
+            data['utm_zone'] = zone_list
+            data['length'] = [0.]*len(data)
+            
+            for zone in set(zone_list):
+                idx_zone = data[data.utm_zone==zone].index
+                crs = crs_dict.get(zone)
+                data.loc[idx_zone, 'length'] = data.loc[idx_zone, 'geometry'].to_crs(crs).length
+                
+            data_dep = data.groupby('code_departement').length.sum()/1e3
+            
+            dict_dep = {Departement(d):l for d,l in zip(data_dep.index,data_dep.values)}
+            
+            dict_dep_code = [d.code for d in dict_dep.keys()]
+            all_deps = France().departements
+            for d in all_deps:
+                if d.code not in dict_dep_code:
+                    dict_dep[d] = 0.
+            
+            draw_departement_map(dict_dep, figs_folder, 
+                                 cbar_min=1, cbar_max = 1e4, cbar_label='Length of gas network (km)',
+                                 save='gaz_network_length',cbar_format='%.0e')
+            
+            # utm_list = [utm_crs_from_latlon(lat = l.get('lat'), lon = l.get('lon')) for l in list_geo_point]
+            
+            # line_geo = gpd.GeoSeries([line_shape], crs='EPSG:4326')
+            
+            # print(line_geo.to_crs(utm_crs).length)
+            
+            # fig,ax = blank_national_map()
+            
+            # # ax.add_geometries(data.geometry.values[0],  crs=ccrs.PlateCarree())
+            # ax.plot(data.geometry.values[0].centroid.x,data.geometry.values[0].centroid.y,color='red',ms=10, transform=ccrs.PlateCarree())
+            # # # data.plot(color=color, ax=ax, transform=ccrs.PlateCarree(),alpha=1)
+            # # ax.add_geometries(data.geometry, crs=ccrs.PlateCarree())
+            # plt.show()
+            pass
+        
+        # distribution des vecteur par zcl
+        if False:
+            stats_heater_all_path = os.path.join('data','BDNB','stats_heater_all.csv')
+            stats_heater_all = pd.read_csv(stats_heater_all_path)
+            stats_heater_all = stats_heater_all.rename(columns={'count':'count_value'})
+            # stats_heater_all = stats_heater_all[stats_heater_all.count_value>10]
+            
+            stats_heater_all['zcl'] = [Departement(d).climat for d in stats_heater_all.departement]
+            
+            agg_stats_energie = stats_heater_all.groupby(['type_energie_chauffage','zcl']).count_value.sum()
+            
+            # agg_stats_batiment = stats_heater_all.groupby(['type_batiment_dpe','zcl']).count_value.sum()
+            
+            representativity_path = os.path.join('data','BDNB','representativity.csv')
+            representativity = pd.read_csv(representativity_path)
+            representativity['zcl'] = [Departement(d).climat for d in representativity.departement]
+            agg_stats_batiment = representativity.groupby(['type_batiment_dpe','zcl']).nb_logements_bdnb.sum()
+            
+        # statistiques nationale (fusion des fichiers par csvstack sur terminal)
+        if False:
+            # principal
+            stats_heater_all_path = os.path.join('data','BDNB','stats_heater_all.csv')
             stats_heater_all = pd.read_csv(stats_heater_all_path)
             stats_heater_all = stats_heater_all.rename(columns={'count':'count_value'})
             stats_heater_all = stats_heater_all[stats_heater_all.count_value>10]
             
+            # secondaire
+            stats_heater_sec_path = os.path.join('data','BDNB','stats_heater_sec.csv')
             stats_heater_sec = pd.read_csv(stats_heater_sec_path)
             stats_heater_sec = stats_heater_sec.rename(columns={'count':'count_value'})
             stats_heater_sec = stats_heater_sec[stats_heater_sec.count_value>10]
             
+            # les deux 
             test_all = os.path.join('data','BDNB','stats_heater.csv')
             test_all = pd.read_csv(test_all)
             test_all = test_all.rename(columns={'count':'count_value'})
@@ -645,9 +723,9 @@ def main():
                     nb_logement = stats_heater_all_dep.count_value.sum()
                     
                     departements_dict_nblog[dep] = nb_logement
-                    departements_dict_elec[dep] = nb_elec_principal/nb_logement*100
-                    departements_dict_gaz[dep] = nb_gaz_principal/nb_logement*100
-                    departements_dict_bois[dep] = nb_bois_principal/nb_logement*100
+                    departements_dict_elec[dep] = nb_elec_principal/nb_logement
+                    departements_dict_gaz[dep] = nb_gaz_principal/nb_logement
+                    departements_dict_bois[dep] = nb_bois_principal/nb_logement
                     
                 draw_departement_map(departements_dict_nblog, figs_folder,
                                      map_title='Nombre de logement',
@@ -657,31 +735,29 @@ def main():
                 plt.show()
                 
                 draw_departement_map(departements_dict_gaz, figs_folder,
-                                     map_title='Chauffage principal au gaz',
-                                     cbar_label='Pourcentage de logement dans la base BDNB-DPE (%)',
+                                     map_title='Main heating system energy: gas',
+                                     cbar_label='Dwellings in the BDNB-DPE (ratio)',
                                      # cbar_min=0,cbar_max=100,
-                                     automatic_cbar_values=True,
+                                     cbar_max=1.,cbar_min=0.,
                                      save='carte_chauffage_principal_gaz')
                 plt.show()
                 
                 draw_departement_map(departements_dict_elec, figs_folder,
-                                     map_title='Chauffage principal électrique',
-                                     cbar_label='Pourcentage de logement dans la base BDNB-DPE (%)',
-                                     # cbar_min=0,cbar_max=100,
-                                     automatic_cbar_values=True,
+                                     map_title='Main heating system energy: electricity',
+                                     cbar_label='Dwellings in the BDNB-DPE (ratio)',
+                                     cbar_max=1.,cbar_min=0.,
                                      save='carte_chauffage_principal_elec')
                 plt.show()
                 
                 draw_departement_map(departements_dict_bois, figs_folder,
-                                     map_title='Chauffage principal au bois',
-                                     cbar_label='Pourcentage de logement dans la base BDNB-DPE (%)',
-                                     # cbar_min=0,cbar_max=100,
-                                     automatic_cbar_values=True,
+                                     map_title='Main heating system energy: wood',
+                                     cbar_label='Dwellings in the BDNB-DPE (ratio)',
+                                     cbar_max=1.,cbar_min=0.,
                                      save='carte_chauffage_principal_bois')
                 plt.show()  
                 
             # Pie chart des installation de chauffage (à finir)
-            if False:
+            if True:
                 # vecteurs considérés, solaire et réseau de chaleur exclus
                 type_chauffage_dict = {t:None for t in ['bois',
                                                         'charbon',
@@ -745,7 +821,7 @@ def main():
                 plt.show()
         
             # statistiques sur les possesseurs de PAC en chauffage principal tous types de logements
-            if False:
+            if True:
                 pac_list = ['pac air/air','pac air/eau','pac eau/eau']
                 # stats_heater_all_pac = stats_heater_all[stats_heater_all.type_generateur_chauffage.isin(pac_list)]
                 # stats_heater_sec_pac = stats_heater_sec[stats_heater_sec.type_generateur_chauffage.isin(pac_list)]
@@ -804,7 +880,7 @@ def main():
                 plt.show()
             
             # idem, pour les maisons seulement
-            if False:
+            if True:
                 pac_list = ['pac air/air','pac air/eau','pac eau/eau']
                 # stats_heater_all_pac = stats_heater_all[(stats_heater_all.type_generateur_chauffage.isin(pac_list))&(stats_heater_all.type_batiment_dpe=='maison')]
                 # stats_heater_sec_pac = stats_heater_sec[(stats_heater_sec.type_generateur_chauffage.isin(pac_list))&(stats_heater_sec.type_batiment_dpe=='maison')]
@@ -862,7 +938,7 @@ def main():
                 plt.show()
                 
             # idem, pour les appartements seulement
-            if False:
+            if True:
                 pac_list = ['pac air/air','pac air/eau','pac eau/eau']
                 # stats_heater_all_pac = stats_heater_all[(stats_heater_all.type_generateur_chauffage.isin(pac_list))&(stats_heater_all.type_batiment_dpe=='appartement')]
                 # stats_heater_sec_pac = stats_heater_sec[(stats_heater_sec.type_generateur_chauffage.isin(pac_list))&(stats_heater_sec.type_batiment_dpe=='appartement')]
@@ -987,7 +1063,7 @@ def main():
                     
                     ax.pie(vals_flat, radius=1+size, colors=outer_colors,startangle=start_angle,
                            wedgeprops=dict(width=size, edgecolor='w'),labels=labels_flat)
-                    
+                    ax.set_title(tg)
                     ax.set(aspect="equal")
                     ax.legend(labels=labels_cat, loc='upper center')
                     plt.savefig(os.path.join(figs_folder,'{}.png'.format('statistiques_nationale_type_energie_secondaire_{}_principal'.format(tg.replace(' ','_')))),bbox_inches='tight')
@@ -1038,13 +1114,235 @@ def main():
                 concatenate_dpe_statistics(dep.code, 
                                            external_disk=external_disk_connection)
         
-        test = pd.read_parquet(os.path.join('data','BDNB',reformat_bdnb_dpe_file))
+        # test = pd.read_parquet(os.path.join('data','BDNB',reformat_bdnb_dpe_file))
         # TODO: faire le truc pour Gaetan : carnet p205
         
+        # OLS des paramètres importants (mettre en valeur la zcl)
+        if False:
+            EP = True
+            
+            if EP:
+                conso_var = 'dpe_mix_arrete_conso_5_usages_ep_m2'
+                exog_vars = ['log_heating_coefficient', 'log_U', 'log_DT', 'log_1/S']
+            else:
+                conso_var = 'dpe_mix_arrete_conso_5_usages_ef_m2'
+                exog_vars = ['log_heating_efficiency', 'log_U', 'log_DT', 'log_1/S']
+                
+                
+            reformat_bdnb_dpe_file_light = 'dpe_statistics_light_heater.parquet'
+            
+            
+            if reformat_bdnb_dpe_file_light not in os.listdir(os.path.join('data','BDNB')):
+                dpe = pd.read_parquet(os.path.join('data','BDNB',reformat_bdnb_dpe_file))
+                
+                columns_used = ['batiment_groupe_id','ffo_bat_nb_log','dpe_mix_arrete_surface_habitable_logement',
+                                'dpe_mix_arrete_classe_bilan_dpe','dpe_mix_arrete_conso_5_usages_ep_m2',
+                                'dpe_mix_arrete_conso_5_usages_ef_m2',
+                                'dpe_mix_arrete_surface_vitree_nord','dpe_mix_arrete_surface_vitree_sud',
+                                'dpe_mix_arrete_surface_vitree_ouest','dpe_mix_arrete_surface_vitree_est',
+                                'dpe_mix_arrete_surface_vitree_horizontal','dpe_mix_arrete_uw',
+                                'dpe_mix_arrete_u_mur_exterieur', 'dpe_mix_arrete_surface_mur_deperditif',
+                                'dpe_mix_arrete_u_plancher_bas_final_deperditif', 'dpe_mix_arrete_surface_plancher_bas_deperditif',
+                                'dpe_mix_arrete_u_plancher_haut_deperditif', 'dpe_mix_arrete_surface_plancher_haut_deperditif',
+                                'departement','dpe_mix_arrete_type_generateur_chauffage'
+                                ]
+                
+                # dpe = dpe[columns_used]
+                # dpe['dpe_mix_arrete_surface_vitree'] = dpe['dpe_mix_arrete_surface_vitree_nord'] + dpe['dpe_mix_arrete_surface_vitree_sud'] + dpe['dpe_mix_arrete_surface_vitree_ouest'] + dpe['dpe_mix_arrete_surface_vitree_est'] + dpe['dpe_mix_arrete_surface_vitree_horizontal']
+                
+                # columns_used_light = ['batiment_groupe_id','ffo_bat_nb_log','dpe_mix_arrete_surface_habitable_logement',
+                #                       'dpe_mix_arrete_classe_bilan_dpe','dpe_mix_arrete_conso_5_usages_ep_m2',
+                #                       'dpe_mix_arrete_surface_vitree','dpe_mix_arrete_uw',
+                #                       'dpe_mix_arrete_u_mur_exterieur', 'dpe_mix_arrete_surface_mur_deperditif',
+                #                       'dpe_mix_arrete_u_plancher_bas_final_deperditif', 'dpe_mix_arrete_surface_plancher_bas_deperditif',
+                #                       'dpe_mix_arrete_u_plancher_haut_deperditif', 'dpe_mix_arrete_surface_plancher_haut_deperditif',
+                #                       'departement', 'dpe_mix_arrete_type_generateur_chauffage'
+                #                       ] 
+                
+                dpe = dpe[columns_used]
+                dpe = dpe[~dpe.dpe_mix_arrete_conso_5_usages_ep_m2.isnull()]
+                dpe.to_parquet(os.path.join('data','BDNB',reformat_bdnb_dpe_file_light))
+                
+            else:
+                dpe = pd.read_parquet(os.path.join('data','BDNB',reformat_bdnb_dpe_file_light))
+            
+            dpe = dpe[~dpe.dpe_mix_arrete_type_generateur_chauffage.isnull()]
+            
+            for v in ['dpe_mix_arrete_surface_vitree_nord','dpe_mix_arrete_surface_vitree_sud',
+                      'dpe_mix_arrete_surface_vitree_ouest','dpe_mix_arrete_surface_vitree_est',
+                      'dpe_mix_arrete_surface_vitree_horizontal']:
+                dpe[v] = dpe[v].fillna(0)
+                
+            dpe['dpe_mix_arrete_surface_vitree'] = dpe['dpe_mix_arrete_surface_vitree_nord'] + dpe['dpe_mix_arrete_surface_vitree_sud'] + dpe['dpe_mix_arrete_surface_vitree_ouest'] + dpe['dpe_mix_arrete_surface_vitree_est'] + dpe['dpe_mix_arrete_surface_vitree_horizontal']
+            dpe['Uw'] = dpe.dpe_mix_arrete_uw * dpe.dpe_mix_arrete_surface_vitree
+            dpe['Um'] = dpe.dpe_mix_arrete_u_mur_exterieur * dpe.dpe_mix_arrete_surface_mur_deperditif
+            dpe['Uph'] = dpe.dpe_mix_arrete_u_plancher_haut_deperditif * dpe.dpe_mix_arrete_surface_plancher_haut_deperditif
+            dpe['Upb'] = dpe.dpe_mix_arrete_u_plancher_bas_final_deperditif * dpe.dpe_mix_arrete_surface_plancher_bas_deperditif
+            dpe['U'] = dpe['Uw'] + dpe['Um'] + dpe['Uph'] + dpe['Upb']
+            
+            
+            
+            for var in ['U','dpe_mix_arrete_surface_habitable_logement',conso_var]:
+                dpe = dpe[(dpe[var] < dpe[var].quantile(0.99))&(dpe[var] > dpe[var].quantile(0.01))]
+            dpe['1/S'] = 1/dpe.dpe_mix_arrete_surface_habitable_logement
+            
+            dep_to_zcl_dict = {}
+            for zcl in France().climats:
+                list_dep = [e.code for e in Climat(zcl).departements]
+                for d in list_dep:
+                    dep_to_zcl_dict[d] = zcl
+                
+            dpe['zcl'] = dpe.departement.apply(dep_to_zcl_dict.get)
+            
+            zcl_to_text_dict = {'H1a' : 8.16,
+                                'H1b' : 7.82,
+                                'H1c' : 7.86,
+                                'H2a' : 9.22,
+                                'H2b' : 8.77,
+                                'H2c' : 9.00,
+                                'H2d' : 8.04,
+                                'H3' : 9.36,}
+            
+            dpe['Text'] = dpe.zcl.apply(zcl_to_text_dict.get)
+            
+            
+            heating_systems_mapping = {'chaudiere bois':'Wood fuel-Performance boiler',
+                                       'generateur air chaud combustion':'Wood fuel-Performance boiler',
+                                       'poele ou insert bois':'Wood fuel-Performance boiler',
+                                       'chaudiere charbon basse temperature':'Oil fuel-Performance boiler',
+                                       'chaudiere charbon condensation':'Oil fuel-Performance boiler',
+                                       'chaudiere charbon standard':'Oil fuel-Performance boiler',
+                                       'poele ou insert charbon':'Oil fuel-Performance boiler',
+                                       'chaudiere electrique':'Electricity-Direct electric',
+                                       'generateurs a effet joule':'Electricity-Direct electric',
+                                       'pac air/air':'Electricity-Heat pump air', # precision
+                                       'pac air/eau':'Electricity-Heat pump water', # precision
+                                       'pac eau/eau':'Electricity-Heat pump water', # precision
+                                       'pac geothermique':'Electricity-Heat pump water', # precision
+                                       'chaudiere fioul basse temperature':'Oil fuel-Performance boiler',
+                                       'chaudiere fioul condensation':'Oil fuel-Performance boiler',
+                                       'chaudiere fioul standard':'Oil fuel-Performance boiler',
+                                       'poele ou insert fioul':'Oil fuel-Performance boiler',
+                                       'chaudiere gaz basse temperature':'Natural gas-Performance boiler',
+                                       'chaudiere gaz condensation':'Natural gas-Performance boiler',
+                                       'chaudiere gaz standard':'Natural gas-Performance boiler',
+                                       'pac gaz':'Natural gas-Performance boiler',
+                                       'radiateurs gaz':'Natural gas-Performance boiler',
+                                       'chaudiere gpl/butane/propane basse temperature':'Natural gas-Performance boiler',
+                                       'chaudiere gpl/butane/propane condensation':'Natural gas-Performance boiler',
+                                       'chaudiere gpl/butane/propane standard':'Natural gas-Performance boiler',
+                                       'poele ou insert gpl/butane/propane':'Natural gas-Performance boiler',
+                                       'reseau de chaleur':'Heating-District heating',
+                                       'chauffage solaire':'Heating-District heating'}
+            
+            dpe['heating_system'] = dpe.dpe_mix_arrete_type_generateur_chauffage.apply(heating_systems_mapping.get)
+            
+            ENERGY_EFFICIENCY_HEATER = {'Electricity-Direct electric':0.95, 
+                                        'Electricity-Heat pump air':2,
+                                        'Electricity-Heat pump water':2.5,
+                                        'Heating-District heating':0.76,
+                                        'Natural gas-Performance boiler':0.76, 
+                                        'Oil fuel-Performance boiler':0.76,
+                                        'Wood fuel-Performance boiler':0.76,} 
+            
+            ENERGY_CONVERSION_HEATER = {'Electricity-Direct electric':2.3, 
+                                        'Electricity-Heat pump air':2.3,
+                                        'Electricity-Heat pump water':2.3,
+                                        'Heating-District heating':1.,
+                                        'Natural gas-Performance boiler':1., 
+                                        'Oil fuel-Performance boiler':1.,
+                                        'Wood fuel-Performance boiler':1.,} 
+            
+            dpe['heating_efficiency'] = dpe.heating_system.apply(ENERGY_EFFICIENCY_HEATER.get)
+            dpe['heating_conversion'] = dpe.heating_system.apply(ENERGY_CONVERSION_HEATER.get)
+            dpe['heating_coefficient'] = dpe['heating_efficiency'] * dpe['heating_conversion']
+            
+            dpe[conso_var] = dpe[conso_var]*1e3
+            conso_var_log = 'log_' + conso_var
+            
+            # passage au log pour ols
+            dpe[conso_var_log] = np.log(dpe[conso_var])
+            dpe['log_U'] = np.log(dpe.U)
+            dpe['log_DT'] = np.log(19-dpe.Text)
+            dpe['log_1/S'] = np.log(dpe['1/S'])
+            dpe['log_1/heating_efficiency'] = np.log(1/dpe['heating_efficiency'])
+            dpe['log_1/heating_coefficient'] = np.log(1/dpe['heating_coefficient'])
+            
+            
+            def fit_model(survey, endog, exog, model='OLS',weights=None,disp=None,add_constant=True):
+                droped_nan = len(survey)
+                # survey = survey[survey[endog].notna()]
+                if type(endog)==list:
+                    adder = endog
+                else:
+                    adder = [endog]
+                for v in exog+adder:
+                    survey = survey[survey[v].notna()]
+                droped_nan -= len(survey)
+                # print(droped_nan)
+                if type(endog)==list:
+                    endog = survey[endog]
+                else:
+                    endog = survey[[endog]]
+                if add_constant:
+                    exog = sm.add_constant(survey[exog])
+                else:
+                    exog = survey[exog]
+                result = None
+                if model == 'Probit':
+                    result = sm.Probit(endog, exog, sample_weights=weights).fit(disp=disp)
+                elif model == 'Logit':
+                    result = sm.Logit(endog, exog, sample_weights=weights).fit(disp=disp)
+                elif model == 'MNLogit':
+                    # print(endog,exog)
+                    result = sm.MNLogit(endog, exog, sample_weights=weights).fit(disp=disp)
+                elif model == 'OLS':
+                    if weights is not None:
+                        print('Ignored weights for OLS')
+                    result = sm.OLS(endog, exog).fit(disp=disp)
+                return result
+            
+            # heater_list = sorted(list(set(dpe.heating_system.values)))
+            # for h in heater_list:
+            #     if h == 'Heating-District heating':
+            #         continue
+            #     print(h)
+            # dpe_heater = dpe[dpe.heating_system==h]
+            
+            
+                
+            res = fit_model(dpe, endog = conso_var_log, exog = exog_vars, add_constant=False)
+            print(res.summary())
+            
+            params = res.params.to_dict()
+            
+           
+            Y = np.exp(dpe.log_heating_coefficient*params.get('log_heating_coefficient')+dpe.log_U*params.get('log_U')+dpe.log_DT*params.get('log_DT')+dpe['log_1/S']*params.get('log_1/S'))/1e3
+            
+            fig,ax = plt.subplots(figsize=(5,5),dpi=300)
+            sns.scatterplot(x=dpe[conso_var]*1e-3,y=Y,alpha=0.005,ax=ax)
+            max_max = dpe[conso_var].max()*1e-3
+            ax.set_xlim([0,max_max])
+            ax.set_ylim([0,max_max])
+            plt.show()
+            
+            # heater_list = sorted(list(set(dpe.heating_system.values)))
+            # for h in heater_list:
+            #     dpe_heater = dpe[dpe.heating_system==h]
+                
+            #     fig,ax = plt.subplots(figsize=(5,5),dpi=300)
+            #     sns.scatterplot(data=dpe_heater, y='dpe_mix_arrete_conso_5_usages_ep_m2', x='dpe_mix_arrete_conso_5_usages_ef_m2', ax=ax, alpha=0.01)
+            #     max_max = max(dpe.dpe_mix_arrete_conso_5_usages_ep_m2.max(), dpe.dpe_mix_arrete_conso_5_usages_ef_m2.max())
+            #     ax.set_xlim([0,max_max])
+            #     ax.set_ylim([0,max_max])
+            #     ax.set_title(h)
+            #     plt.show()
+            
+            
         # représentativité et écarts par rapport à la distribution par étiquette
         if False:
             # cartes 
-            if True:
+            if False:
                 # TODO : representativity à recalculer
                 
                 if 'representativity2.csv' not in os.listdir(os.path.join('data','BDNB')) and external_disk_connection:
@@ -1519,7 +1817,7 @@ def main():
                         plt.show()
                         
             # statistiques sur les valeurs U par typologie
-            if True:
+            if False:
                 
                 # ajout du U moyen (surfacique)
                 
@@ -1628,7 +1926,7 @@ def main():
                 # print(dpe[dpe.group_typology==typo_group].dpe_mix_arrete_epaisseur_isolation_mur_exterieur_estim.value_counts())
             
             # statistiques sur les systèmes de chauffage par typologie
-            if False:
+            if True:
                 # for typo_group in ['SFH', 'TH', 'MFH', 'AB']:
                 for typo_group in ['SFH']:
                 # typo_group = 'AB' # SFH, TH, MFH, AB
@@ -1637,6 +1935,7 @@ def main():
                     cmap = matplotlib.colormaps.get_cmap('viridis')
                     
                     dpe['heating_system'] = ['{}-{}'.format(en,ty) for en,ty in zip(dpe.dpe_mix_arrete_type_energie_chauffage,dpe.dpe_mix_arrete_type_generateur_chauffage)]
+                    dpe['heating_system_secondary'] = ['{}-{}'.format(en,ty) for en,ty in zip(dpe.dpe_mix_arrete_type_energie_chauffage_appoint,dpe.dpe_mix_arrete_type_generateur_chauffage_appoint)]
                     
                     heating_systems_mapping = {'bois-chaudiere bois':'Wood fuel-Performance boiler',
                                                'bois-chaudiere fioul standard':'Wood fuel-Performance boiler',
@@ -1685,7 +1984,49 @@ def main():
                                                'solaire-chauffage solaire':'Heating-District heating'}
                     
                     dpe['heating_system'] = [heating_systems_mapping.get(e) for e in dpe.heating_system]
+                    dpe['heating_system_secondary'] = [heating_systems_mapping.get(e) for e in dpe.heating_system_secondary]
                     
+                    # statistiques sur les chauffages secondaires
+                    if True: 
+                        dpe_heating = dpe[['group_typology','heating_system','heating_system_secondary']].copy()
+                        dpe_heating = dpe_heating[~dpe_heating.heating_system.isnull()]
+                        
+                        heaters = ['Electricity-Direct electric',
+                                   'Electricity-Heat pump air',
+                                   'Electricity-Heat pump water',
+                                   'Natural gas-Performance boiler',
+                                   'Oil fuel-Performance boiler',
+                                   'Wood fuel-Performance boiler',
+                                   'Heating-District heating',]
+                        
+                        df = {'building_type':[],'principal_system':[],'ratio':[]}
+                        for h in heaters:
+                            df[h]=[]
+                        
+                        for label,typo in zip(['SFH','MFH'],[['SFH','TH'],['MFH','AB']]):
+                            dpe_heating_typo = dpe_heating[dpe_heating.group_typology.isin(typo)]
+                            
+                            for h in heaters:
+                                filtered_df = dpe_heating_typo[dpe_heating_typo.heating_system==h]
+                                dict_heater = filtered_df.heating_system_secondary.value_counts().to_dict()
+                                
+                                df['building_type'].append(label)
+                                df['principal_system'].append(h)
+                                df['ratio'].append(len(filtered_df)/len(dpe_heating_typo))
+                                
+                                for sec_h in heaters :
+                                    val = dict_heater.get(sec_h,0)
+                                    if sec_h == h:
+                                        val = 0.
+                                    df[sec_h].append(val/len(filtered_df))
+                                
+                        df = pd.DataFrame().from_dict(df).set_index(['building_type','principal_system'])
+                        df.to_csv(os.path.join(output, folder,'statistics_energy_systems_principal_secondary.csv'))
+                        
+                        df = df*100
+                        print(df.to_latex(float_format='%.0f'))
+                        
+                        
                     heater_typologies = pd.DataFrame(dpe[['typology','heating_system']].value_counts()).reset_index()
                     # print(heater_typologies)
                     
