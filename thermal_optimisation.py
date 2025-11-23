@@ -27,7 +27,8 @@ from meteorology import get_historical_weather_data, get_safran_hourly_weather_d
 from thermal_model import (refine_resolution, 
                            aggregate_resolution, 
                            run_thermal_model, 
-                           plot_timeserie)
+                           plot_timeserie,
+                           compute_C_w0)
 from behaviour import Behaviour
 from administrative import Climat, France
 from typologies import Typology
@@ -1240,7 +1241,8 @@ def main():
             # city = 'Nice'
             
             # Période de calcul
-            period = [2000,2020]
+            # period = [2000,2020]
+            period = [2010,2010]
             # period = [2003,2003]
             
             # Checkpoint weather data
@@ -1256,19 +1258,31 @@ def main():
             weather_data = get_projected_weather_data(zcl.code, period)
             weather_data = refine_resolution(weather_data, resolution='600s')
             
-            plot_timeserie(weather_data[['temperature_2m']],figsize=(15,5),ylabel='Energy needs (Wh)',
-                           figs_folder=figs_folder,show=True)
+            # plot_timeserie(weather_data[['temperature_2m']],figsize=(15,5),ylabel='Energy needs (Wh)',
+            #                figs_folder=figs_folder,show=True)
             
-            plot_timeserie(weather_data[['direct_sun_radiation_H']],figsize=(15,5),ylabel='Energy needs (Wh)',
-                           figs_folder=figs_folder,show=True)
+            # plot_timeserie(weather_data[['direct_sun_radiation_H']],figsize=(15,5),ylabel='Energy needs (Wh)',
+            #                figs_folder=figs_folder,show=True)
                 
             # Définition des habitudes
             conventionnel = Behaviour('conventionnel_th-bce_2020')
             # conventionnel.heating_rules = {i:[19]*24 for i in range(1,8)}
             # conventionnel.cooling_rules = {i:[26]*24 for i in range(1,8)}
             
-            typo_name = 'FR.N.SFH.03.Gen'
+            typo_name = 'FR.N.SFH.05.Gen'
             typo = Typology(typo_name)
+            typo.cooler_maximum_power = 0. 
+            typo.heater_maximum_power = 0.
+            
+            # typo.w0_structure_thickness = typo.w0_structure_thickness*0.1
+            # typo.w1_structure_thickness = typo.w1_structure_thickness*0.1
+            # typo.w2_structure_thickness = typo.w2_structure_thickness*0.1
+            # typo.w3_structure_thickness = typo.w3_structure_thickness*0.1
+            
+            print(compute_C_w0(typo))
+            # typo.windows_U = 0.01
+            
+            
             
             # print(typo.modelled_Upb)
             
@@ -1283,6 +1297,8 @@ def main():
             
             # plot_timeserie(simulation[['heating_needs','cooling_needs']],figsize=(15,5),ylabel='Energy needs (Wh)',
             #                figs_folder=figs_folder,show=True)
+            plot_timeserie(simulation[['temperature_2m','internal_temperature','ground_temperature']],figsize=(5,5),ylabel='Temperature',
+                           figs_folder=figs_folder,show=True, xlim=[pd.to_datetime('2010-01-{:02d}'.format(e)) for e in [13,14]])
             
             
         
@@ -1433,7 +1449,7 @@ def main():
             
             
         # Évolution des monogestes
-        if True:
+        if False:
             # Localisation
             zcl = Climat('H1b')
             # zcl = Climat('H3')
@@ -2333,7 +2349,7 @@ def main():
     # plt.show()
             
     #%% Combinaisons de gestes de rénovations
-    if True:
+    if False:
         
         # TODO: attention au dossier déclaré
         # folder = '20250331_thermal_optimisation'
