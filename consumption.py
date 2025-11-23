@@ -54,6 +54,9 @@ ZCL_POPULATION_DISTRIBUTION = {'H1a':0.3,
                                'H2d':0.03, 
                                'H3':0.13}
 
+NORTH_ZCL = ['H1a', 'H1b', 'H2a']
+SOUTH_ZCL = sorted(list(set(ZCL_LIST)-set(NORTH_ZCL)))
+
 ENERGY_EFFICIENCY_HEATER = {'Electricity-Direct electric':0.95, 
                             'Electricity-Heat pump air':2,
                             'Electricity-Heat pump water':2.5,
@@ -134,6 +137,8 @@ class Stock:
         self.stock_energy_consumption_heating = None
         self.stock_energy_consumption_cooling = None
         
+        self.energy_needs_hourly = None
+        
     def __str__(self):
         return self.scenario_name
     
@@ -142,6 +147,7 @@ class Stock:
         print('{} - Stock reduction...'.format(self.scenario_name))
         # on garde les plus grands segments, représentant 80% du parc
         end_stock = self.technical_stock.sum(axis=1)
+        # end_stock = self.technical_stock[list(range(2030,2051))].sum(axis=1)
         segments = len(end_stock[end_stock.sort_values(ascending=False).cumsum()<(end_stock.sum()*threshold)])
         largest = end_stock.nlargest(segments)
         reduced_stock = self.technical_stock.loc[largest.index]
@@ -166,25 +172,70 @@ class Stock:
             ax.set_ylabel('Fraction of total households (ratio)')
             ax.set_xlabel('Cumulative count (out of {})'.format(len(self.technical_stock)))
             ax.set_ylim(bottom=0.,top=1.)
+            ax.set_title(self.zcl)
             plt.savefig(os.path.join(self.figs_path,'reduced_stock__{}.png'.format(self.scenario_name)), bbox_inches='tight')
             plt.show()
             
-            if False:
+            # représentativit du parc par année
+            if True:
                 fig,ax = plt.subplots(figsize=(5,5),dpi=300)
-                plot_years = [self.start_year,self.end_year]
+                plot_years = [self.start_year,2020,2030,2040,self.end_year]
                 for y in plot_years:
                     X = np.linspace(0,len(self.technical_stock),50)
                     Y = [0.]*len(X)
                     for idx,n_seg in enumerate(X):
                         largest = self.technical_stock[y].nlargest(int(n_seg))
                         Y[idx] = largest.sum()/self.technical_stock[y].sum()
-                        
-                    ax.plot(X,Y,label=y)
                     
+                    ax.plot(X,Y,label=y)
+                ax.set_xscale('log')
+                ylims = ax.get_ylim()
+                xlims = ax.get_xlim()
+                ax.plot([segments]*2,ylims,color='k',alpha=0.5,zorder=-1)
+                
+                ax.set_ylim(ylims)
+                ax.set_xlim(xlims)
                 # ax.set_ylim(bottom=0.,top=1.)
-                ax.set_xlim(left=0.)
+                # ax.set_xlim(left=0.)
+                ax.grid()
+                ax.set_title(self.zcl)
                 ax.legend()
                 plt.show()
+             
+            # acarctéristiques thermique des enveloppes qu'on supprime avec la réduction
+            if True:
+                fig,ax = plt.subplots(figsize=(5,5),dpi=300)
+                sns.histplot(ax=ax,x=self.technical_stock.index.get_level_values('Wall').map(str),weights=self.technical_stock[2018],stat='percent',fill=False,label='Full 2018')
+                sns.histplot(ax=ax,x=self.technical_stock.index.get_level_values('Wall').map(str),weights=self.technical_stock[2050],stat='percent',fill=False,label='Full 2050')
+                sns.histplot(ax=ax,x=reduced_stock.index.get_level_values('Wall').map(str),weights=reduced_stock[2018],stat='percent',fill=False,label='Reduced 2018')
+                sns.histplot(ax=ax,x=reduced_stock.index.get_level_values('Wall').map(str),weights=reduced_stock[2050],stat='percent',fill=False,label='Reduced 2050')
+                ax.legend()
+                plt.show()
+                
+                fig,ax = plt.subplots(figsize=(5,5),dpi=300)
+                sns.histplot(ax=ax,x=self.technical_stock.index.get_level_values('Floor').map(str),weights=self.technical_stock[2018],stat='percent',fill=False,label='Full 2018')
+                sns.histplot(ax=ax,x=self.technical_stock.index.get_level_values('Floor').map(str),weights=self.technical_stock[2050],stat='percent',fill=False,label='Full 2050')
+                sns.histplot(ax=ax,x=reduced_stock.index.get_level_values('Floor').map(str),weights=reduced_stock[2018],stat='percent',fill=False,label='Reduced 2018')
+                sns.histplot(ax=ax,x=reduced_stock.index.get_level_values('Floor').map(str),weights=reduced_stock[2050],stat='percent',fill=False,label='Reduced 2050')
+                ax.legend()
+                plt.show()
+                
+                fig,ax = plt.subplots(figsize=(5,5),dpi=300)
+                sns.histplot(ax=ax,x=self.technical_stock.index.get_level_values('Roof').map(str),weights=self.technical_stock[2018],stat='percent',fill=False,label='Full 2018')
+                sns.histplot(ax=ax,x=self.technical_stock.index.get_level_values('Roof').map(str),weights=self.technical_stock[2050],stat='percent',fill=False,label='Full 2050')
+                sns.histplot(ax=ax,x=reduced_stock.index.get_level_values('Roof').map(str),weights=reduced_stock[2018],stat='percent',fill=False,label='Reduced 2018')
+                sns.histplot(ax=ax,x=reduced_stock.index.get_level_values('Roof').map(str),weights=reduced_stock[2050],stat='percent',fill=False,label='Reduced 2050')
+                ax.legend()
+                plt.show()
+                
+                fig,ax = plt.subplots(figsize=(5,5),dpi=300)
+                sns.histplot(ax=ax,x=self.technical_stock.index.get_level_values('Windows').map(str),weights=self.technical_stock[2018],stat='percent',fill=False,label='Full 2018')
+                sns.histplot(ax=ax,x=self.technical_stock.index.get_level_values('Windows').map(str),weights=self.technical_stock[2050],stat='percent',fill=False,label='Full 2050')
+                sns.histplot(ax=ax,x=reduced_stock.index.get_level_values('Windows').map(str),weights=reduced_stock[2018],stat='percent',fill=False,label='Reduced 2018')
+                sns.histplot(ax=ax,x=reduced_stock.index.get_level_values('Windows').map(str),weights=reduced_stock[2050],stat='percent',fill=False,label='Reduced 2050')
+                ax.legend()
+                plt.show()
+                
         
         reduced_stock_heater_agg = reduced_stock.copy()
         reduced_stock_heater_agg = reduced_stock_heater_agg.groupby([i for i in reduced_stock_heater_agg.index.names if i not in ['Heating system']]).sum()
@@ -216,6 +267,13 @@ class Stock:
             typo.w2_insulation_thickness = typo.w2_insulation_thickness + INSULATION_LAYER.get(bt).get('wall').get(wall)
             typo.w3_insulation_thickness = typo.w3_insulation_thickness + INSULATION_LAYER.get(bt).get('wall').get(wall)
             typo.floor_insulation_thickness = typo.floor_insulation_thickness + INSULATION_LAYER.get(bt).get('floor').get(floor)
+            
+            # ajout d'un masquage si fenêtre rénovée et zcl focus
+            if windows == 1.3: # level of renovated windows in Res-IRF
+                focus_zcl_dict = {'NOF':NORTH_ZCL, 'REF':[], 'SOF':SOUTH_ZCL}
+                focus_zcl_list = focus_zcl_dict.get(self.pz_scenario)
+                if self.zcl in focus_zcl_list:
+                    typo.solar_shader_length = 1. #m
             
             if cs == 'No AC':
                 typo.cooler_maximum_power = 0.
@@ -319,7 +377,7 @@ class Stock:
         self.energy_needs_cooling = energy_cooling
         
         # retablissement des systèmes de chauffage 
-        # ne pas pondérer les consommations ! c'est unitaire ici TODO
+        # ne pas pondérer les consommations ! c'est unitaire ici
         for idx,y in enumerate(range(self.start_year, self.end_year+1)):
             if idx == 0:
                 temp_energy_heating = pd.DataFrame(self.add_level(self.energy_needs_heating[y], self.reduced_technical_stock[y], 'Heating system',keep_distribution=False)).rename(columns={0:y})
@@ -332,6 +390,31 @@ class Stock:
         
         self.energy_needs_heating = temp_energy_heating
         self.energy_needs_cooling = temp_energy_cooling
+        
+        return 
+    
+    
+    def format_energy_needs_hourly(self, year=2020):
+        if self.typologies is None:
+            self.compute_typologies()
+
+        self.compute_energy_needs()
+        typo_number_list = self.reduced_technical_stock_heater_agg[year]
+        
+        needs = None
+        print('{} - Energy needs formatting...'.format(self.scenario_name))
+        for typo_index,typo_save,typo_number in zip(self.typologies.index,self.typologies.complete_save,typo_number_list.values):
+            temp_needs = pd.read_parquet(os.path.join(self.rc_path,typo_save.replace('_daily.parquet','_hourly.parquet')))
+            temp_needs = temp_needs[temp_needs.index.year==year][['heating_needs','cooling_needs']]
+            temp_needs = temp_needs * typo_number
+            
+            if needs is None:
+                needs = temp_needs
+            else:
+                needs.cooling_needs = needs.cooling_needs + temp_needs.cooling_needs
+                needs.heating_needs = needs.heating_needs + temp_needs.heating_needs
+        
+        self.energy_needs_hourly = needs
         
         return 
     
@@ -513,6 +596,8 @@ class Stock:
     
     
     def get_daily_consumption(self, energy_filter=None):
+        #TODO : refaire le filtre pour prendre en compte les chauffages secondaires proprement
+        
         if energy_filter is not None:
             save_name = '{}_daily_consumption_{}.parquet'.format(self.scenario_name,energy_filter)
         else:
@@ -791,17 +876,184 @@ def main():
     folder = '{}_consumption'.format(today)
     figs_folder = os.path.join(output, folder, 'figs')
     
-    # Création des dossiers de sortie 
+    # Création des dossiers de sortie TODO
     if folder not in os.listdir(output):
         os.mkdir(os.path.join(output,folder))
     if 'figs' not in os.listdir(os.path.join(output, folder)):
         os.mkdir(figs_folder)
+    
+    
+    #%% Vérification des effets de la réduction des stocks
+    if False:
+        cm = 'EC-EARTH_HadREM3-GA7'
+        acs = 'REF' 
+        pzs = "REF" 
+        
+        for zcl in ['H1a']:
+            stock_zcl = Stock(ac_scenario=acs,pz_scenario=pzs,zcl=zcl,climate_model=cm,folder=os.path.join(output, folder))
+            stock_zcl.compute_reduced_technical_stock(plot=True)
+            
+    #%% Calcul du coefficient de rigueur
+    if False:
+        # https://www.statistiques.developpement-durable.gouv.fr/indice-de-rigueur-degres-jours-unifies-aux-niveaux-national-regional-et-departemental
+        
+        # puis fct de la température annuelle extérieure ou HDD17, pondérée zcl pop
+        # utiliser la conso corrigée du climat pour la calibration
+        
+        sdes_rigueur = pd.read_excel(os.path.join('data','SDES','dju_donnees_nationales_1970_2024_v4.xlsx'),sheet_name='DJU17').set_index('year')
+        
+        ref = sdes_rigueur['DJU de référence (moyenne sur la période 1991-2020)'].values[0]
+        hdd17_models = None
+        
+        # climate_models_list = ['EC-EARTH_HadREM3-GA7'] 
+        climate_models_list = list(CLIMATE_MODELS_NUMBERS.keys())
+        for cm in climate_models_list:
+            cmn = CLIMATE_MODELS_NUMBERS.get(cm)
+            
+            hdd17_models_zcl = None
+            for zcl in ZCL_LIST:
+                zcl_city = Climat(zcl).center_prefecture
+                
+                weather_data_checkfile = ".weather_data_{}_{}_{}_explore2_mod{}".format(zcl_city,2018,2050,cmn) + ".pickle"
+                if weather_data_checkfile not in os.listdir():
+                    weather_data = get_projected_weather_data(zcl, [2018,2050],nmod=cmn)
+                    weather_data = refine_resolution(weather_data, resolution='600s')
+                    pickle.dump(weather_data, open(weather_data_checkfile, "wb"))
+                else:
+                    try:
+                        weather_data = pickle.load(open(weather_data_checkfile, 'rb'))
+                    except pickle.UnpicklingError:
+                        weather_data = pickle.load(open(weather_data_checkfile, 'rb'))
+                        
+                weather_data = weather_data[['temperature_2m']]
+                weather_data = aggregate_resolution(weather_data,'d','mean')
+                weather_data[zcl] = (17-weather_data.temperature_2m).clip(lower=0.)
+                weather_data = aggregate_resolution(weather_data[[zcl]],'YS','sum')   
+                
+                if hdd17_models_zcl is None:
+                    hdd17_models_zcl = weather_data
+                else:
+                    hdd17_models_zcl = hdd17_models_zcl.join(weather_data)
+            
+            hdd17_models_zcl[cm] = [0]*len(hdd17_models_zcl)
+            for zcl in ZCL_LIST: 
+                hdd17_models_zcl[cm] = hdd17_models_zcl[cm] + hdd17_models_zcl[zcl] * ZCL_POPULATION_DISTRIBUTION.get(zcl)
+                
+            if hdd17_models is None:
+                hdd17_models = hdd17_models_zcl[[cm]]
+            else:
+                hdd17_models = hdd17_models.join(hdd17_models_zcl[[cm]])
+        hdd17_models.index = hdd17_models.index.year 
+        
+        hdd17_models = hdd17_models/ref
+        hdd17_models.to_csv('rigueur.csv')
+        
+        color = plt.get_cmap('viridis')(0.5)
+        fig,ax = plt.subplots(dpi=300,figsize=(5,5))
+        ax.plot(sdes_rigueur.index,sdes_rigueur['Indice de rigueur'],label='Reference',color='k')
+        hdd17_models.mean(axis=1).plot(ax=ax,color=color,label='Projections')
+        ax.fill_between(hdd17_models.index,hdd17_models.mean(axis=1)+hdd17_models.std(axis=1), hdd17_models.mean(axis=1)-hdd17_models.std(axis=1),color=color,alpha=0.27)
+        ax.set_ylim(bottom=0.)
+        ax.set_xlim(left=2000,right=2050)
+        plt.show()
+                
+    
+    #%% Caractérisation des scénarios, variables d'output
+    if False:
+        climate_models_list = list(CLIMATE_MODELS_NUMBERS.keys())
+        climate_models_list = ['EC-EARTH_HadREM3-GA7'] 
+        ac_scenarios = ['REF'] # ['ACM','REF','ACP']
+        pz_scenarios = ["REF"] # ['NOF','REF','SOF']
+        
+        # TODO: vérifier ce que ça fait avec le reduced stock
+        
+        
+        # évolution des variables de sortie Res-IRF
+        if True:
+            output_vars = [
+                           # 'Stock (Million)',
+                           'Consumption (TWh)',
+                           # 'Renovation (Thousand households)',
+                           # 'Consumption standard (TWh)',
+                           # 'Surface Electricity-Direct electric (Million m2)',
+                           # 'Surface Electricity-Heat pump air (Million m2)',
+                           # 'Surface Electricity-Heat pump water (Million m2)',
+                           # 'Surface Natural gas-Performance boiler (Million m2)',
+                           # 'Cee Multi-family (Thousand households)',
+                           # 'Retrofit (Thousand households)',
+                           ]
+            
+            resirf_df = None 
+            
+            for acs in ac_scenarios:
+                for pzs in pz_scenarios:
+                    for cm in climate_models_list:
+                        for zcl in ZCL_LIST:
+                            stock_zcl = Stock(ac_scenario=acs,pz_scenario=pzs,zcl=zcl,climate_model=cm,folder=os.path.join(output, folder))
+                            resirf_output_path = os.path.join(stock_zcl.stock_folder,'output.csv')
+                            resirf_output = pd.read_csv(resirf_output_path).rename(columns={'Unnamed: 0':'index'}).set_index('index').T
+                            resirf_output.index = resirf_output.index.map(int)
+                            resirf_output = resirf_output[output_vars]
+                            resirf_output['scenario'] = [stock_zcl.ac_pz_scenario]*len(resirf_output)
+                            resirf_output['climate_model'] = [cm]*len(resirf_output)
+                            resirf_output['zcl'] = [zcl]*len(resirf_output)
+                            resirf_output = resirf_output.reset_index().rename(columns={'index':'year'})
+                            
+                            if resirf_df is None:
+                                resirf_df = resirf_output
+                            else:
+                                resirf_df = pd.concat([resirf_df,resirf_output],ignore_index=True)
+                        
+            for var in output_vars:
+                fig,ax = plt.subplots(figsize=(5,5),dpi=300)
+                
+                for sce in list(set(resirf_df.scenario.values)):
+                    df = resirf_df[resirf_df.scenario==sce].groupby(['year','climate_model'],as_index=False)[var].sum()
+                    mean_cm = df.groupby(['year'],as_index=True)[var].mean()
+                    color = get_scenarios_color().get(sce)
+                    ax.plot(mean_cm.index,mean_cm,color=color,label=sce.replace('_',' - '))
+                    
+                ax.set_ylabel(var)
+                ax.legend()
+                ax.set_ylim(bottom=0.,top=None)
+                # ax.set_xlim([pd.to_datetime('{}-01-01'.format(y)) for y in [2018,2050]])
+                ax.set_xlim([2018,2050])
+                plt.savefig(os.path.join(figs_folder,'resirf_{}.png'.format(var)), bbox_inches='tight')
+                plt.show()
+            
+                if False:
+                    fig,ax = plt.subplots(figsize=(5,5),dpi=300)
+                        
+                    for sce in list(set(resirf_df.scenario.values)):
+                        df_north = resirf_df[(resirf_df.scenario==sce)&(resirf_df.zcl.isin(NORTH_ZCL))]
+                        df_south = resirf_df[(resirf_df.scenario==sce)&(resirf_df.zcl.isin(SOUTH_ZCL))]
+                        df_north = df_north.groupby(['year','climate_model'],as_index=False)[var].sum()
+                        mean_cm_north = df_north.groupby(['year'],as_index=True)[var].mean()
+                        df_south = df_south.groupby(['year','climate_model'],as_index=False)[var].sum()
+                        mean_cm_south = df_south.groupby(['year'],as_index=True)[var].mean()
+                        color = get_scenarios_color().get(sce)
+                        ax.plot(mean_cm_north.index,mean_cm_north,color=color,label=sce.replace('_',' - ') + ' North',ls=':')
+                        ax.plot(mean_cm_south.index,mean_cm_south,color=color,label=sce.replace('_',' - ') + ' South',ls='-.')
+                        
+                    ax.set_ylabel(var)
+                    ax.legend()
+                    ax.set_ylim(bottom=0.)
+                    # ax.set_xlim([pd.to_datetime('{}-01-01'.format(y)) for y in [2018,2050]])
+                    ax.set_xlim([2018,2050])
+                    plt.savefig(os.path.join(figs_folder,'resirf_{}_north_south.png'.format(var)), bbox_inches='tight')
+                    plt.show()
+        
+        
+        
+        
+        
+        
         
     #%% premier test
     if False:
         stock = Stock(zcl='H1a',climate_model='EC-EARTH_HadREM3-GA7',folder=os.path.join(output, folder))
         
-
+        # TODO: /home/amounier/PycharmProjects/thermal/data/DPE/statistics_energy_systems_principal_secondary.csv
         
         stock.compute_reduced_technical_stock(plot=True) 
         
@@ -834,21 +1086,41 @@ def main():
         
     
     #%% lancement des calculs pour tous les modèles climatiques 
-    if False:
+    if True:
         climate_models_list = list(CLIMATE_MODELS_NUMBERS.keys())
+        # climate_models_list = ['EC-EARTH_HadREM3-GA7'] 
+        # ac_scenarios = ['REF'] # ['ACM','REF','ACP']
+        ac_scenarios = ['ACM','REF','ACP']
+        # pz_scenarios = ["REF"] # ['NOF','REF','SOF']
+        pz_scenarios = ['NOF','REF','SOF']
         
-        for cm in climate_models_list:
-            dict_zcl_stock = {}
-            for zcl in ZCL_LIST:
-                dict_zcl_stock[zcl] = Stock(zcl=zcl,climate_model=cm,folder=os.path.join(output, folder))
+        for acs in ac_scenarios:
+            for pzs in pz_scenarios:
+                sce = '{}_{}'.format(acs,pzs)
+                
+                # if sce not in ['REF_REF','ACM_NOF','ACP_NOF','ACM_SOF','ACP_SOF']:
+                #     continue 
+                
+                for cm in climate_models_list:
+                    dict_zcl_stock = {}
+                    for zcl in ZCL_LIST:
+                        dict_zcl_stock[zcl] = Stock(ac_scenario=acs,pz_scenario=pzs,zcl=zcl,climate_model=cm,folder=os.path.join(output, folder))
             
-            for zcl in ZCL_LIST:
-                dict_zcl_stock[zcl].compute_stock_energy_consumption()
+                    for zcl in ZCL_LIST:
+                        dict_zcl_stock[zcl].compute_stock_energy_consumption()
         
         
     #%% Étude des consommations d'énergie annuelle et plus fine
-    sdes_data_heating = pd.read_csv(os.path.join('data','SDES','consommations_energie_chauffage_residentiel.csv')).set_index('Heating system').rename(columns={str(y):y for y in range(2017,2024)})
-    sdes_data_cooling = pd.read_csv(os.path.join('data','SDES','consommations_energie_climatisation_residentiel.csv')).set_index('Cooling system').rename(columns={str(y):y for y in range(2017,2024)})
+    sdes_data_heating = pd.read_csv(os.path.join('data','SDES','consommations_energie_chauffage_residentiel.csv')).set_index('Heating system').rename(columns={str(y):y for y in [2020]})
+    sdes_data_cooling = pd.read_csv(os.path.join('data','SDES','consommations_energie_climatisation_residentiel.csv')).set_index('Cooling system').rename(columns={str(y):y for y in [2020]})
+    
+    # données des chauffages secondaires
+    secondary = pd.read_csv(os.path.join('data','DPE','statistics_energy_systems_principal_secondary.csv'))
+    secondary = secondary.set_index(['building_type','principal_system']).drop(columns='ratio')
+    
+    # indices de rigueur
+    sdes_rigueur = pd.read_excel(os.path.join('data','SDES','dju_donnees_nationales_1970_2024_v4.xlsx'),sheet_name='DJU17').set_index('year')
+    proj_rigueur = pd.read_csv(os.path.join('data','rigueur.csv')).rename(columns={'Unnamed: 0':'year'}).set_index('year')
     
     # Vérification de la consommation nationale initiale
     if False:
@@ -858,9 +1130,11 @@ def main():
         # ademe_correction 
         # sdes_data_cooling = sdes_data_cooling * 2.634408602
         
+        climate_model = 'EC-EARTH_HadREM3-GA7'
+        
         dict_zcl_stock = {}
         for zcl in ZCL_LIST:
-            dict_zcl_stock[zcl] = Stock(zcl=zcl,climate_model='EC-EARTH_HadREM3-GA7',folder=os.path.join(output, folder))
+            dict_zcl_stock[zcl] = Stock(zcl=zcl,climate_model=climate_model,folder=os.path.join(output, folder))
         
         for zcl in ZCL_LIST:
             # dict_zcl_stock[zcl].compute_stock_energy_consumption_conv()
@@ -878,17 +1152,45 @@ def main():
         heating = heating.fillna(0)
         cooling = cooling.fillna(0)
         
+        heaters = ['Electricity-Direct electric',
+                   'Electricity-Heat pump air',
+                   'Electricity-Heat pump water',
+                   'Natural gas-Performance boiler',
+                   'Oil fuel-Performance boiler',
+                   'Wood fuel-Performance boiler',
+                   'Heating-District heating',]
         
-        heating = pd.DataFrame(heating.groupby(heating.index.get_level_values('Heating system')).sum().sum(axis=1)).rename(columns={0:'modelled'})
+        f = 1. # part des conso pour le secondaire
+        
+        heating_principal = heating.groupby([heating.index.get_level_values('Housing type'),heating.index.get_level_values('Heating system')]).sum().sum(axis=1)
+        heating_secondary = {h:0 for h in heaters}
+        for (bt,hs),cons in zip(heating_principal.index,heating_principal.values):
+            minus_cons = 0
+            for sec_h in heaters:
+                tau = secondary.loc[('Single-family',hs),sec_h]
+                cons_sec_h = cons * tau * f
+                heating_secondary[sec_h] += cons_sec_h
+                minus_cons += cons_sec_h
+            heating_secondary[hs] += cons - minus_cons
+        heating_secondary = pd.DataFrame().from_dict({'Heating system':list(heating_secondary.keys()),'modelled':list(heating_secondary.values())}).set_index('Heating system')        
+        # print(heating_secondary)
+        
+        heating = heating_secondary
         heating = heating * 1e-12
-        heating = heating.join(sdes_data_heating[[year]].rename(columns={year:'ref'}),how='outer')
+        heating = heating.join(pd.DataFrame(sdes_data_heating.mean(axis=1)).rename(columns={0:'ref'}),how='outer')
         heating.loc['Electricity-Heat pump','modelled'] = heating.loc['Electricity-Heat pump air','modelled'] + heating.loc['Electricity-Heat pump water','modelled']
         heating = heating.dropna(axis=0)
         heating['ratio'] = heating.ref/heating.modelled
         
+        heating_climat_corrected = heating.copy()
+        heating_climat_corrected['modelled'] = heating_climat_corrected['modelled']/proj_rigueur.loc[2020,climate_model]
+        heating_climat_corrected['ref'] = heating_climat_corrected['ref']/sdes_rigueur.loc[2020,'Indice de rigueur']
+        heating_climat_corrected['ratio'] = heating_climat_corrected.ref/heating_climat_corrected.modelled
+        
         print('Heating consumption {}'.format(year))
-        print(heating)
-        print(heating.sum())
+        # print((heating/heating.sum(axis=0)*100)[['modelled','ref']])
+        print(heating_climat_corrected)
+        print(heating_climat_corrected[['modelled','ref']].sum())
         
         # cooling = pd.DataFrame(cooling.groupby(cooling.index.get_level_values('Cooling system')).sum().sum(axis=1)).rename(columns={0:'modelled'})
         # cooling = cooling * 1e-12
@@ -899,117 +1201,257 @@ def main():
         # print('Cooling consumption {}'.format(year))
         # print(cooling)
         
+        
     # affichage des séries temporelles de consommations
     if False:
-        climate_models_list = list(CLIMATE_MODELS_NUMBERS.keys())
-        scenarios = None
-        color = None
+        # climate_models_list = list(CLIMATE_MODELS_NUMBERS.keys())
+        climate_models_list = ['EC-EARTH_HadREM3-GA7'] 
+        ac_scenarios = ['REF'] #['ACM','REF','ACP']
+        pz_scenarios = ["REF"] # ['NOF','REF','SOF']
+        
+        color_dict = {}
         
         df_consumption = None
-        for cm in climate_models_list:
-            for zcl in ZCL_LIST:
-                s = Stock(zcl=zcl,climate_model=cm,folder=os.path.join(output, folder))
-                temp = s.get_daily_consumption()
-                if scenarios is None:
-                    scenarios = s.ac_pz_scenario
-                    color = s.scenario_color
-                del s
-                if df_consumption is None:
-                    df_consumption = temp
-                else:
-                    df_consumption = pd.concat([df_consumption, temp])
+        for acs in ac_scenarios:
+            for pzs in pz_scenarios:
+                
+                sce = '{}_{}'.format(acs,pzs)
+                # if sce not in ['REF_REF','ACM_NOF','ACP_NOF','ACM_SOF','ACP_SOF']:
+                #     continue 
+                
+                for cm in climate_models_list:
+                    for zcl in ZCL_LIST:
+                        s = Stock(ac_scenario=acs,pz_scenario=pzs,zcl=zcl,climate_model=cm,folder=os.path.join(output, folder))
+                        temp = s.get_daily_consumption()
+                        temp['scenario'] = [s.ac_pz_scenario]*len(temp)
+                        scenario = s.ac_pz_scenario
+                        color_dict[scenario] = s.scenario_color
+                        del s
+                        if df_consumption is None:
+                            df_consumption = temp
+                        else:
+                            df_consumption = pd.concat([df_consumption, temp])
         
-        df_consumption_agg_zcl = df_consumption[['heating_cons','cooling_cons','total_cons','climate_model']].reset_index().groupby(['index','climate_model'],as_index=False).sum()
-        
-        df_consumption_agg_zcl_yearly = None
-        for cm in climate_models_list:
-            temp = df_consumption_agg_zcl[df_consumption_agg_zcl.climate_model==cm].set_index('index')
-            temp = aggregate_resolution(temp,'YS','sum')
-            temp['climate_model'] = [cm]*len(temp)
-            temp = temp.reset_index()
-            if df_consumption_agg_zcl_yearly is None:
-                df_consumption_agg_zcl_yearly = temp
-            else:
-                df_consumption_agg_zcl_yearly = pd.concat([df_consumption_agg_zcl_yearly,temp])
-        
-        heating_mean = df_consumption_agg_zcl_yearly.groupby('index')['heating_cons'].mean()
-        heating_std = df_consumption_agg_zcl_yearly.groupby('index')['heating_cons'].std()
-        
-        cooling_mean = df_consumption_agg_zcl_yearly.groupby('index')['cooling_cons'].mean()
-        cooling_std = df_consumption_agg_zcl_yearly.groupby('index')['cooling_cons'].std()
-        
-        fig,ax = plt.subplots(figsize=(5,5),dpi=300)
-        ax.plot([pd.to_datetime('{}-01-01'.format(y)) for y in sdes_data_heating.sum().index], sdes_data_heating.sum().values,label='SDES',color='k')
-        ax.plot(heating_mean*1e-12,label=scenarios.replace('_',' - '),color=color)
-        ax.fill_between(heating_std.index,heating_mean.values*1e-12+heating_std.values*1e-12,heating_mean.values*1e-12-heating_std.values*1e-12,alpha=0.5,color=color)
-        ax.set_ylabel('Annual heating consumption (TWh.yr$^{-1}$)')
-        ax.legend()
-        ax.set_ylim(bottom=0.)
-        ax.set_xlim([pd.to_datetime('{}-01-01'.format(y)) for y in [2018,2050]])
-        plt.savefig(os.path.join(figs_folder,'heating_consumption.png'), bbox_inches='tight')
-        plt.show()
-        
-        fig,ax = plt.subplots(figsize=(5,5),dpi=300)
-        ax.plot([pd.to_datetime('{}-01-01'.format(y)) for y in sdes_data_cooling.sum().index], sdes_data_cooling.sum().values,label='SDES',color='k')
-        ax.plot(cooling_mean*1e-12,label=scenarios.replace('_',' - '),color=color)
-        ax.fill_between(cooling_std.index,cooling_mean.values*1e-12+cooling_std.values*1e-12,cooling_mean.values*1e-12-cooling_std.values*1e-12,alpha=0.5,color=color)
-        ax.set_ylabel('Annual cooling consumption (TWh.yr$^{-1}$)')
-        ax.legend()
-        ax.set_ylim(bottom=0.)
-        ax.set_xlim([pd.to_datetime('{}-01-01'.format(y)) for y in [2018,2050]])
-        plt.savefig(os.path.join(figs_folder,'cooling_consumption.png'), bbox_inches='tight')
-        plt.show()
-        
-        
-        # juste électricité
-        df_consumption = None
-        for cm in climate_models_list:
-            for zcl in ZCL_LIST:
-                s = Stock(zcl=zcl,climate_model=cm,folder=os.path.join(output, folder))
-                temp = s.get_daily_consumption(energy_filter='Electricity')
-                temp['heating_cons'] = temp['heating_cons']*0.5
-                if scenarios is None:
-                    scenarios = s.ac_pz_scenario
-                    color = s.scenario_color
-                del s
-                if df_consumption is None:
-                    df_consumption = temp
-                else:
-                    df_consumption = pd.concat([df_consumption, temp])
-        
-        df_consumption_agg_zcl = df_consumption[['heating_cons','cooling_cons','total_cons','climate_model']].reset_index().groupby(['index','climate_model'],as_index=False).sum()
+        df_consumption_agg_zcl = df_consumption[['heating_cons','cooling_cons','total_cons','climate_model','scenario']].reset_index().groupby(['index','climate_model','scenario'],as_index=False).sum()
         
         df_consumption_agg_zcl_yearly = None
-        for cm in climate_models_list:
-            temp = df_consumption_agg_zcl[df_consumption_agg_zcl.climate_model==cm].set_index('index')
-            temp = aggregate_resolution(temp,'YS','sum')
-            temp['climate_model'] = [cm]*len(temp)
-            temp = temp.reset_index()
-            if df_consumption_agg_zcl_yearly is None:
-                df_consumption_agg_zcl_yearly = temp
-            else:
-                df_consumption_agg_zcl_yearly = pd.concat([df_consumption_agg_zcl_yearly,temp])
-        
-        heating_mean = df_consumption_agg_zcl_yearly.groupby('index')['heating_cons'].mean()
-        heating_std = df_consumption_agg_zcl_yearly.groupby('index')['heating_cons'].std()
-        
-        cooling_mean = df_consumption_agg_zcl_yearly.groupby('index')['cooling_cons'].mean()
-        cooling_std = df_consumption_agg_zcl_yearly.groupby('index')['cooling_cons'].std()
+        for scenario in list(set(df_consumption_agg_zcl.scenario.values)):
+            df_consumption_agg_zcl_sce = df_consumption_agg_zcl[df_consumption_agg_zcl.scenario==scenario].set_index('index')
+            for cm in climate_models_list:
+                temp = df_consumption_agg_zcl_sce[df_consumption_agg_zcl_sce.climate_model==cm]
+                temp = aggregate_resolution(temp,'YS','sum')
+                temp['climate_model'] = [cm]*len(temp)
+                temp['scenario'] = [scenario]*len(temp)
+                temp = temp.reset_index()
+                if df_consumption_agg_zcl_yearly is None:
+                    df_consumption_agg_zcl_yearly = temp
+                else:
+                    df_consumption_agg_zcl_yearly = pd.concat([df_consumption_agg_zcl_yearly,temp])
         
         fig,ax = plt.subplots(figsize=(5,5),dpi=300)
         # ax.plot([pd.to_datetime('{}-01-01'.format(y)) for y in sdes_data_heating.sum().index], sdes_data_heating.sum().values,label='SDES',color='k')
-        ax.plot(heating_mean*1e-12,label=scenarios.replace('_',' - '),color=color)
-        ax.fill_between(heating_std.index,heating_mean.values*1e-12+heating_std.values*1e-12,heating_mean.values*1e-12-heating_std.values*1e-12,alpha=0.5,color=color)
+        
+        for scenario in list(set(df_consumption_agg_zcl.scenario.values)):
+            df_consumption_agg_zcl_yearly_sce = df_consumption_agg_zcl_yearly[df_consumption_agg_zcl_yearly.scenario==scenario]
+            df_consumption_agg_zcl_yearly_sce['index'] = df_consumption_agg_zcl_yearly_sce['index'].dt.year
+            df_consumption_agg_zcl_yearly_sce = df_consumption_agg_zcl_yearly_sce.rename(columns={'index':'year'})
+            df_consumption_agg_zcl_yearly_sce = df_consumption_agg_zcl_yearly_sce.set_index(['year','climate_model'])
+            
+            rigueur = pd.DataFrame(proj_rigueur.stack()).rename(columns={0:'rigueur'})
+            rigueur.index = rigueur.index.set_names(['year','climate_model'])
+            df_consumption_agg_zcl_yearly_sce = df_consumption_agg_zcl_yearly_sce.join(rigueur)
+            
+            for col in ['heating_cons', 'cooling_cons', 'total_cons']:
+                df_consumption_agg_zcl_yearly_sce[col] = df_consumption_agg_zcl_yearly_sce[col]/df_consumption_agg_zcl_yearly_sce['rigueur']
+            
+            heating_mean = df_consumption_agg_zcl_yearly_sce.groupby('year')['heating_cons'].mean()
+            heating_std = df_consumption_agg_zcl_yearly_sce.groupby('year')['heating_cons'].std()
+            
+            color = color_dict.get(scenario)
+            ax.plot(heating_mean*1e-12,label=scenario.replace('_',' - '),color=color)
+            ax.fill_between(heating_std.index,heating_mean.values*1e-12+heating_std.values*1e-12,heating_mean.values*1e-12-heating_std.values*1e-12,alpha=0.5,color=color)
+            
         ax.set_ylabel('Annual heating consumption (TWh.yr$^{-1}$)')
         ax.legend()
-        ax.set_ylim(bottom=0.)
-        ax.set_xlim([pd.to_datetime('{}-01-01'.format(y)) for y in [2018,2050]])
-        plt.savefig(os.path.join(figs_folder,'heating_Electricity_consumption.png'), bbox_inches='tight')
+        ax.set_ylim(bottom=0.,top=310)
+        # ax.set_xlim([pd.to_datetime('{}-01-01'.format(y)) for y in [2018,2050]])
+        ax.set_xlim([2018,2050])
+        plt.savefig(os.path.join(figs_folder,'heating_consumption.png'), bbox_inches='tight')
         plt.show()
+        
+        
+        # séparation nord sud
+        if False:
+            
+            df_consumption_agg_zcl_north = df_consumption[df_consumption.zcl.isin(NORTH_ZCL)][['heating_cons','cooling_cons','total_cons','climate_model','scenario']].reset_index().groupby(['index','climate_model','scenario'],as_index=False).sum()
+            df_consumption_agg_zcl_yearly_north = None
+            for scenario in list(set(df_consumption_agg_zcl_north.scenario.values)):
+                df_consumption_agg_zcl_sce = df_consumption_agg_zcl_north[df_consumption_agg_zcl_north.scenario==scenario].set_index('index')
+                for cm in climate_models_list:
+                    temp = df_consumption_agg_zcl_sce[df_consumption_agg_zcl_sce.climate_model==cm]
+                    temp = aggregate_resolution(temp,'YS','sum')
+                    temp['climate_model'] = [cm]*len(temp)
+                    temp['scenario'] = [scenario]*len(temp)
+                    temp = temp.reset_index()
+                    if df_consumption_agg_zcl_yearly_north is None:
+                        df_consumption_agg_zcl_yearly_north = temp
+                    else:
+                        df_consumption_agg_zcl_yearly_north = pd.concat([df_consumption_agg_zcl_yearly_north,temp])
+                        
+            df_consumption_agg_zcl_south = df_consumption[df_consumption.zcl.isin(SOUTH_ZCL)][['heating_cons','cooling_cons','total_cons','climate_model','scenario']].reset_index().groupby(['index','climate_model','scenario'],as_index=False).sum()
+            df_consumption_agg_zcl_yearly_south = None
+            for scenario in list(set(df_consumption_agg_zcl_south.scenario.values)):
+                df_consumption_agg_zcl_sce = df_consumption_agg_zcl_south[df_consumption_agg_zcl_south.scenario==scenario].set_index('index')
+                for cm in climate_models_list:
+                    temp = df_consumption_agg_zcl_sce[df_consumption_agg_zcl_sce.climate_model==cm]
+                    temp = aggregate_resolution(temp,'YS','sum')
+                    temp['climate_model'] = [cm]*len(temp)
+                    temp['scenario'] = [scenario]*len(temp)
+                    temp = temp.reset_index()
+                    if df_consumption_agg_zcl_yearly_south is None:
+                        df_consumption_agg_zcl_yearly_south = temp
+                    else:
+                        df_consumption_agg_zcl_yearly_south = pd.concat([df_consumption_agg_zcl_yearly_south,temp])
+            
+            fig,ax = plt.subplots(figsize=(5,5),dpi=300)
+            # ax.plot([pd.to_datetime('{}-01-01'.format(y)) for y in sdes_data_heating.sum().index], sdes_data_heating.sum().values,label='SDES',color='k')
+            
+            for scenario in list(set(df_consumption_agg_zcl_north.scenario.values)):
+                df_consumption_agg_zcl_yearly_sce_north = df_consumption_agg_zcl_yearly_north[df_consumption_agg_zcl_yearly_north.scenario==scenario]
+                df_consumption_agg_zcl_yearly_sce_south = df_consumption_agg_zcl_yearly_south[df_consumption_agg_zcl_yearly_south.scenario==scenario]
+                
+                heating_mean_north = df_consumption_agg_zcl_yearly_sce_north.groupby('index')['heating_cons'].mean()
+                heating_std_north = df_consumption_agg_zcl_yearly_sce_north.groupby('index')['heating_cons'].std()
+                heating_mean_south = df_consumption_agg_zcl_yearly_sce_south.groupby('index')['heating_cons'].mean()
+                heating_std_south = df_consumption_agg_zcl_yearly_sce_south.groupby('index')['heating_cons'].std()
+                
+                color = color_dict.get(scenario)
+                ax.plot(heating_mean_north*1e-12,label=scenario.replace('_',' - ')+' North',color=color,ls=':')
+                # ax.fill_between(heating_mean_north.index,heating_mean_north.values*1e-12+heating_std_north.values*1e-12,heating_mean_north.values*1e-12-heating_std_north.values*1e-12,alpha=0.5,color=color)
+                ax.plot(heating_mean_south*1e-12,label=scenario.replace('_',' - ')+ ' South',color=color,ls='-.')
+                # ax.fill_between(heating_std_south.index,heating_mean_south.values*1e-12+heating_std_south.values*1e-12,heating_mean_south.values*1e-12-heating_std_south.values*1e-12,alpha=0.5,color=color)
+                
+            ax.set_ylabel('Annual heating consumption (TWh.yr$^{-1}$)')
+            ax.legend()
+            ax.set_ylim(bottom=0.)
+            ax.set_xlim([pd.to_datetime('{}-01-01'.format(y)) for y in [2018,2050]])
+            plt.savefig(os.path.join(figs_folder,'heating_consumption_north_south.png'), bbox_inches='tight')
+            plt.show()
+        
+        
+        # fig,ax = plt.subplots(figsize=(5,5),dpi=300)
+        # ax.plot([pd.to_datetime('{}-01-01'.format(y)) for y in sdes_data_cooling.sum().index], sdes_data_cooling.sum().values,label='SDES',color='k')
+        
+        # for scenario in list(set(df_consumption_agg_zcl.scenario.values)):
+        #     df_consumption_agg_zcl_yearly_sce = df_consumption_agg_zcl_yearly[df_consumption_agg_zcl_yearly.scenario==scenario]
+            
+        #     cooling_mean = df_consumption_agg_zcl_yearly_sce.groupby('index')['cooling_cons'].mean()
+        #     cooling_std = df_consumption_agg_zcl_yearly_sce.groupby('index')['cooling_cons'].std()
+            
+        #     color = color_dict.get(scenario)
+        #     ax.plot(cooling_mean*1e-12,label=scenario.replace('_',' - '),color=color)
+        #     ax.fill_between(cooling_std.index,cooling_mean.values*1e-12+cooling_std.values*1e-12,cooling_mean.values*1e-12-cooling_std.values*1e-12,alpha=0.5,color=color)
+            
+        # ax.set_ylabel('Annual cooling consumption (TWh.yr$^{-1}$)')
+        # ax.legend()
+        # ax.set_ylim(bottom=0.)
+        # ax.set_xlim([pd.to_datetime('{}-01-01'.format(y)) for y in [2018,2050]])
+        # plt.savefig(os.path.join(figs_folder,'cooling_consumption.png'), bbox_inches='tight')
+        # plt.show()
+
+        
+        # juste électricité
+        if False:
+        # df_consumption = None
+        # for cm in climate_models_list:
+        #     for zcl in ZCL_LIST:
+        #         s = Stock(zcl=zcl,climate_model=cm,folder=os.path.join(output, folder))
+        #         temp = s.get_daily_consumption(energy_filter='Electricity')
+        #         temp['heating_cons'] = temp['heating_cons']*0.5
+        #         if scenarios is None:
+        #             scenarios = s.ac_pz_scenario
+        #             color = s.scenario_color
+        #         del s
+        #         if df_consumption is None:
+        #             df_consumption = temp
+        #         else:
+        #             df_consumption = pd.concat([df_consumption, temp])
+            df_consumption = None
+            for acs in ac_scenarios:
+                for pzs in pz_scenarios:
+                    
+                    sce = '{}_{}'.format(acs,pzs)
+                    if sce not in ['REF_REF','ACM_NOF','ACP_NOF','ACM_SOF','ACP_SOF']:
+                        continue 
+                    
+                    for cm in climate_models_list:
+                        for zcl in ZCL_LIST:
+                            s = Stock(ac_scenario=acs,pz_scenario=pzs,zcl=zcl,climate_model=cm,folder=os.path.join(output, folder))
+                            temp = s.get_daily_consumption(energy_filter='Electricity')
+                            temp['scenario'] = [s.ac_pz_scenario]*len(temp)
+                            scenario = s.ac_pz_scenario
+                            color_dict[scenario] = s.scenario_color
+                            del s
+                            if df_consumption is None:
+                                df_consumption = temp
+                            else:
+                                df_consumption = pd.concat([df_consumption, temp])
+            
+            df_consumption_agg_zcl = df_consumption[['heating_cons','cooling_cons','total_cons','climate_model','scenario']].reset_index().groupby(['index','climate_model','scenario'],as_index=False).sum()
+            
+            df_consumption_agg_zcl_yearly = None
+            for scenario in list(set(df_consumption_agg_zcl.scenario.values)):
+                df_consumption_agg_zcl_sce = df_consumption_agg_zcl[df_consumption_agg_zcl.scenario==scenario].set_index('index')
+                for cm in climate_models_list:
+                    temp = df_consumption_agg_zcl_sce[df_consumption_agg_zcl_sce.climate_model==cm]
+                    temp = aggregate_resolution(temp,'YS','sum')
+                    temp['climate_model'] = [cm]*len(temp)
+                    temp['scenario'] = [scenario]*len(temp)
+                    temp = temp.reset_index()
+                    if df_consumption_agg_zcl_yearly is None:
+                        df_consumption_agg_zcl_yearly = temp
+                    else:
+                        df_consumption_agg_zcl_yearly = pd.concat([df_consumption_agg_zcl_yearly,temp])
+            
+            fig,ax = plt.subplots(figsize=(5,5),dpi=300)
+            
+            for scenario in list(set(df_consumption_agg_zcl.scenario.values)):
+                df_consumption_agg_zcl_yearly_sce = df_consumption_agg_zcl_yearly[df_consumption_agg_zcl_yearly.scenario==scenario]
+                
+                heating_mean = df_consumption_agg_zcl_yearly_sce.groupby('index')['heating_cons'].mean()
+                heating_std = df_consumption_agg_zcl_yearly_sce.groupby('index')['heating_cons'].std()
+                
+                color = color_dict.get(scenario)
+                ax.plot(heating_mean*1e-12,label=scenario.replace('_',' - '),color=color)
+                ax.fill_between(heating_std.index,heating_mean.values*1e-12+heating_std.values*1e-12,heating_mean.values*1e-12-heating_std.values*1e-12,alpha=0.5,color=color)
+                
+            ax.set_ylabel('Annual heating consumption (TWh.yr$^{-1}$)')
+            ax.legend()
+            ax.set_ylim(bottom=0.)
+            ax.set_xlim([pd.to_datetime('{}-01-01'.format(y)) for y in [2018,2050]])
+            plt.savefig(os.path.join(figs_folder,'heating_Electricity_consumption.png'), bbox_inches='tight')
+            plt.show()
+            
+            # heating_mean = df_consumption_agg_zcl_yearly.groupby('index')['heating_cons'].mean()
+            # heating_std = df_consumption_agg_zcl_yearly.groupby('index')['heating_cons'].std()
+            
+            # cooling_mean = df_consumption_agg_zcl_yearly.groupby('index')['cooling_cons'].mean()
+            # cooling_std = df_consumption_agg_zcl_yearly.groupby('index')['cooling_cons'].std()
+            
+            # fig,ax = plt.subplots(figsize=(5,5),dpi=300)
+            # # ax.plot([pd.to_datetime('{}-01-01'.format(y)) for y in sdes_data_heating.sum().index], sdes_data_heating.sum().values,label='SDES',color='k')
+            # ax.plot(heating_mean*1e-12,label=scenarios.replace('_',' - '),color=color)
+            # ax.fill_between(heating_std.index,heating_mean.values*1e-12+heating_std.values*1e-12,heating_mean.values*1e-12-heating_std.values*1e-12,alpha=0.5,color=color)
+            # ax.set_ylabel('Annual heating consumption (TWh.yr$^{-1}$)')
+            # ax.legend()
+            # ax.set_ylim(bottom=0.)
+            # ax.set_xlim([pd.to_datetime('{}-01-01'.format(y)) for y in [2018,2050]])
+            # plt.savefig(os.path.join(figs_folder,'heating_Electricity_consumption.png'), bbox_inches='tight')
+            # plt.show()
     
     
     # affichage des thermosensibilités
-    if True:
+    if False:
         climate_models_list = list(CLIMATE_MODELS_NUMBERS.keys())
         scenarios = None
         color = None
@@ -1022,8 +1464,8 @@ def main():
                 temp['heating_cons'] = temp['heating_cons']*0.5 # TODO transferts de vecteurs à mieux faire !
                 if scenarios is None:
                     scenarios = s.ac_pz_scenario
-                    # color_sce = s.scenario_color
-                    color_sce = plt.get_cmap('viridis')(0.5)
+                    color_sce = s.scenario_color
+                    # color_sce = plt.get_cmap('viridis')(0.5)
                 del s
                 if df_consumption is None:
                     df_consumption = temp
@@ -1266,8 +1708,75 @@ def main():
     #%% Autres graphes
     if False:
         
-        # affichage des seuils d'inconfort
+        # etude des besoins horaire par jour 
         if True:
+            # reference 
+            ninja = pd.read_excel("data/Ninja/41560_2023_1341_MOESM9_ESM_doubled.xlsx",sheet_name='Figure ED3')
+            moreau = pd.read_csv('data/Res-IRF/hourly_profile_moreau_doubled.csv')
+            moreau['value'] = moreau['value']/moreau['value'].mean()
+            
+            needs = None
+            
+            for zcl in ZCL_LIST:
+                stock = Stock(zcl=zcl,climate_model='EC-EARTH_HadREM3-GA7',folder=os.path.join(output, folder))
+                stock.format_energy_needs_hourly(year=2020)
+                temp_needs = stock.energy_needs_hourly
+                if needs is None:
+                    needs = temp_needs
+                else:
+                    needs.heating_needs = needs.heating_needs + temp_needs.heating_needs
+                    needs.cooling_needs = needs.cooling_needs + temp_needs.cooling_needs
+            
+            hours_list = np.asarray(list(range(0,25)))
+            mean_cooling_list = []
+            mean_heating_list = []
+            std_cooling_list = []
+            std_heating_list = []
+            for h in hours_list[:-1]:
+                mean_cooling_list.append(needs[(needs.index.hour==h)].cooling_needs.mean())
+                mean_heating_list.append(needs[(needs.index.hour==h)].heating_needs.mean())
+                std_cooling_list.append(needs[needs.index.hour==h].cooling_needs.std())
+                std_heating_list.append(needs[needs.index.hour==h].heating_needs.std())
+            mean_cooling_list.append(mean_cooling_list[0])
+            mean_heating_list.append(mean_heating_list[0])
+            std_cooling_list.append(std_cooling_list[0])
+            std_heating_list.append(std_heating_list[0])
+            
+            mean_cooling_list = np.asarray(mean_cooling_list)
+            mean_heating_list = np.asarray(mean_heating_list)
+            std_cooling_list = np.asarray(std_cooling_list)
+            std_heating_list = np.asarray(std_heating_list)
+            
+            upper_cooling_list = (mean_cooling_list+std_cooling_list)/np.mean(mean_cooling_list)
+            lower_cooling_list = (mean_cooling_list-std_cooling_list)/np.mean(mean_cooling_list)
+            upper_heating_list = (mean_heating_list+std_heating_list)/np.mean(mean_heating_list)
+            lower_heating_list = (mean_heating_list-std_heating_list)/np.mean(mean_heating_list)
+            
+            mean_cooling_list = mean_cooling_list/np.mean(mean_cooling_list)
+            mean_heating_list = mean_heating_list/np.mean(mean_heating_list)
+            
+            fig,ax = plt.subplots(figsize=(5,5),dpi=300)
+            # ax.plot(moreau.hour,moreau['value'],color='tab:red',ls=':')
+            ax.plot(ninja.Hour,ninja['Heating (mean)'],color='tab:red',ls=':')
+            ax.plot(ninja.Hour,ninja['Cooling (mean)'],color='tab:blue',ls=':')
+            ax.plot(hours_list,mean_heating_list, color='tab:red',label='Heating')
+            ax.plot(hours_list,mean_cooling_list, color='tab:blue',label='Cooling')
+            # ax.fill_between(hours_list,upper_cooling_list,lower_cooling_list, color='tab:blue',alpha=0.2)
+            ax.plot([-1],[0],color='k',label='Modelled')
+            ax.plot([-1],[0],color='k',ls=':',label='Staffell et al. (2023)')
+            # ax.fill_between(hours_list,upper_heating_list,lower_heating_list, color='tab:red',alpha=0.2)
+            ax.legend()
+            ax.set_ylim(bottom=0.)
+            ax.set_xlim([0,24])
+            ax.set_xlabel('Hours')
+            ax.set_ylabel('Average daily profile (normalised)')
+            plt.savefig(os.path.join(figs_folder,'daily_profile_conventionnal.png'), bbox_inches='tight')
+            plt.show()
+            
+            
+            
+        # affichage des seuils d'inconfort
+        if False:
             define_DHI_threshold(1.,plot=True,save_fig=figs_folder)
             
         # affichage d'intensité d'usage Astier
