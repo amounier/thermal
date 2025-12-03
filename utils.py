@@ -203,7 +203,7 @@ def main():
         blank_national_map()
     
     #%% bivariate cmap
-    if True:
+    if False:
         cmap = custom_xycmap()
         
         fig,ax = plt.subplots(figsize=(3,3),dpi=300)
@@ -225,6 +225,35 @@ def main():
         ax.set_xticks([])
         ax.set_yticks([])
         plt.savefig(os.path.join(figs_folder,'scenarios.png'), bbox_inches='tight')
+        plt.show()
+        
+    # idem en compact 
+    if True:
+        cmap = custom_xycmap()
+        
+        fig,ax = plt.subplots(figsize=(3,3),dpi=300)
+        
+        ax.plot([-1,4],[1.5]*2,color='w')
+        ax.plot([-1,4],[0.5]*2,color='w')
+        ax.plot([1.5]*2,[-1,3],color='w')
+        ax.plot([0.5]*2,[-1,3],color='w')
+
+        ax.imshow(cmap)
+        
+        ax.text(0,0,'ACP\nNOF',va='center',ha='center',size=20,family='monospace')
+        ax.text(0,1,'REF\nNOF',va='center',ha='center',size=20,family='monospace')
+        ax.text(0,2,'ACM\nNOF',va='center',ha='center',size=20,family='monospace')
+        ax.text(1,0,'ACP\nREF',va='center',ha='center',size=20,family='monospace',color='w')
+        ax.text(1,1,'REF\nREF',va='center',ha='center',size=20,family='monospace',color='w')
+        ax.text(1,2,'ACM\nREF',va='center',ha='center',size=20,family='monospace')
+        ax.text(2,0,'ACP\nSOF',va='center',ha='center',size=20,family='monospace',color='w')
+        ax.text(2,1,'REF\nSOF',va='center',ha='center',size=20,family='monospace',color='w')
+        ax.text(2,2,'ACM\nSOF',va='center',ha='center',size=20,family='monospace')
+
+        
+        ax.set_xticks([])
+        ax.set_yticks([])
+        plt.savefig(os.path.join(figs_folder,'scenarios_compact.png'), bbox_inches='tight')
         plt.show()
     
 
