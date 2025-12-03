@@ -1803,7 +1803,7 @@ def main():
         
     
     #%% affichage de la distribution d'une variable dans la bdnb parisienne
-    if False:
+    if True:
         plot_var_distribution(var='ffo_bat_annee_construction', path=output_path,min_xlim=1600,rounder=20,percentage=True,max_xlim=2020)
         
     #%% statistiques sur les liens entre période de construction et gains dans la manipulation des DPE

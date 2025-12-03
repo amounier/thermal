@@ -322,6 +322,20 @@ def main():
     external_disk_connection = 'MPBE' in os.listdir('/media/amounier/')
     
     
+    # %% Graphe période de construction ONB
+    if True:
+        data = {'periode':['before-1849','1850-1918','1919-1944','1945-1974','1975-2000','2001-2011','2012-2020','after-2021'],'percent':[7.98,15.8,6.29,21.81,24.87,10.94,8.2,2.46]}
+        data = pd.DataFrame().from_dict(data)
+        data['periode_format'] = ['{}\n{}'.format(*p.split('-')) for p in data.periode]
+        
+        fig,ax = plt.subplots(figsize=(5,5),dpi=300)
+        sns.barplot(data,x='periode_format',y='percent',ax=ax,color=plt.get_cmap('viridis')(0.5))
+        ax.set_ylabel('Households (%)')
+        ax.set_xlabel('Construction period')
+        plt.show()
+        
+        # data['start'] = [float(p.split('-')[0]) for p in data.periode]
+    
     #%% Statistiques Climatisation dans la base DPE
     if False:
         if True and external_disk_connection:
@@ -558,7 +572,7 @@ def main():
                                      hatches=list_dep_mfh)
                 
     #%% Statistiques sur les systèmes de chauffage de la base DPE
-    if True:
+    if False:
         
         # Génération des fichiers statistiques par départements
         if False and external_disk_connection:
@@ -1104,7 +1118,7 @@ def main():
         
         
     #%% Statistiques DPE par typologies 
-    if True:
+    if False:
         
         reformat_bdnb_dpe_file = 'dpe_statistics.parquet'
         
