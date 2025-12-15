@@ -1257,12 +1257,12 @@ def main():
                 
     
     #%% Caractérisation des scénarios, variables d'output
-    if False:
+    if True:
         climate_models_list = list(CLIMATE_MODELS_NUMBERS.keys())
         # climate_models_list = ['EC-EARTH_HadREM3-GA7'] 
         ac_scenarios = ['REF'] # ['ACM','REF','ACP']
         pz_scenarios = ["REF"] # ['NOF','REF','SOF']
-        ac_scenarios = ['ACM','REF','ACP']
+        # ac_scenarios = ['ACM','REF','ACP']
         # pz_scenarios = ['NOF','REF','SOF']
         
         # détail par zcl
@@ -1779,7 +1779,7 @@ def main():
         pass
         
     #%% affichage des séries temporelles de consommations
-    if False:
+    if True:
         climate_models_list = list(CLIMATE_MODELS_NUMBERS.keys())
         # climate_models_list = ['EC-EARTH_HadREM3-GA7'] 
         # ac_scenarios = ['REF'] #['ACM','REF','ACP']
@@ -1849,13 +1849,16 @@ def main():
                 df_end = df_consumption_agg_zcl_yearly_sce[df_consumption_agg_zcl_yearly_sce.index.get_level_values('year').isin(end_years)]
                 df_end = df_end.groupby(df_end.index.get_level_values('climate_model')).mean()
                 
+                reno = 1-(df_end.heating_cons_climate_adjusted.mean()/df_init.heating_cons_climate_adjusted.mean())
+                climat = (1-(df_end.heating_cons.mean()/(df_init.heating_cons.mean()))) - reno
+                
                 if scenario == 'REF_REF':
                     print(df_init.heating_cons.mean())
                     print(df_end.heating_cons.mean())
+                    print(df_init.heating_cons.mean()*(1-(reno+climat)))
                     print((1-df_end.heating_cons/(df_init.heating_cons.mean())).mean(),(1-df_end.heating_cons/(df_init.heating_cons.mean())).std())
                 
-                reno = df_end.heating_cons_climate_adjusted.mean()/df_init.heating_cons_climate_adjusted.mean()
-                climat = df_end.heating_cons.mean()/(df_init.heating_cons.mean()*reno)
+                
             
             # data['label'] = ['1990','Pop.','Suff.','Eff.','Ren.','2019']
             # data['color'] = [(183/255,213/255,240/255),'tab:blue',(196/255,88/255,75/255),(229/255,182/255,90/255),(151/255,190/255,97/255),(183/255,213/255,240/255)]
@@ -1864,10 +1867,10 @@ def main():
             # enumerate(zip(data.label,data.top,data.bottom,data.color,data.CO2)):
             
             data = pd.DataFrame().from_dict({'label':['2018\n2023','Retrofit','Climate','2045\n2050'],
-                                             'top':[df_init.heating_cons.mean()*1e-12,df_init.heating_cons.mean()*1e-12,df_init.heating_cons.mean()*1e-12*reno,df_end.heating_cons.mean()*1e-12],
-                                             'bottom':[0,df_init.heating_cons.mean()*1e-12*reno,df_init.heating_cons.mean()*1e-12*reno*climat,0],
+                                             'top':[df_init.heating_cons.mean()*1e-12,df_init.heating_cons.mean()*1e-12,df_init.heating_cons.mean()*1e-12*(1-reno),df_end.heating_cons.mean()*1e-12],
+                                             'bottom':[0,df_init.heating_cons.mean()*1e-12*(1-reno),df_init.heating_cons.mean()*1e-12*(1-(reno+climat)),0],
                                              'color':[get_scenarios_color().get('REF_REF'),'tab:blue','tab:blue',get_scenarios_color().get('REF_REF')],
-                                             'percent':[0,1-reno,1-climat,0],
+                                             'percent':[0,reno,climat,0],
                                              'err':[df_init.heating_cons.std()*1e-12,0,0,df_end.heating_cons.std()*1e-12]})
             
             fig,ax= plt.subplots(figsize=(5,5),dpi=300)
@@ -3048,7 +3051,7 @@ def main():
         
         
     #%% affichage des séries temporelles des degrés heure d'inconfort
-    if True:
+    if False:
         climate_models_list = list(CLIMATE_MODELS_NUMBERS.keys())
         # climate_models_list = ['EC-EARTH_HadREM3-GA7'] 
         # ac_scenarios = ['REF'] #['ACM','REF','ACP']
