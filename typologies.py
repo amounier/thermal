@@ -774,9 +774,9 @@ def main():
         plt.savefig(os.path.join(figs_folder,'{}.png'.format('{}_TABULA_Umur_tabula_only'.format(building_type))),bbox_inches='tight')
                 
     #%% Statistiques TABULA
-    if False:
+    if True:
 
-        building_type ='AB'
+        building_type ='MFH'
         formated_dict_data = ['Category','Variable','Unit'] + ['{}.{:02d}'.format(building_type,i) for i in range(1,11)]#,'standard','advanced']]
         data = pd.DataFrame().from_dict({e:[] for e in formated_dict_data})
         
@@ -809,6 +809,8 @@ def main():
                              ['Bâtiment','Surface de vitrages','\\SI{}{\\square\\meter}',typo.w0_windows_surface+typo.w1_windows_surface+typo.w2_windows_surface+typo.w3_windows_surface],
                              ['Isolation',"Épaisseur d'isolant des murs",'\\SI{}{\\centi\\meter}',typo.w0_insulation_thickness*100],
                              ['Isolation',"Épaisseur d'isolant du sol",'\\SI{}{\\centi\\meter}',typo.floor_insulation_thickness*100],
+                             ['Isolation','Valeur-U des murs','\\SI{}{\\watt\\per\\square\\meter\\kelvin}',typo.tabula_Umur],
+                             ['Isolation','Valeur-U du plancher bas','\\SI{}{\\watt\\per\\square\\meter\\kelvin}',typo.tabula_Upb],
                              ['Isolation','Valeur-U des fenêtres','\\SI{}{\\watt\\per\\square\\meter\\kelvin}',typo.windows_U],
                              ['Isolation','Valeur-U du plancher haut','\\SI{}{\\watt\\per\\square\\meter\\kelvin}',typo.ceiling_U],
                              ["Besoins d'énergie",'Besoins de chauffage','\\SI{}{\\kilo\\watthour\\per\\square\\meter\\year}',typo.tabula_heating_needs]
@@ -829,7 +831,7 @@ def main():
         
         
     #%% Graphes des distribution des U global pour les typologies
-    if True:
+    if False:
         typo_list = [['FR.N.{}.{:02d}.Gen'.format(typo_group,n) for typo_group in ['SFH', 'TH', 'MFH', 'AB']] for n in range(1,11)]
         
         distribution_typo = pd.read_csv(os.path.join('data','distribution_typologies_zcl8.csv'))

@@ -323,7 +323,7 @@ def main():
     
     
     # %% Graphe période de construction ONB
-    if True:
+    if False:
         data = {'periode':['before-1849','1850-1918','1919-1944','1945-1974','1975-2000','2001-2011','2012-2020','after-2021'],'percent':[7.98,15.8,6.29,21.81,24.87,10.94,8.2,2.46]}
         data = pd.DataFrame().from_dict(data)
         data['periode_format'] = ['{}\n{}'.format(*p.split('-')) for p in data.periode]
@@ -1118,7 +1118,7 @@ def main():
         
         
     #%% Statistiques DPE par typologies 
-    if False:
+    if True:
         
         reformat_bdnb_dpe_file = 'dpe_statistics.parquet'
         
@@ -1354,9 +1354,9 @@ def main():
             
             
         # représentativité et écarts par rapport à la distribution par étiquette
-        if False:
+        if True:
             # cartes 
-            if False:
+            if True:
                 # TODO : representativity à recalculer
                 
                 if 'representativity2.csv' not in os.listdir(os.path.join('data','BDNB')) and external_disk_connection:
@@ -1384,7 +1384,7 @@ def main():
                 # representativity['tabula'] = ['FR.N.{}.{:02d}.Gen'.format(bt,dict_tabula_period.get(p)).replace('SFH','SFH+TH') for bt,p in zip(representativity.ffo_type_batiment,representativity.ffo_periode_construction_tabula)]
                 
                 # heatmap par zcl8
-                if True:
+                if False:
                     typology_category_list = ['SFH','TH','MFH','AB']
                     tabula_period_list = list(dict_tabula_period.keys())
                         
@@ -1518,32 +1518,35 @@ def main():
                     dict_sum_repartition_logements_tabula = df_typo_repartition_logements_tabula.sum(axis=1).to_dict()
                     dict_sum_repartition_batiments = df_typo_repartition_batiments_bgc.sum(axis=1).to_dict()
                     
+                    print(5*(len(dict_tabula_period.keys())/4))
                     fig,ax = plt.subplots(figsize=(5*(len(dict_tabula_period.keys())/4),5), dpi=300)
-                    sns.heatmap(df_typo_repartition_logements_bgc, annot=True, fmt=".1f",cmap='viridis',cbar=False)
+                    
+                    sns.heatmap(df_typo_repartition_logements_bgc, annot=True, fmt=".1f",cmap='viridis',cbar=False,annot_kws={"size": 'x-large'})
+                    
                     for j,typ in enumerate(typology_category_list):
-                        ax.text(len(tabula_period_list)+0.5,j+0.5,'{:.1f}%'.format(dict_sum_repartition_logements.get(typ)),
-                                ha='right',va='center')
+                        ax.text(len(tabula_period_list)+0.5,j+0.5,'{:.0f}%'.format(dict_sum_repartition_logements.get(typ)),
+                                ha='right',va='center',fontsize='large')
                     ax.set_title('Distribution of households')
                     plt.savefig(os.path.join(figs_folder,'bgc_distribution_tabula_households_ponderated.png'), bbox_inches='tight')
                     plt.show()
                     
-                    fig,ax = plt.subplots(figsize=(5*(len(dict_tabula_period.keys())/4),5), dpi=300)
-                    sns.heatmap(df_typo_repartition_logements_pougets, annot=True, fmt=".1f",cmap='viridis',cbar=False)
-                    for j,typ in enumerate(typology_category_list):
-                        ax.text(len(tabula_period_list)+0.5,j+0.5,'{:.1f}%'.format(dict_sum_repartition_logements_pougets.get(typ)),
-                                ha='right',va='center')
-                    ax.set_title('Distribution of households (Pouget)')
-                    plt.savefig(os.path.join(figs_folder,'bgc_distribution_tabula_households_ponderated_pouget.png'), bbox_inches='tight')
-                    plt.show()
+                    # fig,ax = plt.subplots(figsize=(5*(len(dict_tabula_period.keys())/4),5), dpi=300)
+                    # sns.heatmap(df_typo_repartition_logements_pougets, annot=True, fmt=".1f",cmap='viridis',cbar=False)
+                    # for j,typ in enumerate(typology_category_list):
+                    #     ax.text(len(tabula_period_list)+0.5,j+0.5,'{:.1f}%'.format(dict_sum_repartition_logements_pougets.get(typ)),
+                    #             ha='right',va='center')
+                    # ax.set_title('Distribution of households (Pouget)')
+                    # plt.savefig(os.path.join(figs_folder,'bgc_distribution_tabula_households_ponderated_pouget.png'), bbox_inches='tight')
+                    # plt.show()
                     
-                    fig,ax = plt.subplots(figsize=(5*(len(dict_tabula_period.keys())/4),5), dpi=300)
-                    sns.heatmap(df_typo_repartition_logements_tabula, annot=True, fmt=".1f",cmap='viridis',cbar=False)
-                    for j,typ in enumerate(typology_category_list):
-                        ax.text(len(tabula_period_list)+0.5,j+0.5,'{:.1f}%'.format(dict_sum_repartition_logements_tabula.get(typ)),
-                                ha='right',va='center')
-                    ax.set_title('Distribution of households (TABULA)')
-                    plt.savefig(os.path.join(figs_folder,'bgc_distribution_tabula_households_ponderated_tabula.png'), bbox_inches='tight')
-                    plt.show()
+                    # fig,ax = plt.subplots(figsize=(5*(len(dict_tabula_period.keys())/4),5), dpi=300)
+                    # sns.heatmap(df_typo_repartition_logements_tabula, annot=True, fmt=".1f",cmap='viridis',cbar=False)
+                    # for j,typ in enumerate(typology_category_list):
+                    #     ax.text(len(tabula_period_list)+0.5,j+0.5,'{:.1f}%'.format(dict_sum_repartition_logements_tabula.get(typ)),
+                    #             ha='right',va='center')
+                    # ax.set_title('Distribution of households (TABULA)')
+                    # plt.savefig(os.path.join(figs_folder,'bgc_distribution_tabula_households_ponderated_tabula.png'), bbox_inches='tight')
+                    # plt.show()
                     
                     # fig,ax = plt.subplots(figsize=(5*(len(dict_tabula_period.keys())/4),5), dpi=300)
                     # sns.heatmap(df_typo_repartition_batiments_bgc, annot=True, fmt=".1f",cmap='viridis',cbar=False)
@@ -1666,7 +1669,7 @@ def main():
                 
                 
         # Statistiques des typologies en France
-        if True:
+        if False:
             dpe = pd.read_parquet(os.path.join('data','BDNB',reformat_bdnb_dpe_file))
             
             mask = dpe["dpe_mix_arrete_surface_habitable_logement"] > 1e3
@@ -1724,7 +1727,7 @@ def main():
             tabula_period_list = list(dict_tabula_period.keys())
             
             # repartition typologies 
-            if False:
+            if True:
                 dpe['group_typology_cat'] = pd.Categorical(dpe['group_typology'], typology_category_list)
                 # dpe['typology_cat'] = pd.Categorical(dpe['typology'], sorted(list(set(typo_list))))
                 dpe['periode_construction_tabula_cat'] = pd.Categorical(dpe['periode_construction_tabula'], tabula_period_list)
@@ -1751,19 +1754,19 @@ def main():
                                                              index=typology_category_list,
                                                              columns=tabula_period_list)
                 
-                df_typo_repartition_logements_bgc
+                # df_typo_repartition_logements_bgc
                 
                 df_typo_repartition_batiments = pd.DataFrame(data=matrix_typo_repartition_batiments,
                                                              index=typology_category_list,
                                                              columns=tabula_period_list)
                 
-                df_typo_repartition_batiments_bgc
+                # df_typo_repartition_batiments_bgc
                 
                 dict_sum_repartition_logements = df_typo_repartition_logements.sum(axis=1).to_dict()
                 dict_sum_repartition_batiments = df_typo_repartition_batiments.sum(axis=1).to_dict()
                 
                 # heatmaps
-                if False:
+                if True:
                     fig,ax = plt.subplots(figsize=(5*(len(dict_tabula_period.keys())/4),5), dpi=300)
                     sns.heatmap(df_typo_repartition_logements, annot=True, fmt=".1f",cmap='viridis',cbar=False)
                     for j,typ in enumerate(typology_category_list):

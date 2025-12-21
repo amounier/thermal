@@ -118,15 +118,15 @@ def compute_energy_needs_single_actions(component,typo_code,zcl,output_path,
     
     if isinstance(nb_intervals,int):
         dict_all_components = {'floor':{'var_space':np.logspace(np.log10(0+0.05),np.log10(0.4+0.05),num=nb_intervals)-0.05,
-                                        'var_label':'Supplementary floor insulation thickness (m)',
+                                        'var_label':'Additional floor insulation thickness (m)',
                                         'var_saver':'action_{}_{}_{}_{}_{}-{}_mod{}'.format(component,typo_code,zcl.code,behaviour.name,period[0],period[1],nmod)
                                         },
                                'walls':{'var_space':np.logspace(np.log10(0+0.05),np.log10(0.4+0.05),num=nb_intervals)-0.05,
-                                        'var_label':'Supplementary walls insulation thickness (m)',
+                                        'var_label':'Additional walls insulation thickness (m)',
                                         'var_saver':'action_{}_{}_{}_{}_{}-{}_mod{}'.format(component,typo_code,zcl.code,behaviour.name,period[0],period[1],nmod)
                                         },
                                'roof':{'var_space':np.logspace(np.log10(0+0.05),np.log10(0.4+0.05),num=nb_intervals)-0.05,
-                                       'var_label':'Supplementary roof insulation thickness (m)',
+                                       'var_label':'Additional roof insulation thickness (m)',
                                        'var_saver':'action_{}_{}_{}_{}_{}-{}_mod{}'.format(component,typo_code,zcl.code,behaviour.name,period[0],period[1],nmod)
                                         },
                                'albedo':{'var_space':['light','medium','dark','black'],
@@ -149,15 +149,15 @@ def compute_energy_needs_single_actions(component,typo_code,zcl,output_path,
         
     elif nb_intervals == 'reftest':
         dict_all_components = {'floor':{'var_space':[0,0.1],
-                                        'var_label':'Supplementary floor insulation thickness (m)',
+                                        'var_label':'Additional floor insulation thickness (m)',
                                         'var_saver':'action_{}_{}_{}_{}_{}-{}_mod{}_reftest'.format(component,typo_code,zcl.code,behaviour.name,period[0],period[1],nmod)
                                         },
                                'walls':{'var_space':[0,0.12],
-                                        'var_label':'Supplementary walls insulation thickness (m)',
+                                        'var_label':'Additional walls insulation thickness (m)',
                                         'var_saver':'action_{}_{}_{}_{}_{}-{}_mod{}_reftest'.format(component,typo_code,zcl.code,behaviour.name,period[0],period[1],nmod)
                                         },
                                'roof':{'var_space':[0,0.2],
-                                       'var_label':'Supplementary roof insulation thickness (m)',
+                                       'var_label':'Additional roof insulation thickness (m)',
                                        'var_saver':'action_{}_{}_{}_{}_{}-{}_mod{}_reftest'.format(component,typo_code,zcl.code,behaviour.name,period[0],period[1],nmod)
                                         },
                                'albedo':{'var_space':['dark','light'],
@@ -324,15 +324,15 @@ def get_energy_needs_single_actions(component,typo_code,zcl,output_path,
                                         
     if isinstance(nb_intervals,int):
         dict_all_components = {'floor':{'var_space':np.logspace(np.log10(0+0.05),np.log10(0.4+0.05),num=nb_intervals)-0.05,
-                                        'var_label':'Supplementary floor insulation thickness (m)',
+                                        'var_label':'Additional floor insulation thickness (m)',
                                         'var_saver':'action_{}_{}_{}_{}_{}-{}_mod{}'.format(component,typo_code,zcl.code,behaviour.name,period[0],period[1],nmod)
                                         },
                                'walls':{'var_space':np.logspace(np.log10(0+0.05),np.log10(0.4+0.05),num=nb_intervals)-0.05,
-                                        'var_label':'Supplementary walls insulation thickness (m)',
+                                        'var_label':'Additional walls insulation thickness (m)',
                                         'var_saver':'action_{}_{}_{}_{}_{}-{}_mod{}'.format(component,typo_code,zcl.code,behaviour.name,period[0],period[1],nmod)
                                         },
                                'roof':{'var_space':np.logspace(np.log10(0+0.05),np.log10(0.4+0.05),num=nb_intervals)-0.05,
-                                       'var_label':'Supplementary roof insulation thickness (m)',
+                                       'var_label':'Additional roof insulation thickness (m)',
                                        'var_saver':'action_{}_{}_{}_{}_{}-{}_mod{}'.format(component,typo_code,zcl.code,behaviour.name,period[0],period[1],nmod)
                                         },
                                'albedo':{'var_space':['light','medium','dark','black'],
@@ -355,15 +355,15 @@ def get_energy_needs_single_actions(component,typo_code,zcl,output_path,
         
     elif nb_intervals == 'reftest':
         dict_all_components = {'floor':{'var_space':[0,0.1],
-                                        'var_label':'Supplementary floor insulation thickness (m)',
+                                        'var_label':'Additional floor insulation thickness (m)',
                                         'var_saver':'action_{}_{}_{}_{}_{}-{}_mod{}_reftest'.format(component,typo_code,zcl.code,behaviour.name,period[0],period[1],nmod)
                                         },
                                'walls':{'var_space':[0,0.12],
-                                        'var_label':'Supplementary walls insulation thickness (m)',
+                                        'var_label':'Additional walls insulation thickness (m)',
                                         'var_saver':'action_{}_{}_{}_{}_{}-{}_mod{}_reftest'.format(component,typo_code,zcl.code,behaviour.name,period[0],period[1],nmod)
                                         },
                                'roof':{'var_space':[0,0.2],
-                                       'var_label':'Supplementary roof insulation thickness (m)',
+                                       'var_label':'Additional roof insulation thickness (m)',
                                        'var_saver':'action_{}_{}_{}_{}_{}-{}_mod{}_reftest'.format(component,typo_code,zcl.code,behaviour.name,period[0],period[1],nmod)
                                         },
                                'albedo':{'var_space':['dark','light'],
@@ -1209,6 +1209,10 @@ def main():
     #%% Variation des paramètres d'isolation 
     if False:
         
+        # output = 'output'
+        # folder = '20251023_thermal_optimisation'
+        # figs_folder = os.path.join(output, folder, 'figs')
+        
         # description des zones climatiques 
         if False:
             # Localisation
@@ -1452,27 +1456,27 @@ def main():
         if False:
             # Localisation
             zcl = Climat('H1b')
-            # zcl = Climat('H3')
-            # typo_code = 'FR.N.SFH.01.Gen'
-            typo_code = 'FR.N.TH.04.Gen'
+            zcl = Climat('H3')
+            typo_code = 'FR.N.SFH.01.Gen'
+            # typo_code = 'FR.N.TH.04.Gen'
             # typo_code = 'FR.N.SFH.07.Gen'
             period = models_period_dict.get(1).get(4)
             
             # premier test
             if True:
-                compute_energy_needs_single_actions('roof',typo_code,zcl,
-                                     output_path=os.path.join(output, folder),
-                                     behaviour='conventionnel',
-                                     period=[2000,2020],
-                                     plot=True,show=True,
-                                     progressbar=True)
-                
-                # compute_energy_needs_single_actions('walls',typo_code,zcl,
+                # compute_energy_needs_single_actions('roof',typo_code,zcl,
                 #                      output_path=os.path.join(output, folder),
                 #                      behaviour='conventionnel',
-                #                      period=period,
+                #                      period=[2000,2020],
                 #                      plot=True,show=True,
                 #                      progressbar=True)
+                
+                compute_energy_needs_single_actions('walls',typo_code,zcl,
+                                     output_path=os.path.join(output, folder),
+                                     behaviour='conventionnel',
+                                     period=period,
+                                     plot=True,show=True,
+                                     progressbar=True)
                 
                 # compute_energy_needs_single_actions('floor',typo_code,zcl,
                 #                      output_path=os.path.join(output, folder),
@@ -1601,6 +1605,10 @@ def main():
 
     #%% Changement de période climatique
     if False:
+        
+        output = 'output'
+        folder = '20251023_thermal_optimisation'
+        figs_folder = os.path.join(output, folder, 'figs')
         
         # premier test 
         if False:
@@ -1745,17 +1753,17 @@ def main():
             if True:
 
                 dict_all_components = {'floor':{'var_space':np.logspace(np.log10(0+0.05),np.log10(0.4+0.05),num=10)-0.05,
-                                                'var_label':'Supplementary floor insulation',
+                                                'var_label':'Additional floor insulation',
                                                 'var_test':0.1,
                                                 'var_ref':0,
                                                 },
                                        'walls':{'var_space':np.logspace(np.log10(0+0.05),np.log10(0.4+0.05),num=10)-0.05,
-                                                'var_label':'Supplementary walls insulation',
+                                                'var_label':'Additional walls insulation',
                                                 'var_test':0.12,
                                                 'var_ref':0,
                                                 },
                                        'roof':{'var_space':np.logspace(np.log10(0+0.05),np.log10(0.4+0.05),num=10)-0.05,
-                                               'var_label':'Supplementary roof insulation',
+                                               'var_label':'Additional roof insulation',
                                                'var_test':0.2,
                                                'var_ref':0,
                                                },
@@ -1794,14 +1802,14 @@ def main():
                              }
 
                 # for component in ['shading','walls','floor','roof','albedo','windows','ventilation']:
-                # for component in ['shading','walls','floor','roof','albedo','windows']:
-                for component in ['shading','floor','roof','albedo','windows']:
+                for component in ['shading','walls','floor','roof','albedo','windows']:
+                # for component in ['shading','floor','roof','albedo','windows']:
                 # for component in ['walls']:
                     for zcl_code in zcl_list:
                         zcl = Climat(zcl_code)
-                        # for building_type in ['SFH','TH','MFH','AB']:
+                        for building_type in ['SFH','TH','MFH','AB']:
                         # for building_type in ['TH','MFH','AB']:
-                        for building_type in ['SFH']:
+                        # for building_type in ['SFH']:
                             fig,ax = plt.subplots(figsize=(5,5),dpi=300)
                             max_Delta_x = 0
                             max_Delta_y = maxy_dict.get(building_type).get(component)
@@ -1913,8 +1921,8 @@ def main():
                             ax2.legend(loc='upper left')
                             ax2.set_yticks([])
                             
-                            ax.set_xlabel('Gains in cooling needs (kWh.yr$^{-1}$.m$^{-2}$)')
-                            ax.set_ylabel('Gains in heating needs (kWh.yr$^{-1}$.m$^{-2}$)')
+                            ax.set_xlabel('Reduction in cooling needs (kWh.yr$^{-1}$.m$^{-2}$)')
+                            ax.set_ylabel('Reduction in heating needs (kWh.yr$^{-1}$.m$^{-2}$)')
                             ax.legend(ncol=2,loc='lower left')
                             plt.savefig(os.path.join(figs_folder,'interactions_{}_{}_{}.png'.format(component,building_type,zcl.code)), bbox_inches='tight')
                             plt.show()
@@ -2094,8 +2102,8 @@ def main():
                     ax2.legend(loc='upper left')
                     ax2.set_yticks([])
                     
-                    ax.set_xlabel('Gains in cooling needs (kWh.yr$^{-1}$.m$^{-2}$)')
-                    ax.set_ylabel('Gains in heating needs (kWh.yr$^{-1}$.m$^{-2}$)')
+                    ax.set_xlabel('Reduction in cooling needs (kWh.yr$^{-1}$.m$^{-2}$)')
+                    ax.set_ylabel('Reduction in heating needs (kWh.yr$^{-1}$.m$^{-2}$)')
                     ax.legend(loc='lower left')
                     ax2.legend(loc='lower right')
                     save_name = 'interactions_aggregated_{}'.format(building_type)
@@ -2229,15 +2237,15 @@ def main():
                     ax.set_ylim([-global_max_val,global_max_val])
                     
                     
-                    ax.set_xlabel('Gains in cooling needs (kWh.yr$^{-1}$.m$^{-2}$)')
-                    ax.set_ylabel('Gains in heating needs (kWh.yr$^{-1}$.m$^{-2}$)')
+                    ax.set_xlabel('Reduction in cooling needs (kWh.yr$^{-1}$.m$^{-2}$)')
+                    ax.set_ylabel('Reduction in heating needs (kWh.yr$^{-1}$.m$^{-2}$)')
                     # ax.legend(ncol=2,loc='lower left')
                     # plt.savefig(os.path.join(figs_folder,'interactions_{}.png'.format(component)), bbox_inches='tight')
                     plt.show()
                 
             
             # graphe général
-            if True:
+            if False:
                 zcl_list = France().climats
                 output_path = os.path.join(output, folder)
                 # component_list = ['walls']
@@ -2317,36 +2325,14 @@ def main():
                 ax.legend(loc='lower left')
                 
                 
-                ax.set_xlabel('Gains in cooling needs (kWh.yr$^{-1}$.m$^{-2}$)')
-                ax.set_ylabel('Gains in heating needs (kWh.yr$^{-1}$.m$^{-2}$)')
+                ax.set_xlabel('Reduction in cooling needs (kWh.yr$^{-1}$.m$^{-2}$)')
+                ax.set_ylabel('Reduction in heating needs (kWh.yr$^{-1}$.m$^{-2}$)')
                 # ax.legend(ncol=2,loc='lower left')
                 plt.savefig(os.path.join(figs_folder,'interactions_all.png'), bbox_inches='tight')
                 plt.show()
                     
                             
     
-    # # Create grid data
-    # x = np.linspace(-3, 3, 200)
-    # y = np.linspace(-3, 3, 200)
-    # X, Y = np.meshgrid(x, y)
-    # Z = np.exp(-X**2 - Y**2)  # Gaussian bump
-    
-    # # Define a single contour level
-    # level = 0.5
-    
-    # # Plot filled contour for one level
-    # plt.figure(figsize=(6,5))
-    # contour = plt.contourf(X, Y, Z, levels=[level, Z.max()], colors=['skyblue'])
-    
-    # # Optional: draw the contour line
-    # plt.contour(X, Y, Z, levels=[level], colors='black', linewidths=1.5)
-    
-    # # Labels and aesthetics
-    # plt.title(f"Filled Contour at Level = {level}")
-    # plt.xlabel("X")
-    # plt.ylabel("Y")
-    # plt.axis("equal")
-    # plt.show()
             
     #%% Combinaisons de gestes de rénovations
     if False:
@@ -2355,7 +2341,7 @@ def main():
         # folder = '20250331_thermal_optimisation'
         # folder = '20250414_thermal_optimisation'
         # folder = '20250814_thermal_optimisation'
-        # folder = '20250821_thermal_optimisation'
+        folder = '20251023_thermal_optimisation'
         figs_folder = os.path.join(output, folder, 'figs')
         
         # first test 
@@ -2454,7 +2440,7 @@ def main():
         if True:
             
             # premier test 
-            if False:
+            if True:
                 zcl_code = 'H1b'
                 # zcl_code = 'H3'
                 building_type = 'SFH'
@@ -2483,8 +2469,8 @@ def main():
                 
                 # sous forme d'heatmap
                 if True:
-                    # for building_type in tqdm.tqdm(['SFH','TH','MFH','AB']):
-                    for building_type in tqdm.tqdm(['AB']):
+                    for building_type in tqdm.tqdm(['SFH','TH','MFH','AB']):
+                    # for building_type in tqdm.tqdm(['AB']):
                         maximax = 0.
                         for zcl_code in ['H1b','H3']:
                             Bch,Bfr,Btot = create_combination_results_dict(zcl_code, building_type, os.path.join(output, folder),natnocvent=nocturnal_natural_cooling)
@@ -2528,6 +2514,8 @@ def main():
                                 ax.plot(xlims,[3*n]*2,color='w')
                             
                             min_idxs = dataset.drop(columns='Typologies').idxmin(axis=1)
+                            
+                            print('energy',building_type, zcl_code, min_idxs.values)
                             
                             border_color = 'k'
                             if cmap in ['viridis']:
@@ -3080,7 +3068,7 @@ def main():
                             subsidies.to_csv(os.path.join(output, folder,'{}.csv'.format('multiactions_subsidies_{}_{}_{}th-best'.format(building_type,zcl_code,nth+1))),index=False)
                         
                         # heat map des rentabilités sociales
-                        if False:
+                        if True:
                             households = np.tile(np.asarray([[t.households for t in typology_list]]).transpose(), (1, 128))
                             # print(households)
                             
@@ -3125,7 +3113,8 @@ def main():
                                 ax.plot([idx_min,idx_min],[line,line+1],color='k')
                                 ax.plot([idx_min+1,idx_min+1],[line,line+1],color='k')
                                 ax.plot([idx_min,idx_min+1],[line+1,line+1],color='k')
-                                
+                            
+                            print('social',building_type, zcl_code, min_idxs.values)
                                 # ax.text(idx_min,line,str(idx_min))
                         
                             ax_cb = fig.add_axes([0,0,0.1,0.1])
@@ -3168,7 +3157,7 @@ def main():
                             
                             
                         # heat map des rentabilités privées
-                        if False:
+                        if True:
                             households = np.tile(np.asarray([[t.households for t in typology_list]]).transpose(), (1, 128))
                             
                             cmap = {'H1b':'Blues','H3':'Reds'}.get(zcl_code)
@@ -3211,7 +3200,9 @@ def main():
                                 ax.plot([idx_min,idx_min+1],[line+1,line+1],color='k')
                                 
                                 # ax.text(idx_min,line,str(idx_min))
-                        
+                            
+                            print('privee',building_type, zcl_code, min_idxs.values)
+                            
                             ax_cb = fig.add_axes([0,0,0.1,0.1])
                             posn = ax.get_position()
                             ax_cb.set_position([posn.x0+posn.width+0.01, posn.y0, 0.03, posn.height])
@@ -3675,7 +3666,7 @@ def main():
         
     
     # %% Autres    
-    if False:                           
+    if True:                           
     
         # Effets de l'albedo de la maison 
         if False:
@@ -3940,9 +3931,277 @@ def main():
                         Bch_list+Bfr_list)
             plt.show()
     
+        # Natnocvent en mieux 
+        if False:
+            data = pd.read_csv('data/typologies_natural_ventilation.csv')
+            
+            for level in ['ref','2','4']:
+                data_maison_ref = data[(data.bt.isin(['SFH','TH']))&(data.period==level)]
+                ratio_maison_ref = 1-data_maison_ref[data_maison_ref.natural_ventilation==True].cooling_needs.values/data_maison_ref[data_maison_ref.natural_ventilation==False].cooling_needs.values
+                print('Maison {} : {:.0f}% ({:.1f})'.format(level,np.mean(ratio_maison_ref*100),np.std(ratio_maison_ref*100)))
+                
+            for level in ['ref','2','4']:
+                data_maison_ref = data[(data.bt.isin(['MFH','AB']))&(data.period==level)]
+                ratio_maison_ref = 1-data_maison_ref[data_maison_ref.natural_ventilation==True].cooling_needs.values/data_maison_ref[data_maison_ref.natural_ventilation==False].cooling_needs.values
+                print('Collectif {} : {:.0f}% ({:.1f})'.format(level,np.mean(ratio_maison_ref*100),np.std(ratio_maison_ref*100)))
+                    
+            for building_type in ['SFH','TH','MFH','AB']:
+                fig,ax = plt.subplots(figsize=(8,5),dpi=300)
+                
+                for zcl_code in ['H1b','H3']:
+                    
+                    
+                    for i in range(1,11):
+                        data_plot = data[(data.zcl==zcl_code)&(data.bt==building_type)&(data.level==i)]
+                        
+                        j = i*7
+                        X = [j,j+2,j+4]
+                            
+                        # for k,level in enumerate(['ref','2','4']):
+                        #     # for climat in ['now',2,4]:
+                        if i==1:
+                            label = zcl_code
+                        else:
+                            label = None
+                             
+                        color = get_zcl_colors().get(zcl_code)
+                        if zcl_code == 'H3':
+                            color = get_zcl_colors().get('H2c')
+                
+                            
+                            # ax.bar([X[k]], data_plot[(data_plot.period==level)&(data_plot.natural_ventilation==False)].cooling_needs, 
+                            #        # bottom=heating_needs[(code,level)].mean(),
+                            #        width=1.6, label=label, color=color,alpha=0.5,
+                            #        error_kw=dict(ecolor=color,lw=1, capsize=2, capthick=1))
+                            
+                            # print()
+                        vent_true = data_plot[data_plot.natural_ventilation==True].cooling_needs.values
+                        vent_false = data_plot[data_plot.natural_ventilation==False].cooling_needs.values
+                        ratio = 1-vent_true/vent_false
+                        
+                        
+                        ax.plot(X, ratio, color=color,marker='o',label=label)
+                        ax.plot(X[0], ratio[0], color=color,marker='o',mfc='w')
+                            
+                            # ax.bar([X[k]], (cooling_needs[(code,zcl_code,'No natural ventilation',level)] - cooling_needs[(code,zcl_code,'Natural ventilation',level)]).mean(), 
+                            #        # bottom=heating_needs[(code,level)].mean(),
+                            #        yerr = (cooling_needs[(code,zcl_code,'No natural ventilation',level)] - cooling_needs[(code,zcl_code,'Natural ventilation',level)]).std(),
+                            #        width=1.6, label='', color=color,alpha=0.95,
+                            #        error_kw=dict(ecolor='w',lw=1, capsize=2, capthick=1))
+                    
+                ylims = ax.get_ylim()
+                xlims = [5.5,75.5]
+                
+                ax.set_ylim(bottom=0.,top=1.)
+                ax.set_ylabel('Cooling needs covered by natural ventilation (ratio)')
+                ax.legend()
+                # ax.set_title(zcl_code)
+                ax.set_xticks([(i*7)+2 for i in range(1,11)],['{}.{:02d}'.format(building_type,i) for i in range(1,11)])
+                
+                ylims = ax.get_ylim()
+                # xlims = ax.get_xlim()
+                for i in range(1,11):
+                    j = i*7
+                    X = [j-1.5,j+2,j+5.5]
+                    if i%2==0:
+                        ax.fill_between(X,[ylims[1]]*3,[ylims[0]]*3,color='lightgrey',alpha=0.37,zorder=-2)
+                
+                ax.set_xlim(xlims)
+                if True:
+                    plt.savefig(os.path.join(os.path.join(output, folder),'figs','{}.png'.format('typology_natural_ventilation_impacts_energy_needs_{}'.format(building_type))),bbox_inches='tight')
+                plt.show()
+                plt.close()
     
-    
-    
+        # prévalence des gestes dans les multi-gestes optimaux
+        if True:
+            # individuels
+            data = pd.read_csv('data/optimal_combinations.csv')
+            distribution_typo = pd.read_csv(os.path.join('data','distribution_typologies_zcl8.csv')).rename(columns={'bt':'building_type','period':'typology'})
+            distribution_typo = distribution_typo[distribution_typo.zcl.isin(['H1b','H3'])]
+            
+            distribution_typo_indiv = distribution_typo[distribution_typo.building_type.isin(['SFH','TH'])].copy()
+            # distribution_typo_indiv = distribution_typo[(distribution_typo.building_type.isin(['SFH','TH']))&(distribution_typo.typology<=5)].copy()
+            distribution_typo_indiv.loc[:,'ratio'] = distribution_typo_indiv.ratio/distribution_typo_indiv.ratio.sum()
+            distribution_typo_indiv = distribution_typo_indiv.set_index(['zcl','building_type','typology'])
+            
+            columns_optimal = ['energy_needs_optimal','social_optimal','private_optimal']
+            components = list(get_components_dict_multi_actions(0).keys())
+            
+            energy_needs_components = {k:[] for k in components}
+            social_needs_components = {k:[] for k in components}
+            private_needs_components = {k:[] for k in components}
+            
+            for period in ['ref','2','4']:
+                data_filter_indiv = data[(data.building_type.isin(['SFH','TH']))&(data.warming==period)].copy()
+                # data_filter_indiv = data[(data.building_type.isin(['SFH','TH']))&(data.warming==period)&(data.typology<=5)].copy()
+                data_filter_indiv = data_filter_indiv.set_index(['zcl','building_type','typology'])
+                data_filter_indiv = data_filter_indiv.join(distribution_typo_indiv)
+                data_filter_indiv = data_filter_indiv.reset_index()
+                
+                for c in columns_optimal:
+                    for comp in components:
+                        new_col = '{}_{}'.format(c,comp)
+                        data_filter_indiv[new_col] = data_filter_indiv[c].map(lambda x: int(get_components_dict_multi_actions(x).get(comp)))
+                        data_filter_indiv[new_col] = data_filter_indiv[new_col]*data_filter_indiv['ratio']
+                        
+                        if c == 'energy_needs_optimal':
+                            energy_needs_components[comp].append(data_filter_indiv[new_col].sum())
+                        if c == 'private_optimal':
+                            private_needs_components[comp].append(data_filter_indiv[new_col].sum())
+                        if c == 'social_optimal':
+                            social_needs_components[comp].append(data_filter_indiv[new_col].sum())
+                            
+            # print(energy_needs_components)
+            
+            columns_optimal_colors = {'energy_needs_optimal':plt.get_cmap('viridis')(0.8),
+                                      'private_optimal':plt.get_cmap('viridis')(0.1), 
+                                      'social_optimal':plt.get_cmap('viridis')(0.5)}
+            
+            fig,ax = plt.subplots(figsize=(5,5),dpi=300)
+            
+            for col in columns_optimal:
+                color = columns_optimal_colors.get(col)
+                
+                if col == 'energy_needs_optimal':
+                    for X,comp in enumerate(components):
+                        label = None
+                        if comp == 'walls':
+                            label = 'Energy'
+                        x = np.asarray([-0.3,0.,0.3])
+                        ax.plot(X+x, energy_needs_components.get(comp),color=color,marker='o',label=label)
+                        ax.plot((X+x)[0], energy_needs_components.get(comp)[0],color=color,marker='o',mfc='w')
+                if col == 'private_optimal':
+                    for X,comp in enumerate(components):
+                        label = None
+                        if comp == 'walls':
+                            label = 'Private cost'
+                        x = np.asarray([-0.3,0.,0.3])
+                        ax.plot(X+x, private_needs_components.get(comp),color=color,marker='o',label=label,zorder=1)
+                        ax.plot((X+x)[0], private_needs_components.get(comp)[0],color=color,marker='o',mfc='w',zorder=1.5)
+                if col == 'social_optimal':
+                    for X,comp in enumerate(components):
+                        label = None
+                        if comp == 'walls':
+                            label = 'Social cost'
+                        x = np.asarray([-0.3,0.,0.3])
+                        ax.plot(X+x, social_needs_components.get(comp),color=color,marker='o',label=label,zorder=2)
+                        ax.plot((X+x)[0], social_needs_components.get(comp)[0],color=color,marker='o',mfc='w',zorder=3)
+                        
+            xlims = ax.get_xlim()
+            ylims = [0,1.]
+            for X in range(len(components)):
+                x = np.asarray([-0.5,0.,0.5])
+                if X%2==0:
+                    ax.fill_between(X+x,[ylims[1]]*3,[ylims[0]]*3,color='lightgrey',alpha=0.37,zorder=-2)
+            
+            ax.set_xlim([-0.5,len(components)-0.5])
+            
+            ax.set_xticks(list(range(len(components))),labels=[e[0].upper() + e[1:].replace('entilation','entil.') for e in components])
+            ax.set_ylabel('Prevalence in optimal combinations (ratio)')
+            ax.set_title('SFH & TH')
+            # ax.set_title('SFH & TH (01-05)')
+            ax.legend()
+            ax.set_ylim(ylims)
+            plt.savefig(os.path.join(figs_folder,'prevalence_optim_indiv.png'), bbox_inches='tight')
+            plt.show()
+            
+            
+            # collectifs
+            data = pd.read_csv('data/optimal_combinations.csv')
+            distribution_typo = pd.read_csv(os.path.join('data','distribution_typologies_zcl8.csv')).rename(columns={'bt':'building_type','period':'typology'})
+            distribution_typo = distribution_typo[distribution_typo.zcl.isin(['H1b','H3'])]
+            
+            distribution_typo_indiv = distribution_typo[distribution_typo.building_type.isin(['MFH','AB'])].copy()
+            # distribution_typo_indiv = distribution_typo[(distribution_typo.building_type.isin(['MFH','AB']))&(distribution_typo.typology<=5)].copy()
+            distribution_typo_indiv.loc[:,'ratio'] = distribution_typo_indiv.ratio/distribution_typo_indiv.ratio.sum()
+            distribution_typo_indiv = distribution_typo_indiv.set_index(['zcl','building_type','typology'])
+            
+            columns_optimal = ['energy_needs_optimal','social_optimal','private_optimal']
+            components = list(get_components_dict_multi_actions(0).keys())
+            
+            energy_needs_components = {k:[] for k in components}
+            social_needs_components = {k:[] for k in components}
+            private_needs_components = {k:[] for k in components}
+            
+            for period in ['ref','2','4']:
+                data_filter_indiv = data[(data.building_type.isin(['MFH','AB']))&(data.warming==period)].copy()
+                # data_filter_indiv = data[(data.building_type.isin(['MFH','AB']))&(data.warming==period)&(data.typology<=5)].copy()
+                data_filter_indiv = data_filter_indiv.set_index(['zcl','building_type','typology'])
+                data_filter_indiv = data_filter_indiv.join(distribution_typo_indiv)
+                data_filter_indiv = data_filter_indiv.reset_index()
+                
+                for c in columns_optimal:
+                    for comp in components:
+                        new_col = '{}_{}'.format(c,comp)
+                        data_filter_indiv[new_col] = data_filter_indiv[c].map(lambda x: int(get_components_dict_multi_actions(x).get(comp)))
+                        data_filter_indiv[new_col] = data_filter_indiv[new_col]*data_filter_indiv['ratio']
+                        
+                        if c == 'energy_needs_optimal':
+                            energy_needs_components[comp].append(data_filter_indiv[new_col].sum())
+                        if c == 'private_optimal':
+                            private_needs_components[comp].append(data_filter_indiv[new_col].sum())
+                        if c == 'social_optimal':
+                            social_needs_components[comp].append(data_filter_indiv[new_col].sum())
+                            
+            # print(energy_needs_components)
+            
+            columns_optimal_colors = {'energy_needs_optimal':plt.get_cmap('viridis')(0.8),
+                                      'private_optimal':plt.get_cmap('viridis')(0.1), 
+                                      'social_optimal':plt.get_cmap('viridis')(0.5)}
+            
+            fig,ax = plt.subplots(figsize=(5,5),dpi=300)
+            
+            for col in columns_optimal:
+                color = columns_optimal_colors.get(col)
+                
+                if col == 'energy_needs_optimal':
+                    for X,comp in enumerate(components):
+                        label = None
+                        if comp == 'walls':
+                            label = 'Energy'
+                        x = np.asarray([-0.3,0.,0.3])
+                        ax.plot(X+x, energy_needs_components.get(comp),color=color,marker='o',label=label)
+                        ax.plot((X+x)[0], energy_needs_components.get(comp)[0],color=color,marker='o',mfc='w')
+                if col == 'private_optimal':
+                    for X,comp in enumerate(components):
+                        label = None
+                        if comp == 'walls':
+                            label = 'Private cost'
+                        x = np.asarray([-0.3,0.,0.3])
+                        ax.plot(X+x, private_needs_components.get(comp),color=color,marker='o',label=label,zorder=1)
+                        ax.plot((X+x)[0], private_needs_components.get(comp)[0],color=color,marker='o',mfc='w',zorder=1.5)
+                if col == 'social_optimal':
+                    for X,comp in enumerate(components):
+                        label = None
+                        if comp == 'walls':
+                            label = 'Social cost'
+                        x = np.asarray([-0.3,0.,0.3])
+                        ax.plot(X+x, social_needs_components.get(comp),color=color,marker='o',label=label,zorder=2)
+                        ax.plot((X+x)[0], social_needs_components.get(comp)[0],color=color,marker='o',mfc='w',zorder=3)
+                        
+            xlims = ax.get_xlim()
+            ylims = [0,1.]
+            for X in range(len(components)):
+                x = np.asarray([-0.5,0.,0.5])
+                if X%2==0:
+                    ax.fill_between(X+x,[ylims[1]]*3,[ylims[0]]*3,color='lightgrey',alpha=0.37,zorder=-2)
+            
+            ax.set_xlim([-0.5,len(components)-0.5])
+            
+            ax.set_xticks(list(range(len(components))),labels=[e[0].upper() + e[1:].replace('entilation','entil.') for e in components])
+            ax.set_ylabel('Prevalence in optimal combinations (ratio)')
+            ax.set_title('MFH & AB')
+            # ax.set_title('MFH & AB (01-05)')
+            ax.legend()
+            ax.set_ylim(ylims)
+            plt.savefig(os.path.join(figs_folder,'prevalence_optim_collective.png'), bbox_inches='tight')
+            plt.show()
+                
+                
+                
+                
+                
+            
     tac = time.time()
     print("Done in {:.2f}s".format(tac-tic))
     
