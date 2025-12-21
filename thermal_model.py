@@ -230,7 +230,7 @@ def compute_R_inf(typology):
     return R_inf
 
 
-def get_external_convection_heat_transfer(wind_speed=5,method='th-bat',plot=False,figs_folder=None):
+def get_external_convection_heat_transfer(wind_speed=4,method='th-bat',plot=False,figs_folder=None):
     """
     Supposition d'un vent moyen de 5m/s, à corriger avec des données météo ?
 
@@ -293,7 +293,7 @@ def compute_R_uih(typology):
 
 
 def compute_R_ueh(typology):
-    h_ext_conv = get_external_convection_heat_transfer(wind_speed=5)
+    h_ext_conv = get_external_convection_heat_transfer(wind_speed=4)
     h_ext_rad = get_external_radiation_heat_transfer()
     h_ext = h_ext_conv + h_ext_rad
     R_ueh = 1/(h_ext * typology.roof_surface) # K/W
@@ -2678,7 +2678,7 @@ def main():
                 plt.show()
     
     #%% Comparaisons des typologies TABULA
-    if False:
+    if True:
         # Génération du fichier météo
         zcl_code = 'H1a'
         # zcl_code = 'H3'
@@ -2916,6 +2916,14 @@ def main():
                 
                 # graphe pour les besoins de chauffage
                 fig,ax = plt.subplots(figsize=(8,5),dpi=300)
+                
+                list_tabula_init = []
+                list_tabula_std = []
+                list_tabula_adv = []
+                list_model_init = []
+                list_model_std = []
+                list_model_adv = []
+                
                 for i in range(1,11):
                     code = 'FR.N.{}.{:02d}.Gen'.format(building_type,i)
                     
@@ -2927,13 +2935,18 @@ def main():
                         ax.plot(X,Y,color='tab:blue',ls=':',marker='o',label='TABULA')
                     else:
                         ax.plot(X,Y,color='tab:blue',ls=':',marker='o')
+                    list_tabula_init.append(Y[0])
+                    list_tabula_std.append(Y[1])
+                    list_tabula_adv.append(Y[2])
                         
                     for k,level in enumerate(['initial','standard','advanced']):
                         if i==1 and k==1:
                             ax.boxplot(heating_needs_GENMOD[(code,level)],positions=[X[k]],widths=1, label='Model')
                         else:
                             ax.boxplot(heating_needs_GENMOD[(code,level)],positions=[X[k]],widths=1)
-                
+                    list_model_init.append(np.mean(heating_needs_GENMOD[(code,'initial')]))
+                    list_model_std.append(np.mean(heating_needs_GENMOD[(code,'standard')]))
+                    list_model_adv.append(np.mean(heating_needs_GENMOD[(code,'advanced')]))
                 
                 ax.set_ylim(bottom=0.)
                 ax.set_ylabel('Heating needs (kWh.m$^{-2}$.yr$^{-1}$)')
@@ -2951,9 +2964,25 @@ def main():
                 
                 plt.savefig(os.path.join(figs_folder,'{}.png'.format('{}_TABULA_consumption'.format(building_type))),bbox_inches='tight')
                 plt.show()
+                
+                list_tabula_init = np.asarray(list_tabula_init)
+                list_tabula_std = np.asarray(list_tabula_std)
+                list_tabula_adv = np.asarray(list_tabula_adv)
+                list_model_init = np.asarray(list_model_init)
+                list_model_std = np.asarray(list_model_std)
+                list_model_adv = np.asarray(list_model_adv)
+                
+                print(' & '.join(['\\num{'+'{:.0f}'.format(e)+'}' for e in (list_model_init-list_tabula_init)]))
+                print(' & '.join(['(\\num{'+'{:.0f}'.format(e)+'})' for e in ((list_model_init-list_tabula_init)/list_tabula_init*100)]))
+                print()
+                print(' & '.join(['\\num{'+'{:.0f}'.format(e)+'}' for e in (list_model_std-list_tabula_std)]))
+                print(' & '.join(['(\\num{'+'{:.0f}'.format(e)+'})' for e in ((list_model_std-list_tabula_std)/list_tabula_std*100)]))
+                print()
+                print(' & '.join(['\\num{'+'{:.0f}'.format(e)+'}' for e in (list_model_adv-list_tabula_adv)]))
+                print(' & '.join(['(\\num{'+'{:.0f}'.format(e)+'})' for e in ((list_model_adv-list_tabula_adv)/list_tabula_adv*100)]))
 
                 # graphe pour les valeurs U
-                if True:
+                if False:
                     element_GENMOD_dict = {'Umur':Umur_GENMOD,
                                            'Uph':Uph_GENMOD,
                                            'Upb':Upb_GENMOD,
@@ -3290,6 +3319,26 @@ def main():
             
             results_dict_heating['U_ceiling'][typo.ceiling_U] = heating_cooling_modelling.heating_needs.mean()
             results_dict_cooling['U_ceiling'][typo.ceiling_U] = heating_cooling_modelling.cooling_needs.mean()
+            
+        #  taux d'infiltration
+        results_dict_heating['infiltration'] = {}
+        results_dict_cooling['infiltration'] = {}
+        for surface_factor in tqdm.tqdm(['low','medium','high'],desc='infiltration'):
+            typo = Typology(code,'initial')
+            
+            typo.air_infiltration = surface_factor
+            
+            simulation = run_thermal_model(typo, conventionnel, weather_data, pmax_warning=False)
+            simulation = aggregate_resolution(simulation, resolution='h')
+            # compute_U_values(typo)
+            
+            heating_cooling_modelling = aggregate_resolution(simulation[['heating_needs','cooling_needs']], resolution='YE',agg_method='sum')
+            heating_cooling_modelling = heating_cooling_modelling/1000
+            heating_cooling_modelling = heating_cooling_modelling/typo.surface
+            heating_cooling_modelling.index = heating_cooling_modelling.index.year
+            
+            results_dict_heating['infiltration'][typo.air_infiltration] = heating_cooling_modelling.heating_needs.mean()
+            results_dict_cooling['infiltration'][typo.air_infiltration] = heating_cooling_modelling.cooling_needs.mean()
             
         
         print()
