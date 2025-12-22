@@ -331,7 +331,8 @@ def draw_departement_map(dict_dep,figs_folder,cbar_min=0,cbar_max=1.,
                          automatic_cbar_values=False, cbar_label=None, 
                          map_title=None,save=None,cmap=None,figax=None,
                          hide_cbar=False,alpha=None,hatches=None,
-                         cbar_format=None,cbar_norm=None,cbar_ticks=None):
+                         cbar_format=None,cbar_norm=None,cbar_ticks=None,
+                         cbar_extend_format=None):
     
     if figax is not None:
         fig,ax = figax
@@ -353,6 +354,9 @@ def draw_departement_map(dict_dep,figs_folder,cbar_min=0,cbar_max=1.,
         cbar_extend = 'both'
     else:
         cbar_extend = 'neither'
+    
+    if cbar_extend_format is not None:
+        cbar_extend = cbar_extend_format
     
     if cbar_norm is None:
         norm = matplotlib.colors.Normalize(vmin=cbar_min, vmax=cbar_max)

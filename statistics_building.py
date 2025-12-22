@@ -572,7 +572,7 @@ def main():
                                      hatches=list_dep_mfh)
                 
     #%% Statistiques sur les systèmes de chauffage de la base DPE
-    if False:
+    if True:
         
         # Génération des fichiers statistiques par départements
         if False and external_disk_connection:
@@ -701,7 +701,7 @@ def main():
             agg_stats_batiment = representativity.groupby(['type_batiment_dpe','zcl']).nb_logements_bdnb.sum()
             
         # statistiques nationale (fusion des fichiers par csvstack sur terminal)
-        if False:
+        if True:
             # principal
             stats_heater_all_path = os.path.join('data','BDNB','stats_heater_all.csv')
             stats_heater_all = pd.read_csv(stats_heater_all_path)
@@ -722,7 +722,7 @@ def main():
             
             
             # carte des pourcentages de logements par dep chauffés au gaz dans la base BDNB-DPE
-            if False:
+            if True:
                 departements_dict_nblog = {d:None for d in France().departements}
                 departements_dict_elec = {d:None for d in France().departements}
                 departements_dict_gaz = {d:None for d in France().departements}
@@ -752,7 +752,8 @@ def main():
                                      map_title='Main heating system energy: gas',
                                      cbar_label='Dwellings in the BDNB-DPE (ratio)',
                                      # cbar_min=0,cbar_max=100,
-                                     cbar_max=1.,cbar_min=0.,
+                                     automatic_cbar_values=True,
+                                     # cbar_max=0.8,cbar_min=0.,cbar_extend_format='max',
                                      save='carte_chauffage_principal_gaz')
                 plt.show()
                 
@@ -1118,7 +1119,7 @@ def main():
         
         
     #%% Statistiques DPE par typologies 
-    if True:
+    if False:
         
         reformat_bdnb_dpe_file = 'dpe_statistics.parquet'
         
