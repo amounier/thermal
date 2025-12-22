@@ -1803,7 +1803,7 @@ def main():
         
     
     #%% affichage de la distribution d'une variable dans la bdnb parisienne
-    if True:
+    if False:
         plot_var_distribution(var='ffo_bat_annee_construction', path=output_path,min_xlim=1600,rounder=20,percentage=True,max_xlim=2020)
         
     #%% statistiques sur les liens entre période de construction et gains dans la manipulation des DPE
@@ -1864,11 +1864,49 @@ def main():
         # print(change_logiciel_version_dict)
                     
             
-            
-    
-   
+    #%% graphe de passage
+    if True:
+        letter_to_number_dict = {chr(ord('@')+n):n for n in range(1,10)}
         
+        data = {'from':['F','G','E','G','F','D','G','G','E','F','G','C'],
+                'to':['E','F','D','E','D','C','D','D','C','C','C','B'],
+                'number':[482,395,284,273,151,68,59,59,23,10,8,4]}
+        data = pd.DataFrame().from_dict(data).set_index(['from','to'])
         
+        data_format = {'from':list('ABCDEFG')}
+        for letter in list('ABCDEFG'):
+            data_format[letter] = [0.]*len(list('ABCDEFG'))
+        data_format = pd.DataFrame().from_dict(data_format).set_index('from')
+        
+        for f in list('ABCDEFG'):
+            for t in list('ABCDEFG'):
+                try:
+                    data_format.loc[f,t] = data.loc[(f,t)].number.values[0]/data.number.sum()*100
+                except KeyError:
+                    continue
+        
+        annot = data_format.values.T
+        annot = np.round(annot, 1)
+        annot = np.where(annot != 0, annot, "")
+        
+        fig,ax = plt.subplots(figsize=(5,5), dpi=300)
+        
+        cbar_ax = fig.add_axes([0, 0, 0.1, 0.1])
+        posn = ax.get_position()
+        cbar_ax.set_position([posn.x0+posn.width+0.02, posn.y0, 0.04, posn.height])
+        
+        ax = sns.heatmap(data_format.T,ax=ax,annot=annot, fmt="",cmap='bone_r',cbar_ax=cbar_ax,cbar=True,cbar_kws={'label':'Percentage (%)'})
+        ax.set_title('Paris (75) $-$ N={}'.format(data.number.sum()))
+        # ax.yaxis.set_inverted(True) 
+        # ax.invert_yaxis()
+        for spine in ax.spines.values():
+            spine.set_visible(True)
+        for spine in cbar_ax.spines.values():
+            spine.set_visible(True)
+        ax.set_ylabel('Second EPC')
+        ax.set_xlabel('First EPC')
+        plt.savefig(os.path.join(os.path.join(output_folder,folder,'figs'),'DPE_manipulation_classes.png'), bbox_inches='tight')
+        plt.show()
         
         
                         
