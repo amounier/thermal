@@ -174,6 +174,8 @@ class Stock:
         self.energy_consumption_cooling = None
         self.stock_energy_consumption_heating = None
         self.stock_energy_consumption_cooling = None
+        self.hot_dhi = None
+        self.cold_dhi = None
         
         self.energy_needs_hourly = None
         
@@ -435,6 +437,40 @@ class Stock:
     
     def format_DHI(self):
         # TODO: DHI annuels du parc
+        if self.typologies is None:
+            self.compute_typologies()
+            
+        self.compute_energy_needs()
+        
+        hot_dhi = self.reduced_technical_stock_heater_agg.copy()
+        cold_dhi = self.reduced_technical_stock_heater_agg.copy()
+        
+        print('{} - DHI formatting...'.format(self.scenario_name))
+        for typo_index,typo_save in zip(self.typologies.index,self.typologies.complete_save):
+            needs = pd.read_parquet(os.path.join(self.rc_path,typo_save))
+            needs = aggregate_resolution(needs[['hot_DH','cold_DH']],resolution='YS', agg_method='sum')
+            needs.index = needs.index.year
+            
+            hot_dhi.loc[typo_index] = needs.hot_DH
+            cold_dhi.loc[typo_index] = needs.cold_DH
+        
+        self.hot_dhi = hot_dhi
+        self.cold_dhi = cold_dhi
+        
+        # retablissement des systèmes de chauffage 
+        # ne pas pondérer les consommations ! c'est unitaire ici
+        for idx,y in enumerate(range(self.start_year, self.end_year+1)):
+            if idx == 0:
+                temp_hot_dhi = pd.DataFrame(self.add_level(self.hot_dhi[y], self.reduced_technical_stock[y], 'Heating system',keep_distribution=False)).rename(columns={0:y})
+                temp_cold_dhi = pd.DataFrame(self.add_level(self.cold_dhi[y], self.reduced_technical_stock[y], 'Heating system',keep_distribution=False)).rename(columns={0:y})
+            else: 
+                temp_hot_dhi[y] = self.add_level(self.hot_dhi[y], self.reduced_technical_stock[y], 'Heating system',keep_distribution=False)
+                temp_cold_dhi[y] = self.add_level(self.cold_dhi[y], self.reduced_technical_stock[y], 'Heating system',keep_distribution=False)
+        temp_hot_dhi = temp_hot_dhi.loc[self.reduced_technical_stock.index]
+        temp_cold_dhi = temp_cold_dhi.loc[self.reduced_technical_stock.index]
+        
+        self.hot_dhi = temp_hot_dhi
+        self.cold_dhi = temp_cold_dhi
         return
     
     
@@ -1278,7 +1314,7 @@ def main():
         # climate_models_list = ['EC-EARTH_HadREM3-GA7'] 
         ac_scenarios = ['REF'] # ['ACM','REF','ACP']
         pz_scenarios = ["REF"] # ['NOF','REF','SOF']
-        # ac_scenarios = ['ACM','REF','ACP']
+        ac_scenarios = ['ACM','REF','ACP']
         # pz_scenarios = ['NOF','REF','SOF']
         
         # détail par zcl
@@ -1392,6 +1428,8 @@ def main():
         if True:
             always_vars = ['Stock (Million)',
                            'Stock AC No AC (Million)',
+                           'Stock AC Electricity-Heat pump air (Million)',
+                           'Stock AC Electricity-Portable unit (Million)',
                            'Cooler tax gains (Billion euro)',
                            'Cooler subsidies (Billion euro)']
             
@@ -1420,9 +1458,15 @@ def main():
                            ]
             
             to_plot = {
-                       # 'ac_rate':{'ylabel':'AC equipment rate (ratio)',
-                       #            'ylim':[0,1],
-                       #            'yfactor':1.},
+                       'ac_rate':{'ylabel':'AC equipment rate (ratio)',
+                                  'ylim':[0,1],
+                                  'yfactor':1.},
+                       # 'ac_rate_fixe':{'ylabel':'AC equipment rate (ratio)',
+                       #                 'ylim':[0,1],
+                       #                 'yfactor':1.},
+                       'ac_rate_portable':{'ylabel':'AC equipment rate (ratio)',
+                                           'ylim':[0,1],
+                                           'yfactor':1.},
                        # 'ac_stock':{'ylabel':'AC equipment stock (units)',
                        #                       'ylim':[0,None],
                        #                       'yfactor':1e6},
@@ -1433,10 +1477,10 @@ def main():
                        #                                   # 'ylim':[0,5.5],
                        #                                   'ylim':[0,None],
                        #                                   'yfactor':1},
-                       'Consumption (TWh)':{'ylabel':'Consumption (TWh)',
-                                                         # 'ylim':[0,5.5],
-                                                         'ylim':[0,None],
-                                                         'yfactor':1},
+                       # 'Consumption (TWh)':{'ylabel':'Consumption (TWh)',
+                       #                                   # 'ylim':[0,5.5],
+                       #                                   'ylim':[0,None],
+                       #                                   'yfactor':1},
                        # 'Retrofit (Thousand households)':{'ylabel':'Total retrofit (households)',
                        #                                   'ylim':[0,2.1e6],
                        #                                   'yfactor':1e3},
@@ -1485,6 +1529,12 @@ def main():
                     if var == 'ac_rate':
                         df = resirf_df[resirf_df.scenario==sce].groupby(['year','climate_model'],as_index=False)[['Stock AC No AC (Million)','Stock (Million)']].sum()
                         df[var] = (df['Stock (Million)']-df['Stock AC No AC (Million)'])/df['Stock (Million)']
+                    elif var == 'ac_rate_fixe':
+                        df = resirf_df[resirf_df.scenario==sce].groupby(['year','climate_model'],as_index=False)[['Stock AC Electricity-Heat pump air (Million)','Stock (Million)']].sum()
+                        df[var] = (df['Stock AC Electricity-Heat pump air (Million)'])/df['Stock (Million)']
+                    elif var == 'ac_rate_portable':
+                        df = resirf_df[resirf_df.scenario==sce].groupby(['year','climate_model'],as_index=False)[['Stock AC Electricity-Portable unit (Million)','Stock (Million)']].sum()
+                        df[var] = (df['Stock AC Electricity-Portable unit (Million)'])/df['Stock (Million)']
                     elif var == 'ac_stock':
                         df = resirf_df[resirf_df.scenario==sce].groupby(['year','climate_model'],as_index=False)[['Stock AC No AC (Million)','Stock (Million)']].sum()
                         df[var] = (df['Stock (Million)']-df['Stock AC No AC (Million)'])
@@ -1508,7 +1558,9 @@ def main():
                     
                     # print(sce, mean_cm.mean())
                     # print(sce, mean_cm.sum())
-                    print(sce, mean_cm.loc[list(range(2025,2031))].mean())
+                    # print(sce, mean_cm.loc[list(range(2025,2031))].mean())
+                    print(sce, mean_cm.loc[list(range(2018,2019))].mean(),std_cm.loc[list(range(2018,2019))].mean())
+                    print(sce, mean_cm.loc[list(range(2050,2051))].mean(),std_cm.loc[list(range(2050,2051))].mean())
                     
                     ax.plot(mean_cm.index,mean_cm,color='w',lw=3,zorder=0)
                     ax.plot(mean_cm.index,mean_cm,color=color,lw=2,label=sce.replace('_',' - '),zorder=1)
@@ -1621,9 +1673,113 @@ def main():
     
 
     #%% définition passeoire et bouilloire
-    if True:
-        stock = Stock(zcl='H1a',climate_model='EC-EARTH_HadREM3-GA7',folder=os.path.join(output, folder))
+    if False:
+        init_years = list(range(2018,2018+6))
+        init_years_str = [str(e) for e in init_years]
+        init_years_wgt = [str(e)+'_weight' for e in init_years]
         
+        conso_chauffage = None
+        dhi_chaud = None
+        for zcl in ZCL_LIST:
+            stock = Stock(zcl=zcl,climate_model='EC-EARTH_HadREM3-GA7',folder=os.path.join(output, folder))
+            stock.compute_energy_consumption_conv()
+            stock.format_DHI()
+            surface = {'Multi-family':66.033,'Single-family':88.}
+            surface_array = stock.energy_consumption_heating_conv.index.get_level_values('Housing type').map(surface.get).values
+            # households = {'Multi-family':30,'Single-family':1}
+            # households_array = stock.hot_dhi.index.get_level_values('Housing type').map(surface.get).values
+            for c in stock.energy_consumption_heating_conv.columns:
+                stock.energy_consumption_heating_conv[c] = (stock.energy_consumption_heating_conv[c]+stock.energy_consumption_cooling_conv[c])/surface_array*1e-3
+                stock.hot_dhi[c] = stock.hot_dhi[c]#/households_array
+            
+            temp = stock.energy_consumption_heating_conv.join(stock.reduced_technical_stock,rsuffix='_weight')
+            if conso_chauffage is None:
+                conso_chauffage = temp
+            else:
+                conso_chauffage = pd.concat([conso_chauffage,temp])
+            
+            temp_dhi = stock.hot_dhi.join(stock.reduced_technical_stock,rsuffix='_weight')
+            if dhi_chaud is None:
+                dhi_chaud = temp_dhi
+            else:
+                dhi_chaud = pd.concat([dhi_chaud,temp_dhi])
+        
+        # filtre 
+        no_ac = True
+        if no_ac:
+            conso_chauffage = conso_chauffage[conso_chauffage.index.get_level_values('Cooling system')=='No AC']
+            dhi_chaud = dhi_chaud[dhi_chaud.index.get_level_values('Cooling system')=='No AC']
+            
+        
+        # DPE
+        etiquette_colors_dict = {'A':(0, 156, 109),'B':(82, 177, 83),'C':(120, 189, 118),'D':(244, 231, 15),'E':(240, 181, 15),'F':(235, 130, 53),'G':(215, 34, 31)}
+        etiquette_colors_dict = {k: tuple(map(lambda x: x/255, v)) for k,v in etiquette_colors_dict.items()}
+        etiquette_ep_dict = {'A':[0,70],'B':[70,110],'C':[110,180],'D':[180,250],'E':[250,330],'F':[330,420],'G':[420,600]}
+        fig,ax= plt.subplots(figsize=(5,5),dpi=300)
+        sns.histplot(x=conso_chauffage.loc[:,init_years_str].mean(axis=1),
+                     weights=conso_chauffage.loc[:,init_years_wgt].mean(axis=1),
+                     bins=20,binrange=[0,500],ax=ax,stat='density',
+                     color=get_scenarios_color().get('REF_REF'),
+                     ec='w',alpha=1)
+        ax.set_xlim([0,500])
+        ylim = ax.get_ylim()
+        for classe,color in etiquette_colors_dict.items():
+            ax.fill_between(etiquette_ep_dict.get(classe),[ylim[1]]*2,[ylim[0]]*2,color=color,alpha=0.2,zorder=-1)
+        ax.set_ylim(ylim)
+        ax.set_xlabel('Standard energy consumption (kWh.m$^{-2}$.yr$^{-1}$)')
+        if no_ac:
+            ax.set_title('AC excluded')
+            plt.savefig(os.path.join(figs_folder,'DPE_distrib_REF_REF_noac.png'), bbox_inches='tight')
+        else:
+            plt.savefig(os.path.join(figs_folder,'DPE_distrib_REF_REF.png'), bbox_inches='tight')
+        plt.show()
+        
+        # SHI
+        xmax = 5000
+        X = dhi_chaud.loc[:,init_years_str].mean(axis=1)
+        W = dhi_chaud.loc[:,init_years_wgt].mean(axis=1)
+        fig,ax= plt.subplots(figsize=(5,5),dpi=300)
+        sns.histplot(x=X,#[X>250],
+                     weights=W,#[X>250],
+                     bins=20,binrange=[0,xmax],ax=ax,stat='density',
+                     color=get_scenarios_color().get('REF_REF'),
+                     ec='w',alpha=1.)
+        ax.set_xlim([0,xmax])
+        ylim = ax.get_ylim()
+        ax.fill_between([0,1250],[ylim[1]]*2,[ylim[0]]*2,color=etiquette_colors_dict.get('A'),alpha=0.2,zorder=-1)
+        ax.fill_between([1250,3750],[ylim[1]]*2,[ylim[0]]*2,color=etiquette_colors_dict.get('D'),alpha=0.2,zorder=-1)
+        ax.fill_between([3750,xmax],[ylim[1]]*2,[ylim[0]]*2,color=etiquette_colors_dict.get('G'),alpha=0.2,zorder=-1)
+        ax.set_ylim(ylim)
+        ax.set_xlabel('Hot discomfort (°C.h.household$^{-1}$)')
+        if no_ac:
+            ax.set_title('AC excluded')
+            plt.savefig(os.path.join(figs_folder,'DHI_hot_distrib_REF_REF_noac.png'), bbox_inches='tight')
+        else:
+            plt.savefig(os.path.join(figs_folder,'DHI_hot_distrib_REF_REF.png'), bbox_inches='tight')
+        plt.show()
+        
+        fig,ax = plt.subplots(figsize=(5,5),dpi=300)
+        cbar_ax = fig.add_axes([0, 0, 0.1, 0.1])
+        posn = ax.get_position()
+        cbar_ax.set_position([posn.x0+posn.width+0.02, posn.y0, 0.04, posn.height])
+        sns.histplot(x=conso_chauffage.loc[:,init_years_str].mean(axis=1),
+                     y=X,thresh=-1,
+                     weights=W,
+                     binrange=[[0,500],[0,xmax]],
+                     bins=10,ax=ax,stat='density',cmap='magma_r',
+                     cbar_ax=cbar_ax,cbar=True,cbar_kws={'label':'Density'})
+        ax.set_ylim([0,xmax])
+        ax.set_xlim([0,500])
+        ax.plot([0,500],[3750]*2,color='k',alpha=0.5)
+        ax.plot([330]*2,[0,xmax],color='k',alpha=0.5)
+        ax.set_ylabel('Hot discomfort (°C.h.household$^{-1}$)')
+        ax.set_xlabel('Standard heating consumption (kWh.m$^{-2}$.yr$^{-1}$)')
+        if no_ac:
+            ax.set_title('AC excluded')
+            plt.savefig(os.path.join(figs_folder,'DHI_hot_DPE_distrib_REF_REF_noac.png'), bbox_inches='tight')
+        else:
+            plt.savefig(os.path.join(figs_folder,'DHI_hot_DPE_distrib_REF_REF.png'), bbox_inches='tight')
+        plt.show()
         
     
     #%% lancement des calculs pour tous les modèles climatiques 
@@ -1963,9 +2119,9 @@ def main():
                 if idx not in [0,4]:
                     ax.bar_label(bar, labels=['{:.0f}%'.format(ch*100)], label_type='edge', padding=3,color='k')
                     if ch>0:
-                        ax.bar_label(bar, labels=['$\\blacktriangle$'], label_type='center',color='w',size=20)
+                        ax.bar_label(bar, labels=['$\\blacktriangle$'], label_type='center',color='w',size=16)
                     else:
-                        ax.bar_label(bar, labels=['$\\blacktriangledown$'], label_type='center',color='w',size=20)
+                        ax.bar_label(bar, labels=['$\\blacktriangledown$'], label_type='center',color='w',size=16)
                     # ax.plot([prev_l,l],[prev_t,b],color=c,zorder=-1,alpha=0.9)
                 # prev_l = l
                 # prev_t = t
@@ -2512,7 +2668,7 @@ def main():
         
     
     #%% émissions de GES des consommations d'énergie
-    if False:
+    if True:
         climate_models_list = list(CLIMATE_MODELS_NUMBERS.keys())
         # climate_models_list = ['EC-EARTH_HadREM3-GA7'] 
         # ac_scenarios = ['REF'] #['ACM','REF','ACP']
@@ -2619,7 +2775,7 @@ def main():
             # axin.axis('off')
             
             ax.set_ylabel('Energy CO$_2$ emissions (MtCO$_2$eq.yr$^{-1}$)')
-            # ax.legend(loc='lower right')
+            ax.legend()
             ax.set_ylim(bottom=0.,top=None)
             # ax.set_xlim([pd.to_datetime('{}-01-01'.format(y)) for y in [2018,2050]])
             ax.set_xlim([2018,2050])
@@ -2795,6 +2951,7 @@ def main():
             
             if scenario == 'REF_REF':
                 label_2020 = '2018-2023'
+                # label_2050 = '2045-2050 (REF_REF)'
                 label_2050 = '2045-2050'
             else:
                 label_2020 = None
@@ -2835,9 +2992,9 @@ def main():
         ax.set_xlim([T[0],T[-1]])
         
         ax.legend(loc='upper right')
-        # axin = ax.inset_axes([1-0.305-0.025, 1-0.305-0.133, 0.305, 0.305],zorder=0)    # create new inset axes in data coordinates
-        # axin.imshow(plt.imread(get_sample_data('/home/amounier/PycharmProjects/thermal/data/scenarios_compact.png')))
-        # axin.axis('off')
+        axin = ax.inset_axes([1-0.305-0.025, 1-0.305-0.133, 0.305, 0.305],zorder=0)    # create new inset axes in data coordinates
+        axin.imshow(plt.imread(get_sample_data('/home/amounier/PycharmProjects/thermal/data/scenarios_compact.png')))
+        axin.axis('off')
         
         if correction_elec:
             ax.set_ylabel('Daily corrected electricity consumption (GW)')
@@ -2907,9 +3064,11 @@ def main():
                 df_power_agg_zcl_yearly_sce = df_power_agg_zcl_yearly_sce.set_index(['year','climate_model'])
                 
                 heating_mean = df_power_agg_zcl_yearly_sce.groupby('year')['heating_pmax'].mean()
+                heating_max = df_power_agg_zcl_yearly_sce.groupby('year')['heating_pmax'].max()
                 heating_std = df_power_agg_zcl_yearly_sce.groupby('year')['heating_pmax'].std()
             
                 ax.plot(heating_mean*1e-9,color=get_scenarios_color().get(scenario),label='model (REF_REF)')
+                ax.plot(heating_max*1e-9,color=get_scenarios_color().get(scenario),label='model max',ls=':')
                 ax.fill_between(heating_std.index,heating_mean.values*1e-9+heating_std.values*1e-9,heating_mean.values*1e-9-heating_std.values*1e-9,alpha=0.5,color=get_scenarios_color().get(scenario))
             
             # axin = ax.inset_axes([0.01, 0.01, 0.305, 0.305],zorder=0)    # create new inset axes in data coordinates
@@ -2917,17 +3076,17 @@ def main():
             # axin.axis('off')
             
             if correction_elec:
-                ax.set_ylabel('DJF Electricity corrected power peak for heating (GW)')
+                ax.set_ylabel('Electricity corrected power peak for heating (GW)')
             else:
-                ax.set_ylabel('DJF Electricity power peak for heating (GW)')
-            # ax.legend()
+                ax.set_ylabel('Electricity power peak for heating (GW)')
+            ax.legend()
             ax.set_ylim(bottom=0.)
             ax.set_xlim([2018,2050])
             if correction_elec:
                 plt.savefig(os.path.join(figs_folder,'heating_corrected_Electricity_power.png'), bbox_inches='tight')
             else:
                 plt.savefig(os.path.join(figs_folder,'heating_Electricity_power.png'), bbox_inches='tight')
-            
+            ax.legend()
             plt.show()
             
             # cooling
@@ -2942,17 +3101,19 @@ def main():
                 df_power_agg_zcl_yearly_sce = df_power_agg_zcl_yearly_sce.set_index(['year','climate_model'])
                 
                 cooling_mean = df_power_agg_zcl_yearly_sce.groupby('year')['cooling_pmax'].mean()
+                cooling_max = df_power_agg_zcl_yearly_sce.groupby('year')['cooling_pmax'].max()
                 cooling_std = df_power_agg_zcl_yearly_sce.groupby('year')['cooling_pmax'].std()
                 
                 ax.plot(cooling_mean*1e-9,color=get_scenarios_color().get(scenario),label='model (REF_REF)')
+                ax.plot(cooling_max*1e-9,color=get_scenarios_color().get(scenario),label='model max',ls=':')
                 ax.fill_between(cooling_std.index,cooling_mean.values*1e-9+cooling_std.values*1e-9,cooling_mean.values*1e-9-cooling_std.values*1e-9,alpha=0.5,color=get_scenarios_color().get(scenario))
             
             # axin = ax.inset_axes([1-0.305-0.01, 0.01, 0.305, 0.305],zorder=0)    # create new inset axes in data coordinates
             # axin.imshow(plt.imread(get_sample_data('/home/amounier/PycharmProjects/thermal/data/scenarios_compact.png')))
             # axin.axis('off')
             
-            ax.set_ylabel('JJA Electricity power peak for cooling (GW)')
-            # ax.legend()
+            ax.set_ylabel('Electricity power peak for cooling (GW)')
+            ax.legend()
             ax.set_ylim(bottom=0.)
             ax.set_xlim([2018,2050])
             plt.savefig(os.path.join(figs_folder,'cooling_Electricity_power.png'), bbox_inches='tight')
@@ -3025,9 +3186,9 @@ def main():
             ax.set_xlim([2018,2050])
             ax.legend(ncols=1)
             if correction_elec:
-                ax.set_ylabel('DJF Electricity corrected power peak for heating (GW)')
+                ax.set_ylabel('Electricity corrected power peak for heating (GW)')
             else:
-                ax.set_ylabel('DJF Electricity power peak for heating (GW)')
+                ax.set_ylabel('Electricity power peak for heating (GW)')
             if correction_elec:
                 plt.savefig(os.path.join(figs_folder,'heating_corrected_Electricity_power_zcl.png'), bbox_inches='tight')
             else:
@@ -3042,7 +3203,7 @@ def main():
                 to_plot_std = std_cooling[mean_heating.zcl==zcl]
                 ax.plot(to_plot['index'].dt.year,to_plot['cooling_pmax']*1e-9,label=zcl,color=color,ls=ls_list[idx%3])
                 ax.fill_between(to_plot['index'].dt.year,to_plot['cooling_pmax']*1e-9+to_plot_std['cooling_pmax']*1e-9,to_plot['cooling_pmax']*1e-9-to_plot_std['cooling_pmax']*1e-9,color=color,alpha=0.37)
-            ax.set_ylabel('JJA Electricity power peak for cooling (GW)')
+            ax.set_ylabel('Electricity power peak for cooling (GW)')
             ax.set_ylim(bottom=0.,top=7.)
             ax.set_xlim([2018,2050])
             ax.legend(ncols=1)
@@ -3080,7 +3241,7 @@ def main():
             axin.imshow(plt.imread(get_sample_data('/home/amounier/PycharmProjects/thermal/data/scenarios_compact.png')))
             axin.axis('off')
             
-            ax.set_ylabel('DJF relative power peak for heating (ratio)')
+            ax.set_ylabel('Relative power peak for heating (ratio)')
             # ax.legend()
             # ax.set_ylim(bottom=0.)
             ax.set_xlim([2018,2050])
@@ -3113,7 +3274,7 @@ def main():
             axin.imshow(plt.imread(get_sample_data('/home/amounier/PycharmProjects/thermal/data/scenarios_compact.png')))
             axin.axis('off')
             
-            ax.set_ylabel('JJA relative power peak for cooling (ratio)')
+            ax.set_ylabel('Relative power peak for cooling (ratio)')
             # ax.legend()
             # ax.set_ylim(bottom=0.)
             ax.set_xlim([2018,2050])
@@ -3329,13 +3490,17 @@ def main():
         years = list(range(2018,2051))
         
         
-        def get_dhi_mean(df,period=years):
+        def get_dhi_mean(df,period=years,hot=True):
             df_dhi_agg_zcl_yearly_sce = df[df.scenario=='REF_REF'].copy()
             df_dhi_agg_zcl_yearly_sce['index'] = df_dhi_agg_zcl_yearly_sce['index'].dt.year
             df_dhi_agg_zcl_yearly_sce = df_dhi_agg_zcl_yearly_sce.rename(columns={'index':'year'})
             df_dhi_agg_zcl_yearly_sce = df_dhi_agg_zcl_yearly_sce.set_index(['year','climate_model'])
-            cooling_mean = df_dhi_agg_zcl_yearly_sce.groupby('year')['DHI_hot'].mean()/df_dhi_agg_zcl_yearly_sce.groupby('year')['households'].mean()
-            cooling_std = df_dhi_agg_zcl_yearly_sce.groupby('year')['DHI_hot'].std()/df_dhi_agg_zcl_yearly_sce.groupby('year')['households'].mean()
+            if hot:
+                cooling_mean = df_dhi_agg_zcl_yearly_sce.groupby('year')['DHI_hot'].mean()/df_dhi_agg_zcl_yearly_sce.groupby('year')['households'].mean()
+                cooling_std = df_dhi_agg_zcl_yearly_sce.groupby('year')['DHI_hot'].std()/df_dhi_agg_zcl_yearly_sce.groupby('year')['households'].mean()
+            else:
+                cooling_mean = df_dhi_agg_zcl_yearly_sce.groupby('year')['DHI_cold'].mean()/df_dhi_agg_zcl_yearly_sce.groupby('year')['households'].mean()
+                cooling_std = df_dhi_agg_zcl_yearly_sce.groupby('year')['DHI_cold'].std()/df_dhi_agg_zcl_yearly_sce.groupby('year')['households'].mean()
             mean, std = cooling_mean.loc[period].mean(), cooling_std.loc[period].mean()
             return mean,std
         
@@ -3419,7 +3584,7 @@ def main():
                 
         
         # ref absolute
-        if False:
+        if True:
             #heating
             fig,ax = plt.subplots(figsize=(5,5),dpi=300)
             for scenario in list(set(df_dhi_agg_zcl_yearly.scenario.values)):
@@ -3478,7 +3643,7 @@ def main():
             
             
         # realtive
-        if False:
+        if True:
             #heating
             fig,ax = plt.subplots(figsize=(5,5),dpi=300)
             for scenario in list(set(df_dhi_agg_zcl_yearly.scenario.values)):
@@ -3504,7 +3669,7 @@ def main():
             axin.imshow(plt.imread(get_sample_data('/home/amounier/PycharmProjects/thermal/data/scenarios_compact.png')))
             axin.axis('off')
             
-            ax.set_ylabel('Relative cold incomfort (ratio)')
+            ax.set_ylabel('Relative cold discomfort (ratio)')
             # ax.legend()
             ax.set_ylim(bottom=0.)
             ax.set_xlim([2018,2050])
@@ -3536,7 +3701,7 @@ def main():
             axin.imshow(plt.imread(get_sample_data('/home/amounier/PycharmProjects/thermal/data/scenarios_compact.png')))
             axin.axis('off')
             
-            ax.set_ylabel('Relative hot incomfort (ratio)')
+            ax.set_ylabel('Relative hot discomfort (ratio)')
             # ax.legend()
             ax.set_ylim(bottom=0.)
             ax.set_xlim([2018,2050])
@@ -3544,7 +3709,7 @@ def main():
             plt.show()
         
         # ref absolute comparaison C1 C5
-        if False:
+        if True:
             #heating
             fig,ax = plt.subplots(figsize=(5,5),dpi=300)
             for scenario in list(set(df_dhi_agg_zcl_yearly_C1.scenario.values)):
@@ -3569,7 +3734,7 @@ def main():
             axin.imshow(plt.imread(get_sample_data('/home/amounier/PycharmProjects/thermal/data/scenarios_compact.png')))
             axin.axis('off')
             
-            ax.set_ylabel('Cold incomfort (°C.h.household$^{-1}$)')
+            ax.set_ylabel('Cold discomfort (°C.h.household$^{-1}$)')
             # ax.legend()
             ax.set_title('Income level - C1')
             ax.set_ylim(bottom=0.,top=5000)
@@ -3600,7 +3765,7 @@ def main():
             axin.imshow(plt.imread(get_sample_data('/home/amounier/PycharmProjects/thermal/data/scenarios_compact.png')))
             axin.axis('off')
             
-            ax.set_ylabel('Cold incomfort (°C.h.household$^{-1}$)')
+            ax.set_ylabel('Cold discomfort (°C.h.household$^{-1}$)')
             # ax.legend()
             ax.set_title('Income level - C5')
             ax.set_ylim(bottom=0.,top=5000)
@@ -3633,7 +3798,7 @@ def main():
             axin.imshow(plt.imread(get_sample_data('/home/amounier/PycharmProjects/thermal/data/scenarios_compact.png')))
             axin.axis('off')
             
-            ax.set_ylabel('Hot incomfort (°C.h.household$^{-1}$)')
+            ax.set_ylabel('Hot discomfort (°C.h.household$^{-1}$)')
             # ax.legend()
             ax.set_title('Income level - C1')
             ax.set_ylim(bottom=0.,top=3100)
@@ -3665,7 +3830,7 @@ def main():
             axin.imshow(plt.imread(get_sample_data('/home/amounier/PycharmProjects/thermal/data/scenarios_compact.png')))
             axin.axis('off')
             
-            ax.set_ylabel('Hot incomfort (°C.h.household$^{-1}$)')
+            ax.set_ylabel('Hot discomfort (°C.h.household$^{-1}$)')
             # ax.legend()
             ax.set_title('Income level - C5')
             ax.set_ylim(bottom=0.,top=3100)
@@ -3675,7 +3840,7 @@ def main():
             
             
         # ref absolute comparaison locataire proprio
-        if False:
+        if True:
             #heating
             fig,ax = plt.subplots(figsize=(5,5),dpi=300)
             for scenario in list(set(df_dhi_agg_zcl_yearly_renter.scenario.values)):
