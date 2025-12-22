@@ -732,9 +732,60 @@ def main():
     if 'figs' not in os.listdir(os.path.join(output, folder)):
         os.mkdir(figs_folder)
     
+    #%% politiques publiques par défaut
+    if True:
+        policies_dict = {'Carbon pricing':{'Carbon tax':[2015,2050],
+                                    'EU-ETS 2':[2030,2050]},
+                         'Hybrid':{'White certificate':[2015,2050],
+                                'Bonus insulation':[2019,2021],
+                                'Bonus heater':[2019,2050]},
+                         'Subsidies':{'Reduced VAT':[2015,2024],
+                                        'Income tax credit':[2015,2021],
+                                        'MPR Sérénité':[2015,2024],
+                                        'MPR':[2021,2024],
+                                        'MPR Efficacité':[2024,2050],
+                                        'MPR Performance':[2024,2050],
+                                        'Zero-interest loan':[2024,2050]},
+                         'Regulation':{'Mandatory renovation':[2023,2050],
+                                        'Ban on oil boilers':[2015,2050],
+                                        'Ban on gas boilers':[2030,2050]}}
+        
+        cmap = plt.get_cmap('viridis')
+        policies_cat_color = {'Carbon pricing':cmap(0.2),
+                              'Hybrid':cmap(0.8),
+                              'Subsidies':cmap(0.4),
+                              'Regulation':cmap(0.6)}
+        # total_policies_nb = 0
+        # for p,policies in policies_dict.keys():
+        #     total_policies_nb += len(policies.values())
+        
+        rank = 0
+        ticks_label = []
+        fig,ax = plt.subplots(figsize=(5,5),dpi=300)
+        for p,policies in policies_dict.items():
+            for idx,(k,y) in enumerate(policies.items()):
+                ticks_label.append(k)
+                # ax.plot(y[0],[rank],color=policies_cat_color.get(p),marker='4')
+                label = None
+                if idx == 0:
+                    label=p
+                ax.plot(y,[rank]*2,color=policies_cat_color.get(p),marker='|',label=label)
+                
+                if k == 'Mandatory renovation':
+                    ax.plot([2025,2028,2034],[rank]*3,marker='o',ls='',color=policies_cat_color.get(p),mfc='w')
+                    ax.text(2025,rank+0.5,s='G',ha='center',va='center',size='small')
+                    ax.text(2028,rank+0.5,s='F',ha='center',va='center',size='small')
+                    ax.text(2034,rank+0.5,s='E',ha='center',va='center',size='small')
+                    
+                rank+=1
+        ax.set_yticks(list(range(rank)),ticks_label)
+        ax.yaxis.set_inverted(True)
+        ax.legend()
+        ax.set_xlim([2018,2050])
+        plt.show()
     
     #%% Détermination des étiquettes énergétiques des typologies 
-    if True:
+    if False:
         heating_system_list = ['Electricity-Direct electric', 
                                'Electricity-Heat pump air',
                                'Electricity-Heat pump water',
