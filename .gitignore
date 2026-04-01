@@ -10,3 +10,4 @@ output/
 .virtual_documents/
 __*
 *.pickle
+settings.json
