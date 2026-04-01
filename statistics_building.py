@@ -572,7 +572,7 @@ def main():
                                      hatches=list_dep_mfh)
                 
     #%% Statistiques sur les systèmes de chauffage de la base DPE
-    if True:
+    if False:
         
         # Génération des fichiers statistiques par départements
         if False and external_disk_connection:
@@ -1119,7 +1119,7 @@ def main():
         
         
     #%% Statistiques DPE par typologies 
-    if False:
+    if True:
         
         reformat_bdnb_dpe_file = 'dpe_statistics.parquet'
         
@@ -1352,10 +1352,473 @@ def main():
             #     ax.set_ylim([0,max_max])
             #     ax.set_title(h)
             #     plt.show()
+        
+        
+        # étude de la compacité
+        if True:
+            from administrative import dict_code_dep_code_zcl
+            
+            reformat_bdnb_dpe_file_light = 'dpe_statistics_light_compactness.parquet'
+            if reformat_bdnb_dpe_file_light not in os.listdir(os.path.join('data','BDNB')):
+                dpe = pd.read_parquet(os.path.join('data','BDNB',reformat_bdnb_dpe_file))
+                
+                columns_used = ['batiment_groupe_id','ffo_bat_nb_log','dpe_mix_arrete_surface_habitable_logement',
+                                'dpe_mix_arrete_surface_habitable_immeuble','dpe_mix_arrete_nombre_niveau_logement',
+                                'dpe_mix_arrete_nombre_niveau_immeuble',
+                                'dpe_mix_arrete_classe_bilan_dpe','dpe_mix_arrete_conso_5_usages_ep_m2',
+                                'dpe_mix_arrete_conso_5_usages_ef_m2',
+                                'dpe_mix_arrete_surface_vitree_nord','dpe_mix_arrete_surface_vitree_sud',
+                                'dpe_mix_arrete_surface_vitree_ouest','dpe_mix_arrete_surface_vitree_est',
+                                'dpe_mix_arrete_surface_vitree_horizontal','dpe_mix_arrete_uw',
+                                'dpe_mix_arrete_u_mur_exterieur', 'dpe_mix_arrete_surface_mur_deperditif',
+                                'dpe_mix_arrete_u_plancher_bas_final_deperditif', 'dpe_mix_arrete_surface_plancher_bas_deperditif',
+                                'dpe_mix_arrete_u_plancher_haut_deperditif', 'dpe_mix_arrete_surface_plancher_haut_deperditif',
+                                'departement','dpe_mix_arrete_type_generateur_chauffage'
+                                ]
+                
+                dpe = dpe[columns_used]
+                dpe = dpe[dpe.ffo_bat_nb_log>0]
+                dpe = dpe[~dpe.dpe_mix_arrete_conso_5_usages_ep_m2.isnull()]
+                dpe.to_parquet(os.path.join('data','BDNB',reformat_bdnb_dpe_file_light))
+                
+            else:
+                dpe = pd.read_parquet(os.path.join('data','BDNB',reformat_bdnb_dpe_file_light))
+            
+            list_deperditive_variables = ['dpe_mix_arrete_surface_mur_deperditif',
+                                          'dpe_mix_arrete_surface_vitree_nord',
+                                          'dpe_mix_arrete_surface_vitree_sud',
+                                          'dpe_mix_arrete_surface_vitree_ouest',
+                                          'dpe_mix_arrete_surface_vitree_est',
+                                          'dpe_mix_arrete_surface_vitree_horizontal',
+                                          'dpe_mix_arrete_surface_plancher_haut_deperditif',
+                                          'dpe_mix_arrete_surface_plancher_bas_deperditif'
+                                          ]
+            hauteur = 2.5
+            
+            dpe['surface_deperditive'] = dpe[list_deperditive_variables].sum(axis=1)
+            dpe['logement_individuel'] = dpe.ffo_bat_nb_log==1
+            dpe['surface_habitable'] = dpe.dpe_mix_arrete_surface_habitable_logement
+            dpe['compacite'] = dpe.surface_habitable*hauteur/dpe.surface_deperditive
+            dpe['zcl'] = dpe.departement.map(dict_code_dep_code_zcl.get)
+            
+            dpe['Umur'] = dpe.dpe_mix_arrete_surface_mur_deperditif.fillna(0)*dpe.dpe_mix_arrete_u_mur_exterieur
+            dpe['Uw'] = dpe.dpe_mix_arrete_surface_vitree_nord.fillna(0)*dpe.dpe_mix_arrete_uw + dpe.dpe_mix_arrete_surface_vitree_est.fillna(0)*dpe.dpe_mix_arrete_uw + dpe.dpe_mix_arrete_surface_vitree_sud.fillna(0)*dpe.dpe_mix_arrete_uw + dpe.dpe_mix_arrete_surface_vitree_ouest.fillna(0)*dpe.dpe_mix_arrete_uw  + dpe.dpe_mix_arrete_surface_vitree_horizontal.fillna(0)*dpe.dpe_mix_arrete_uw
+            dpe['Upb'] = dpe.dpe_mix_arrete_u_plancher_bas_final_deperditif*dpe.dpe_mix_arrete_surface_plancher_bas_deperditif.fillna(0)
+            dpe['Uph'] = dpe.dpe_mix_arrete_u_plancher_haut_deperditif*dpe.dpe_mix_arrete_surface_plancher_haut_deperditif.fillna(0)
+            dpe['U'] = (dpe.Umur + dpe.Uw + dpe.Upb + dpe.Uph)/dpe.surface_deperditive
+            
+            # variables climatiques par zcl
+            temperature_3cl = 19-pd.read_csv(os.path.join('data','DPE','Text_0-400.csv')).set_index('month')
+            nref_3cl = pd.read_csv(os.path.join('data','DPE','Nref_0-400.csv')).set_index('month')
+            pond_mean = (temperature_3cl*nref_3cl).sum().to_dict()
+            dpe['temperature'] = dpe.zcl.map(pond_mean.get)
+            
+            # filtre outliers
+            dpe = dpe[dpe['surface_deperditive']>1]
+            dpe = dpe.replace([np.inf, -np.inf], np.nan, inplace=False)
+            dpe = dpe[~pd.isnull(dpe.compacite)]
+            # dpe = dpe[dpe.compacite<dpe.compacite.quantile(0.99)]
+            # dpe = dpe[dpe.dpe_mix_arrete_conso_5_usages_ep_m2<2000]
+            
+            # dpe = dpe[~((~dpe.logement_individuel)&(~pd.isna(dpe.dpe_mix_arrete_surface_plancher_bas_deperditif))&(~pd.isna(dpe.dpe_mix_arrete_surface_plancher_haut_deperditif)))]
+            
+            
+            # log pour probit
+            dpe['log_temperature'] = np.log(dpe.temperature)
+            dpe['log_U'] = np.log(dpe.U)
+            dpe['inv_compacite'] = 1/dpe.compacite
+            dpe = dpe.replace([np.inf, -np.inf], np.nan, inplace=False)
+            dpe['log_compacite'] = np.log(dpe.compacite)
+            dpe['log_inv_compacite'] = np.log(dpe.inv_compacite)
+            
+            # ajout des classe de performance
+            CERTIFICATE_5USES_BOUNDARIES_ENERGY = {'A': [0, 70],
+                                                   'B': [70, 110],
+                                                   'C': [110, 180],
+                                                   'D': [180, 250],
+                                                   'E': [250, 330],
+                                                   'F': [330, 420],
+                                                   'G': [420, 99999],}
+            list_classe = [None]*len(dpe)
+            for idx,conso in enumerate(dpe.dpe_mix_arrete_conso_5_usages_ep_m2):
+                for letter,(inf,sup) in CERTIFICATE_5USES_BOUNDARIES_ENERGY.items():
+                    if conso > inf and conso <= sup:
+                        list_classe[idx] = letter
+            dpe['classe_energie'] = list_classe
+            dpe['classe_energie'] = pd.Categorical(dpe['classe_energie'].values, categories=['A', 'B', 'C', 'D', 'E', 'F', 'G'], ordered=True)
+            
+            dpe['DPE_G'] = (dpe.classe_energie=='G').map(int)
+            dpe['DPE_A'] = (dpe.classe_energie=='A').map(int)
+            dpe['DPE_passoire'] = (dpe.classe_energie.isin(['F','G'])).map(int)
+            
+            
+            dpe_indiv = dpe[dpe.logement_individuel].copy()
+            dpe_collec = dpe[~dpe.logement_individuel].copy()
+            
+            # stimation des positions des logements dans les bâtiments collectifs 
+            position_list = [np.nan]*len(dpe_collec)
+            for idx,(spb,sph) in enumerate(zip(dpe_collec.dpe_mix_arrete_surface_plancher_bas_deperditif,
+                                               dpe_collec.dpe_mix_arrete_surface_plancher_haut_deperditif)):
+                if pd.isna(sph) and not pd.isna(spb):
+                    position_list[idx] = 'Rez-de-chaussée'
+                elif pd.isna(spb) and not pd.isna(sph):
+                    position_list[idx] = 'Dernier'
+                elif pd.isna(spb) and pd.isna(sph):
+                    position_list[idx] = 'Intermédiaire'
+                else:
+                    if spb > sph:
+                        position_list[idx] = 'Rez-de-chaussée'
+                    elif sph > spb:
+                        position_list[idx] = 'Dernier'
+            dpe_collec['position'] = position_list
+            dpe_collec['position'] = pd.Categorical(dpe_collec['position'].values, categories=["Dernier", "Intermédiaire", "Rez-de-chaussée"], ordered=True)
+            
+            nb_log_all = dpe_indiv.ffo_bat_nb_log.sum()
+            dpe_indiv = dpe_indiv[dpe_indiv.dpe_mix_arrete_nombre_niveau_logement<4]
+            nb_log_inf = dpe_indiv.ffo_bat_nb_log.sum()
+            print('Pourcentage maison logement < 4 étages : {:.0f}% ({}/{})'.format(nb_log_inf/nb_log_all*100,nb_log_inf,nb_log_all))
+            print('Nombre maison logement: {:.0f}'.format(dpe_indiv.ffo_bat_nb_log.sum()))
+            print('Nombre appartement logement: {:.0f}'.format(dpe_collec.ffo_bat_nb_log.sum()))
+            cmap = plt.get_cmap('viridis')
+            
+            # analyse probit 
+            if True:
+                def fit_model(survey, endog, exog, model='Logit',weights=None,disp=None,add_constant=True):
+                    droped_nan = len(survey)
+                    # survey = survey[survey[endog].notna()]
+                    if type(endog)==list:
+                        adder = endog
+                    else:
+                        adder = [endog]
+                    for v in exog+adder:
+                        survey = survey[survey[v].notna()]
+                    droped_nan -= len(survey)
+                    # print(droped_nan)
+                    if type(endog)==list:
+                        endog = survey[endog]
+                    else:
+                        endog = survey[[endog]]
+                    if add_constant:
+                        exog = sm.add_constant(survey[exog])
+                    else:
+                        exog = survey[exog]
+                    result = None
+                    if model == 'Probit':
+                        result = sm.Probit(endog, exog, sample_weights=weights).fit(disp=disp)
+                    elif model == 'Logit':
+                        result = sm.Logit(endog, exog, sample_weights=weights).fit(disp=disp)
+                    elif model == 'MNLogit':
+                        # print(endog,exog)
+                        result = sm.MNLogit(endog, exog, sample_weights=weights).fit(disp=disp)
+                    elif model == 'OLS':
+                        if weights is not None:
+                            print('Ignored weights for OLS')
+                        result = sm.OLS(endog, exog).fit(disp=disp)
+                    return result
+                
+                print('-'*8,'Non normalisé','-'*8)
+                normalized = False
+                variables = ['log_temperature','log_U','log_inv_compacite']
+                if normalized:
+                    for var in variables:
+                        dpe[var] = (dpe[var]-dpe[var].min())/(dpe[var].max()-dpe[var].min())
+                
+                dpe = dpe[dpe.inv_compacite<dpe.inv_compacite.quantile(0.985)]
+                print(dpe[['temperature','U','inv_compacite']+variables+['DPE_G','DPE_passoire']].describe().T[['mean','std','min','50%','max']].to_latex())
+                
+                res = fit_model(dpe,endog='DPE_G', exog=variables, add_constant=True)
+                # print(res.summary())
+                # print(res.get_margeff().summary())
+                
+                res = fit_model(dpe,endog='DPE_passoire', exog=variables, add_constant=True)
+                # print(res.summary())
+                # print(res.get_margeff().summary())
+                
+                print('-'*8,'Normalisé min-max','-'*8)
+                normalized = True
+                variables = ['log_temperature','log_U','log_inv_compacite']
+                if normalized:
+                    dpe_normalized = dpe.copy()
+                    for var in variables:
+                        dpe_normalized[var] = (dpe_normalized[var]-dpe_normalized[var].min())/(dpe_normalized[var].max()-dpe_normalized[var].min())
+                    
+                res = fit_model(dpe_normalized,endog='DPE_G', exog=variables, add_constant=True)
+                print(res.summary())
+                # print(res.get_margeff().summary())
+                
+                res = fit_model(dpe_normalized,endog='DPE_passoire', exog=variables, add_constant=True)
+                print(res.summary())
+                # print(res.get_margeff().summary())
+                
+                # params = res.params.to_dict()
+                
+            # graphe distribution compacité
+            if False:
+                dpe_filtered = dpe.copy()
+                dpe_filtered = dpe_filtered[dpe_filtered.compacite<=1.2*hauteur]
+                print('Compacité moyenne logements individuels : {:.1f} ({:.1f})'.format(dpe_indiv.compacite.mean(),dpe_indiv.compacite.std()))
+                print('Compacité moyenne logements collectifs : {:.1f} ({:.1f})'.format(dpe_collec.compacite.mean(),dpe_collec.compacite.std()))
+                fig,ax = plt.subplots(dpi=300,figsize=(5,5))
+                sns.histplot(data=dpe_filtered,x='compacite',hue='logement_individuel',ax=ax,stat='density',legend=True,palette=[cmap(0.33),cmap(0.66)],alpha=0.5,common_norm=False)
+                ax.fill_between([0],[0],color=cmap(0.33),label='Logements collectifs')
+                ax.fill_between([0],[0],color=cmap(0.66),label='Logements individuels')
+                ax.legend()
+                ax.set_xlim([0.2*hauteur,1.2*hauteur])
+                ax.set_xlabel('Compacité (m$^3$.m$^{-2}$)')
+                ax.set_ylabel('Densité')
+                plt.show()
+                
+            # graphe distribution compacité par classe énergétique
+            if False:
+                dpe_filtered = dpe.copy()
+                dpe_filtered = dpe_filtered[dpe_filtered.compacite<=1.2*hauteur]
+                
+                dpe_indiv_filtered = dpe_indiv.copy()
+                dpe_indiv_filtered = dpe_indiv_filtered[dpe_indiv_filtered.compacite<=1.2*hauteur]
+                
+                dpe_collec_filtered = dpe_collec.copy()
+                dpe_collec_filtered = dpe_collec_filtered[dpe_collec_filtered.compacite<=1.2*hauteur]
+                dpe_collec_filtered = dpe_collec_filtered[~pd.isna(dpe_collec_filtered.position)]
+                
+                etiquette_colors_dict = {'A':(0, 156, 109),'B':(82, 177, 83),'C':(120, 189, 118),'D':(244, 231, 15),'E':(240, 181, 15),'F':(235, 130, 53),'G':(215, 34, 31)}
+                etiquette_colors_dict = {k: tuple(map(lambda x: x/255, v)) for k,v in etiquette_colors_dict.items()}
+                
+                fig,ax = plt.subplots(dpi=300,figsize=(5,5))
+                sns.kdeplot(data=dpe_filtered,x='compacite',hue='classe_energie',ax=ax,legend=True,alpha=0.8,common_norm=True,palette=etiquette_colors_dict.values())
+                for letter,color in etiquette_colors_dict.items():
+                    moy = dpe_filtered[dpe_filtered.classe_energie==letter]['compacite'].mean()
+                    ax.fill_between([0],[0],color=color,label='{} ($\\gamma$={:.2f})'.format(letter,moy))
+                ax.legend()
+                ax.set_xlim([0.2*hauteur,1.2*hauteur])
+                ax.set_xlabel('Compacité (m$^3$.m$^{-2}$)')
+                ax.set_ylabel('Densité')
+                plt.show()
+                
+                fig,ax = plt.subplots(dpi=300,figsize=(5,5))
+                sns.kdeplot(data=dpe_indiv_filtered,x='compacite',hue='classe_energie',ax=ax,legend=True,alpha=0.8,common_norm=True,palette=etiquette_colors_dict.values())
+                for letter,color in etiquette_colors_dict.items():
+                    moy = dpe_indiv_filtered[dpe_indiv_filtered.classe_energie==letter]['compacite'].mean()
+                    ax.fill_between([0],[0],color=color,label='{} ($\\gamma$={:.2f})'.format(letter,moy))
+                ax.legend()
+                ax.set_xlim([0.2*hauteur,1.2*hauteur])
+                ax.set_title('Logements individuels')
+                ax.set_xlabel('Compacité (m$^3$.m$^{-2}$)')
+                ax.set_ylabel('Densité')
+                plt.show()
+                
+                fig,ax = plt.subplots(dpi=300,figsize=(5,5))
+                sns.kdeplot(data=dpe_collec_filtered,x='compacite',hue='classe_energie',ax=ax,legend=True,alpha=0.8,common_norm=True,palette=etiquette_colors_dict.values())
+                for letter,color in etiquette_colors_dict.items():
+                    moy = dpe_collec_filtered[dpe_collec_filtered.classe_energie==letter]['compacite'].mean()
+                    ax.fill_between([0],[0],color=color,label='{} ($\\gamma$={:.2f})'.format(letter,moy))
+                ax.legend()
+                ax.set_xlim([0.2*hauteur,1.2*hauteur])
+                ax.set_title('Logements collectifs')
+                ax.set_xlabel('Compacité (m$^3$.m$^{-2}$)')
+                ax.set_ylabel('Densité')
+                plt.show()
+                
+            # graphe distribution compacité indiv et collec
+            if False:
+                dpe_indiv_filtered = dpe_indiv.copy()
+                # dpe_indiv_filtered = dpe_indiv_filtered[dpe_indiv_filtered.compacite<=5]
+                dpe_indiv_filtered = dpe_indiv_filtered[dpe_indiv_filtered.compacite<=1.2*hauteur]
+                
+                fig,ax = plt.subplots(dpi=300,figsize=(5,5))
+                sns.kdeplot(data=dpe_indiv_filtered,x='compacite',hue='dpe_mix_arrete_nombre_niveau_logement',ax=ax,legend=True,palette=[cmap(0.1),cmap(0.4),cmap(0.7)],alpha=0.8,multiple='layer')
+                ax.fill_between([0],[0],color=cmap(.1),label='1')
+                ax.fill_between([0],[0],color=cmap(0.4),label='2')
+                ax.fill_between([0],[0],color=cmap(0.7),label='3')
+                ax.legend(title='Niveaux')
+                ax.set_xlim([0.2*hauteur,1.2*hauteur])
+                ax.set_title('Logements individuels')
+                ax.set_ylabel('Densité')
+                ax.set_xlabel('Compacité (m$^3$.m$^{-2}$)')
+                plt.show()
+                
+                dpe_collec_filtered = dpe_collec.copy()
+                # dpe_collec_filtered = dpe_collec_filtered[dpe_collec_filtered.compacite<=5]
+                dpe_collec_filtered = dpe_collec_filtered[dpe_collec_filtered.compacite<=1.2*hauteur]
+                dpe_collec_filtered = dpe_collec_filtered[~pd.isna(dpe_collec_filtered.position)]
+                
+                fig,ax = plt.subplots(dpi=300,figsize=(5,5))
+                sns.kdeplot(data=dpe_collec_filtered,x='compacite',hue='position',ax=ax,legend=True,palette=[cmap(0.1),cmap(0.4),cmap(0.7)],alpha=0.8,multiple='layer')
+                ax.fill_between([0],[0],color=cmap(.1),label='Dernier')
+                ax.fill_between([0],[0],color=cmap(0.4),label='Intermédiaire')
+                ax.fill_between([0],[0],color=cmap(0.7),label='Rez-de-chaussée')
+                ax.legend(title='Niveau')
+                ax.set_xlim([0.2*hauteur,1.2*hauteur])
+                ax.set_title('Logements collectifs')
+                ax.set_ylabel('Densité')
+                ax.set_xlabel('Compacité (m$^3$.m$^{-2}$)')
+                plt.show()
+                
+            # graphe lien surfaces
+            if False:
+                dpe_filtered = dpe.copy()
+                dpe_filtered = dpe_filtered[dpe_filtered.surface_habitable<dpe_filtered.surface_habitable.quantile(0.99)]
+                dpe_filtered = dpe_filtered[dpe_filtered.surface_deperditive<dpe_filtered.surface_deperditive.quantile(0.99)]
+                
+                a,b = np.polyfit(dpe_filtered.surface_habitable, dpe_filtered.surface_deperditive,deg=1)
+                print(a,b)
+                X_light = np.linspace(0,250,10)
+                Y_light = a*X_light+b
+                Y_hat = a*dpe_filtered.surface_habitable+b
+                r2 = r2_score(dpe_filtered.surface_deperditive,Y_hat)
+                
+                fig,ax = plt.subplots(dpi=300,figsize=(5,5))
+                cbar_ax = fig.add_axes([0, 0, 0.1, 0.1])
+                posn = ax.get_position()
+                cbar_ax.set_position([posn.x0+posn.width+0.02, posn.y0, 0.04, posn.height])
+                sns.histplot(data=dpe_filtered,y='surface_deperditive',x='surface_habitable',ax=ax, cmap='viridis',cbar=True,stat='density',cbar_ax=cbar_ax,cbar_kws={'label':'Densité'})
+                # ax.fill_between([0],[0],color=cmap(0.33),label='Logements collectifs')
+                # ax.fill_between([0],[0],color=cmap(0.66),label='Logements individuels')
+                ax.plot(X_light,Y_light,label='Linear fit (R$^2$={:.2f})'.format(r2),color='red')
+                ax.legend()
+                ax.set_xlim([0,250])
+                ax.set_ylim([0,700])
+                ax.set_xlabel('Surface habitable (m$^2$)')
+                ax.set_ylabel('Surface déperditive (m$^2$)')
+                plt.show()
+                
+                # dpe_indiv_filtered = dpe_indiv.copy()
+                # dpe_indiv_filtered = dpe_indiv_filtered[dpe_indiv_filtered.surface_habitable<dpe_indiv_filtered.surface_habitable.quantile(0.99)]
+                # dpe_indiv_filtered = dpe_indiv_filtered[dpe_indiv_filtered.surface_deperditive<dpe_indiv_filtered.surface_deperditive.quantile(0.99)]
+                
+                # fig,ax = plt.subplots(dpi=300,figsize=(5,5))
+                # cbar_ax = fig.add_axes([0, 0, 0.1, 0.1])
+                # posn = ax.get_position()
+                # cbar_ax.set_position([posn.x0+posn.width+0.02, posn.y0, 0.04, posn.height])
+                # sns.histplot(data=dpe_indiv_filtered,y='surface_deperditive',x='surface_habitable',ax=ax, cmap='viridis',cbar=True,stat='density',cbar_ax=cbar_ax,cbar_kws={'label':'Densité'})
+                # # ax.fill_between([0],[0],color=cmap(0.33),label='Logements collectifs')
+                # # ax.fill_between([0],[0],color=cmap(0.66),label='Logements individuels')
+                # # ax.legend()
+                # ax.set_xlim([0,250])
+                # ax.set_ylim([0,1000])
+                # # ax.set_xlabel('Compacité (m$^2$.m$^{-2}$)')
+                # # ax.set_ylabel('Densité')
+                # plt.show()
+                pass
+                
+            # graphe lien consommation surface et compacite (indiv)
+            if False:    
+                dpe_indiv_filtered = dpe_indiv.copy()
+                # dpe_indiv_filtered = dpe_indiv_filtered[dpe_indiv_filtered.compacite<=5]
+                dpe_indiv_filtered = dpe_indiv_filtered[dpe_indiv_filtered.compacite<=1.2*hauteur]
+                
+                fig,ax = plt.subplots(dpi=300,figsize=(5,5))
+                cbar_ax = fig.add_axes([0, 0, 0.1, 0.1])
+                posn = ax.get_position()
+                cbar_ax.set_position([posn.x0+posn.width+0.02, posn.y0, 0.04, posn.height])
+                sns.histplot(data=dpe_indiv_filtered,x='compacite',y='dpe_mix_arrete_conso_5_usages_ep_m2',ax=ax,cmap='viridis',cbar=True,stat='density',cbar_ax=cbar_ax,cbar_kws={'label':'Densité'})
+                ax.set_xlim([0.2*hauteur,1.2*hauteur])
+                ax.set_ylim([0,800])
+                ax.set_title('Logements individuels')
+                ax.set_xlabel('Compacité (m$^3$.m$^{-2}$)')
+                ax.set_ylabel('Consommation surfacique (kWh.m$^{-2}$.an$^{-1}$)')
+                plt.show()
+                
+                
+                dpe_indiv_filtered = dpe_indiv.copy()
+                dpe_indiv_filtered['inv_compacite'] = 1/dpe_indiv_filtered.compacite
+                dpe_indiv_filtered = dpe_indiv_filtered[dpe_indiv_filtered.inv_compacite<=5/hauteur]
+                # # dpe_indiv_filtered = dpe_indiv_filtered[dpe_indiv_filtered.dpe_mix_arrete_nombre_niveau_logement==1]
+                
+                # a,b = np.polyfit(dpe_indiv_filtered.inv_compacite, dpe_indiv_filtered.dpe_mix_arrete_conso_5_usages_ep_m2, deg=1)
+                # print(a,b)
+                
+                fig,ax = plt.subplots(dpi=300,figsize=(5,5))
+                cbar_ax = fig.add_axes([0, 0, 0.1, 0.1])
+                posn = ax.get_position()
+                cbar_ax.set_position([posn.x0+posn.width+0.02, posn.y0, 0.04, posn.height])
+                sns.histplot(data=dpe_indiv_filtered,x='inv_compacite',y='dpe_mix_arrete_conso_5_usages_ep_m2',ax=ax,cmap='viridis',cbar=True,stat='density',cbar_ax=cbar_ax,cbar_kws={'label':'Densité'})
+                ax.set_xlim([1/hauteur,5/hauteur])
+                ax.set_ylim([0,800])
+                ax.set_title('Logements individuels')
+                ax.set_xlabel('Compacité inverse (m$^2$.m$^{-3}$)')
+                ax.set_ylabel('Consommation surfacique (kWh.m$^{-2}$.an$^{-1}$)')
+                plt.show()
+                pass
+            
+            # graphe lien consommation surface et compacite (collec)
+            if False:         
+                dpe_collec_filtered = dpe_collec.copy()
+                dpe_collec_filtered = dpe_collec_filtered[dpe_collec_filtered.compacite<=1.2*hauteur]
+                
+                fig,ax = plt.subplots(dpi=300,figsize=(5,5))
+                cbar_ax = fig.add_axes([0, 0, 0.1, 0.1])
+                posn = ax.get_position()
+                cbar_ax.set_position([posn.x0+posn.width+0.02, posn.y0, 0.04, posn.height])
+                sns.histplot(data=dpe_collec_filtered,x='compacite',y='dpe_mix_arrete_conso_5_usages_ep_m2',ax=ax,cmap='viridis',cbar=True,stat='density',cbar_ax=cbar_ax,cbar_kws={'label':'Densité'})
+                ax.set_xlim([0.2*hauteur,1.2*hauteur])
+                ax.set_ylim([0,800])
+                ax.set_title('Logements collectifs')
+                ax.set_xlabel('Compacité (m$^3$.m$^{-2}$)')
+                ax.set_ylabel('Consommation surfacique (kWh.m$^{-2}$.an$^{-1}$)')
+                plt.show()
+                
+                dpe_collec_filtered = dpe_collec.copy()
+                dpe_collec_filtered['inv_compacite'] = 1/dpe_collec_filtered.compacite
+                dpe_collec_filtered = dpe_collec_filtered[dpe_collec_filtered.inv_compacite<=5/hauteur]
+                
+                # a,b = np.polyfit(dpe_collec_filtered.inv_compacite, dpe_collec_filtered.dpe_mix_arrete_conso_5_usages_ep_m2, deg=1)
+                # X_light = np.linspace(1,5,50)
+                # Y_light = a*X_light + b
+                # print(a,b)
+                
+                fig,ax = plt.subplots(dpi=300,figsize=(5,5))
+                cbar_ax = fig.add_axes([0, 0, 0.1, 0.1])
+                posn = ax.get_position()
+                cbar_ax.set_position([posn.x0+posn.width+0.02, posn.y0, 0.04, posn.height])
+                sns.histplot(data=dpe_collec_filtered,x='inv_compacite',y='dpe_mix_arrete_conso_5_usages_ep_m2',ax=ax,cmap='viridis',cbar=True,stat='density',cbar_ax=cbar_ax,cbar_kws={'label':'Densité'})
+                ax.set_title('Logements collectifs')
+                # ax.plot(X_light,Y_light,label='model')
+                ax.set_xlim([1/hauteur,5/hauteur])
+                ax.set_ylim([0,800])
+                ax.set_xlabel('Compacité inverse (m$^2$.m$^{-3}$)')
+                ax.set_ylabel('Consommation surfacique (kWh.m$^{-2}$.an$^{-1}$)')
+                plt.show()
+                
+            # graphe lien consommation surface et compacite (all)
+            if False:         
+                dpe_filtered = dpe.copy()
+                dpe_filtered = dpe_filtered[dpe_filtered.compacite<=1.2*hauteur]
+                
+                fig,ax = plt.subplots(dpi=300,figsize=(5,5))
+                cbar_ax = fig.add_axes([0, 0, 0.1, 0.1])
+                posn = ax.get_position()
+                cbar_ax.set_position([posn.x0+posn.width+0.02, posn.y0, 0.04, posn.height])
+                sns.histplot(data=dpe_filtered,x='compacite',y='dpe_mix_arrete_conso_5_usages_ep_m2',ax=ax,cmap='viridis',cbar=True,stat='density',cbar_ax=cbar_ax,cbar_kws={'label':'Densité'})
+                ax.set_xlim([0.2*hauteur,1.2*hauteur])
+                ax.set_ylim([0,800])
+                ax.set_xlabel('Compacité (m$^3$.m$^{-2}$)')
+                ax.set_ylabel('Consommation surfacique (kWh.m$^{-2}$.an$^{-1}$)')
+                plt.show()
+                
+                dpe_filtered = dpe.copy()
+                dpe_filtered['inv_compacite'] = 1/dpe_filtered.compacite
+                dpe_filtered = dpe_filtered[dpe_filtered.inv_compacite<=5/hauteur]
+                
+                # a,b = np.polyfit(dpe_filtered.inv_compacite, dpe_filtered.dpe_mix_arrete_conso_5_usages_ep_m2, deg=1)
+                # X_light = np.linspace(1,5,50)
+                # Y_light = a*X_light + b
+                # print(a,b)
+                
+                fig,ax = plt.subplots(dpi=300,figsize=(5,5))
+                cbar_ax = fig.add_axes([0, 0, 0.1, 0.1])
+                posn = ax.get_position()
+                cbar_ax.set_position([posn.x0+posn.width+0.02, posn.y0, 0.04, posn.height])
+                sns.histplot(data=dpe_filtered,x='inv_compacite',y='dpe_mix_arrete_conso_5_usages_ep_m2',ax=ax,cmap='viridis',cbar=True,stat='density',cbar_ax=cbar_ax,cbar_kws={'label':'Densité'})
+                # ax.plot(X_light,Y_light,label='model')
+                ax.set_xlim([1/hauteur,5/hauteur])
+                ax.set_ylim([0,800])
+                ax.set_xlabel('Compacité inverse (m$^2$.m$^{-3}$)')
+                ax.set_ylabel('Consommation surfacique (kWh.m$^{-2}$.an$^{-1}$)')
+                plt.show()
             
             
         # représentativité et écarts par rapport à la distribution par étiquette
-        if True:
+        if False:
             # cartes 
             if True:
                 # TODO : representativity à recalculer
