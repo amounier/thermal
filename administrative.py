@@ -445,7 +445,20 @@ def draw_climat_map(dict_dep,figs_folder,cbar_min=0,cbar_max=1.,
     plotter.plot(color=plotter.color, ax=ax, transform=ccrs.PlateCarree(),alpha=alpha)
     plotter.boundary.plot(ax=ax, transform=ccrs.PlateCarree(), color=border_color,lw=lw)
     
-    if zcl_label:
+    if type(zcl_label) == dict:
+        for zcl,v in zcl_label.items():
+            x = zcl.geometry.centroid.x
+            y = zcl.geometry.centroid.y
+            if zcl.code == 'H2a':
+                x,y = (-2.91346, 48.05539)
+            if zcl.code == 'H2c':
+                x,y = (0.59459, 43.604462)
+            if zcl.code == 'H3':
+                x,y = (6.06993, 43.23685)
+            ax.text(x, y, v, 
+                    horizontalalignment='center', transform=ccrs.Geodetic(), zorder=20, color='k',
+                    bbox=dict(facecolor='w', alpha=0.37))    
+    elif zcl_label:
         for zcl in dict_dep.keys():
             x = zcl.geometry.centroid.x
             y = zcl.geometry.centroid.y
@@ -561,17 +574,19 @@ def main():
         france = France()
         
         zcl_dict = {Climat(e):None for e in france.climats}
-        # for k,v in zcl_dict.items():
-        #     if k.code == 'H1b':
-        #         zcl_dict[k] = 0.1
-        #     if k.code == 'H3':
-        #         zcl_dict[k] = 0.9
+        for k,v in zcl_dict.items():
+            # if k.code in ['H1b']:
+            if k.code in ['H1b','H2a','H1a']:
+                zcl_dict[k] = 0.33
+            # if k.code in ['H3']:
+            else:
+                zcl_dict[k] = 0.66
         cmap = plt.get_cmap('viridis')
         
-        # draw_climat_map(zcl_dict,zcl_label=False, 
-        #                 figs_folder=figs_folder, save='zcl',cmap=matplotlib.colormaps.get_cmap('coolwarm'),
-        #                 no_cbar=True,alpha=0.5,
-        #                 add_city_points=[Climat(c).center_prefecture for c in france.climats],lw=0.7)
+        draw_climat_map(zcl_dict,zcl_label=False, 
+                        figs_folder=figs_folder, save='zcl',cmap=cmap,
+                        no_cbar=True,alpha=0.6,lw=0.7,)
+                        # add_city_points=[Climat(c).center_prefecture for c in france.climats])
 
         
         
@@ -579,10 +594,10 @@ def main():
         for idx,(k,v) in enumerate(zcl_dict.items()):
             zcl_dict[k] = idx/len(zcl_dict.keys())
         
-        draw_climat_map(zcl_dict,zcl_label=True, 
-                        figs_folder=figs_folder, save='zcl_colored',cmap=cmap,
-                        no_cbar=True,alpha=0.0,point_color='same',
-                        add_city_points=[Climat(c).center_prefecture for c in france.climats],lw=0.7)
+        # draw_climat_map(zcl_dict,zcl_label=True, 
+        #                 figs_folder=figs_folder, save='zcl_colored',cmap=cmap,
+        #                 no_cbar=True,alpha=0.0,point_color='same',
+        #                 add_city_points=[Climat(c).center_prefecture for c in france.climats],lw=0.7)
         
         
         # [print(d) for d in zcl.departements]
