@@ -2680,7 +2680,8 @@ def main():
     #%% Comparaisons des typologies TABULA
     if True:
         # Génération du fichier météo
-        zcl_code = 'H1a'
+        # zcl_code = 'H1a'
+        zcl_code = 'H1b'
         # zcl_code = 'H3'
         city = City(Climat(zcl_code).center_prefecture).name
         # period = [2010,2020]
@@ -2834,8 +2835,8 @@ def main():
         # Comparaison entre typologies (consommations et U-values)
         if True:
             
-            for building_type in ['SFH','TH','MFH','AB']:
-            # for building_type in ['SFH']:
+            # for building_type in ['SFH','TH','MFH','AB']:
+            for building_type in ['SFH']:
             
                 heating_needs_TABULA = {}
                 Uph_TABULA = {}

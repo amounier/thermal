@@ -203,31 +203,6 @@ def main():
         blank_national_map()
     
     #%% bivariate cmap
-    if False:
-        cmap = custom_xycmap()
-        
-        fig,ax = plt.subplots(figsize=(3,3),dpi=300)
-        
-        ax.plot([-1,4],[1.5]*2,color='w')
-        ax.plot([-1,4],[0.5]*2,color='w')
-        ax.plot([1.5]*2,[-1,3],color='w')
-        ax.plot([0.5]*2,[-1,3],color='w')
-
-        ax.imshow(cmap)
-        
-        ax.text(-0.65,0,'More AC',va='center',ha='right')
-        ax.text(-0.65,1,'REF',va='center',ha='right',style='italic')
-        ax.text(-0.65,2,'Less AC',va='center',ha='right')
-        ax.text(0,2.8,'Cold CLZ',ha='center',va='bottom')
-        ax.text(1,2.8,'REF',ha='center',va='bottom',style='italic')
-        ax.text(2,2.8,'Hot CLZ',ha='center',va='bottom')
-        
-        ax.set_xticks([])
-        ax.set_yticks([])
-        plt.savefig(os.path.join(figs_folder,'scenarios.png'), bbox_inches='tight')
-        plt.show()
-        
-    # idem en compact 
     if True:
         cmap = custom_xycmap()
         
@@ -240,20 +215,62 @@ def main():
 
         ax.imshow(cmap)
         
-        ax.text(0,0,'ACP\nNOF',va='center',ha='center',size=20,family='monospace')
-        ax.text(0,1,'REF\nNOF',va='center',ha='center',size=20,family='monospace')
-        ax.text(0,2,'ACM\nNOF',va='center',ha='center',size=20,family='monospace')
-        ax.text(1,0,'ACP\nREF',va='center',ha='center',size=20,family='monospace',color='w')
-        ax.text(1,1,'REF\nREF',va='center',ha='center',size=20,family='monospace',color='w')
-        ax.text(1,2,'ACM\nREF',va='center',ha='center',size=20,family='monospace')
-        ax.text(2,0,'ACP\nSOF',va='center',ha='center',size=20,family='monospace',color='w')
-        ax.text(2,1,'REF\nSOF',va='center',ha='center',size=20,family='monospace',color='w')
-        ax.text(2,2,'ACM\nSOF',va='center',ha='center',size=20,family='monospace')
+        ax.text(-0.65,0,'AC$+$',va='center',ha='right')
+        ax.text(-0.65,1,'REF',va='center',ha='right')
+        ax.text(-0.65,2,'AC$-$',va='center',ha='right')
+        ax.text(0,2.8,'Nord',ha='center',va='bottom')
+        ax.text(1,2.8,'REF',ha='center',va='bottom')
+        ax.text(2,2.8,'Sud',ha='center',va='bottom')
+        
+        xlim = ax.get_xlim()
+        ylim = ax.get_ylim()
+        # ax.arrow(1,1,-1,1,head_width=0.1, head_length=0.1, lw=2 , color='k')
+        # ax.arrow(1,1,1,-1,head_width=0.1, head_length=0.1, lw=2 , color='k')
+        # ax.text(0,2.2,'Att.',va='top',ha='center')
+        # ax.text(2,-0.2,'Adap.',va='bottom',ha='center',color='w')
+        
+        ax.set_xlim(xlim)
+        ax.set_ylim(ylim)
+        
+        ax.set_xticks([])
+        ax.set_yticks([])
+        plt.savefig(os.path.join(figs_folder,'scenarios.png'), bbox_inches='tight')
+        plt.show()
+        
+    # idem en compact 
+    if False:
+        cmap = custom_xycmap()
+        
+        fig,ax = plt.subplots(figsize=(3,3),dpi=300)
+        
+        ax.plot([-1,4],[1.5]*2,color='w')
+        ax.plot([-1,4],[0.5]*2,color='w')
+        ax.plot([1.5]*2,[-1,3],color='w')
+        ax.plot([0.5]*2,[-1,3],color='w')
+        
+        alpha = np.zeros((3,3))+1 
+        
+        #1
+        alpha = np.zeros((3,3))+0.1
+        # alpha[2,0] = 1
+        ax.imshow(cmap,alpha=alpha)
+        
+        # ax.text(0,0,'AC$+$\nNord',va='center',ha='center',size=20,family='monospace')
+        # ax.text(0,1,'REF\nNord',va='center',ha='center',size=20,family='monospace')
+        # ax.text(0,2,'AC$-$\nNord',va='center',ha='center',size=20,family='monospace')
+        ax.text(1,0,'AC$+$\nREF',va='center',ha='center',size=20,family='monospace',color='w')
+        # ax.text(1,1,'REF\nREF',va='center',ha='center',size=20,family='monospace',color='w')
+        # ax.text(1,2,'AC$-$\nREF',va='center',ha='center',size=20,family='monospace')
+        # ax.text(2,0,'AC$+$\nSud',va='center',ha='center',size=20,family='monospace',color='w')
+        ax.text(2,1,'REF\nSud',va='center',ha='center',size=20,family='monospace',color='w')
+        # ax.text(2,2,'AC$-$\nSud',va='center',ha='center',size=20,family='monospace')
 
         
         ax.set_xticks([])
         ax.set_yticks([])
-        plt.savefig(os.path.join(figs_folder,'scenarios_compact.png'), bbox_inches='tight')
+        # plt.savefig(os.path.join(figs_folder,'scenarios_compact.png'), bbox_inches='tight')
+        # plt.savefig(os.path.join(figs_folder,'scenarios_compact_1.png'), bbox_inches='tight')
+        plt.savefig(os.path.join(figs_folder,'scenarios_compact_2.png'), bbox_inches='tight')
         plt.show()
     
 

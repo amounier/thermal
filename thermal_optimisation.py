@@ -78,7 +78,7 @@ models_period_dict = {0:{2:  [2034,2053],
 
 def compute_energy_needs_single_actions(component,typo_code,zcl,output_path,
                                         behaviour='conventionnel',period=[2000,2020],
-                                        plot=True,nb_intervals=10,show=False,
+                                        plot=True,nb_intervals=10,show=False,demo=False,
                                         progressbar=False, model='explore2',
                                         nmod=1):
     
@@ -267,17 +267,33 @@ def compute_energy_needs_single_actions(component,typo_code,zcl,output_path,
                     color='k', label='Total needs',
                     ls=':',marker='o',mec='w',capsize=3)
         
-        ax.set_ylim(bottom=0.,top=dict_plot_top_value.get(typo.type))
+        if demo:
+            ax.set_ylim(bottom=0.,top=170) 
+        else:
+            ax.set_ylim(bottom=0.,top=dict_plot_top_value.get(typo.type))
         ylims = ax.get_ylim()
         
         if component == 'walls':
             xlims = ax.get_xlim()
             ax.plot([0.12]*2,ylims,color='k',alpha=0.2)
         
+        if demo:
+            ax.arrow(0.11,Bch_mean[0],0,Bch_mean[5]-Bch_mean[0],head_width=0.01,head_length=4,length_includes_head=True,color='tab:red')
+            ax.arrow(0.13,Bfr_mean[0],0,Bfr_mean[5]-Bfr_mean[0],head_width=0.01,head_length=4,length_includes_head=True,color='tab:blue')
+            ax2 = ax.twinx()
+            ax2.plot([-10],[0],marker='$\\downarrow$',label='R$_{ch}$',color='tab:red',ls='',ms=10)
+            ax2.plot([-10],[0],marker='$\\downarrow$',label='R$_{fr}$',color='tab:blue',ls='',ms=10)
+            ax2.legend(loc='lower left')
+            ax2.set_yticks([])
+            
         ax.set_ylim(ylims)
+        ax.set_xlim(xlims)
         ax.set_xlabel(dict_components.get('var_label'))
         ax.set_ylabel('Energy needs (kWh.yr$^{-1}$.m$^{-2}$)')
-        ax.set_title('{} - {}'.format(typo.code,zcl.code))
+        if demo:
+            ax.set_title('{} - {} ({})'.format('SFH < 1914',zcl.code, '+4°C'))
+        else:
+            ax.set_title('{} - {}'.format(typo.code,zcl.code))
         ax.legend()
         plt.savefig(os.path.join(output_path,'figs','{}.png'.format(dict_components.get('var_saver'))),bbox_inches='tight')
         if show: 
@@ -1455,7 +1471,7 @@ def main():
         # Évolution des monogestes
         if False:
             # Localisation
-            zcl = Climat('H1b')
+            # zcl = Climat('H1b')
             zcl = Climat('H3')
             typo_code = 'FR.N.SFH.01.Gen'
             # typo_code = 'FR.N.TH.04.Gen'
@@ -1476,6 +1492,7 @@ def main():
                                      behaviour='conventionnel',
                                      period=period,
                                      plot=True,show=True,
+                                     demo=True,
                                      progressbar=True)
                 
                 # compute_energy_needs_single_actions('floor',typo_code,zcl,
@@ -1750,7 +1767,7 @@ def main():
                 pool.starmap(compute_energy_needs_single_actions, run_list)
                 
             # affichage du cadran
-            if True:
+            if False:
 
                 dict_all_components = {'floor':{'var_space':np.logspace(np.log10(0+0.05),np.log10(0.4+0.05),num=10)-0.05,
                                                 'var_label':'Additional floor insulation',
@@ -1929,7 +1946,7 @@ def main():
             
             
             # aggregation des cadrans
-            if False:
+            if True:
                 # marker_list = list(Line2D.filled_markers)[1:]
                 # marker_list = ['o','^','s','*','d','P','X']
                 cmap_dict = {'H3':plt.colormaps.get_cmap('Reds_r'),
@@ -1942,7 +1959,7 @@ def main():
                 # component_list = ['shading','walls','floor','roof','albedo','windows','ventilation']
                 # component_list = ['shading','walls','floor','roof','albedo','windows']
                 component_list = ['walls']
-                component_list = ['walls','roof','floor','windows','albedo','shading']
+                # component_list = ['walls','roof','floor','windows','albedo','shading']
                 
                 marker_dict = {'shading':'o','walls':'^','floor':'s','roof':'*','albedo':'d','windows':'P'}
                 
@@ -2116,11 +2133,11 @@ def main():
                     
                     
             # aggregation des cadrans (hist2d)
-            if False:
+            if True:
                 zcl_list = France().climats
                 output_path = os.path.join(output, folder)
-                # component_list = ['walls']
-                component_list = ['walls','roof','floor','windows','albedo','shading']
+                component_list = ['walls']
+                # component_list = ['walls','roof','floor','windows','albedo','shading']
                 
                 distribution_typo = pd.read_csv(os.path.join('data','distribution_typologies_zcl8.csv'))
                 distrib = distribution_typo[(distribution_typo.period.isin(list(range(1,11))))]
@@ -2440,7 +2457,7 @@ def main():
         if True:
             
             # premier test 
-            if True:
+            if False:
                 zcl_code = 'H1b'
                 # zcl_code = 'H3'
                 building_type = 'SFH'
@@ -2470,7 +2487,7 @@ def main():
                 # sous forme d'heatmap
                 if True:
                     for building_type in tqdm.tqdm(['SFH','TH','MFH','AB']):
-                    # for building_type in tqdm.tqdm(['AB']):
+                    # for building_type in tqdm.tqdm(['SFH']):
                         maximax = 0.
                         for zcl_code in ['H1b','H3']:
                             Bch,Bfr,Btot = create_combination_results_dict(zcl_code, building_type, os.path.join(output, folder),natnocvent=nocturnal_natural_cooling)
@@ -2488,6 +2505,9 @@ def main():
                             
                             # dataset.index = [ ]
                             # dataset.index = dataset.index.set_levels(['\\phantom{'+e[0]+'}' if '+' in e[1] else e[0] for e in dataset.index], level=0)
+                            
+                            dataset.drop(columns='Typologies').to_csv('{}_{}_energy.csv'.format(building_type,zcl_code))
+                            
                             
                             cmap = {'H1b':'viridis','H3':'viridis'}.get(zcl_code)
                             vmax = dataset.drop(columns='Typologies').max().max()
@@ -2515,7 +2535,7 @@ def main():
                             
                             min_idxs = dataset.drop(columns='Typologies').idxmin(axis=1)
                             
-                            print('energy',building_type, zcl_code, min_idxs.values)
+                            print('energy',building_type, zcl_code, list(min_idxs.values))
                             
                             border_color = 'k'
                             if cmap in ['viridis']:
@@ -2991,6 +3011,8 @@ def main():
                         # calcul des subventions publiques nécessaires
                         min_idxs = dataset_social_costs.drop(columns='Typologies').idxmax(axis=1)
                         
+                        dataset_social_costs.drop(columns='Typologies').to_csv('{}_{}_social.csv'.format(building_type,zcl_code))
+                        dataset_private_costs.drop(columns='Typologies').to_csv('{}_{}_private.csv'.format(building_type,zcl_code))
                         # print(min_idxs)
                         
                         subsidies = pd.DataFrame(min_idxs).rename(columns={0:'min_idx'})
@@ -3114,7 +3136,7 @@ def main():
                                 ax.plot([idx_min+1,idx_min+1],[line,line+1],color='k')
                                 ax.plot([idx_min,idx_min+1],[line+1,line+1],color='k')
                             
-                            print('social',building_type, zcl_code, min_idxs.values)
+                            print('social',building_type, zcl_code, list(min_idxs.values))
                                 # ax.text(idx_min,line,str(idx_min))
                         
                             ax_cb = fig.add_axes([0,0,0.1,0.1])
@@ -3201,7 +3223,7 @@ def main():
                                 
                                 # ax.text(idx_min,line,str(idx_min))
                             
-                            print('privee',building_type, zcl_code, min_idxs.values)
+                            print('privee',building_type, zcl_code, list(min_idxs.values))
                             
                             ax_cb = fig.add_axes([0,0,0.1,0.1])
                             posn = ax.get_position()
@@ -3366,7 +3388,8 @@ def main():
                         plt.savefig(os.path.join(figs_folder,'{}.png'.format('subsidies_{}_ref_best'.format(building_type))),bbox_inches='tight')
                         plt.show()
                         plt.close()
-                        
+                    
+                    
                     # affichage des besoins de subventions optimal local warming
                     if False:
                         fig,ax = plt.subplots(figsize=(8,5),dpi=300)
@@ -3444,6 +3467,7 @@ def main():
                         plt.savefig(os.path.join(figs_folder,'{}.png'.format('subsidies_{}_local_best'.format(building_type))),bbox_inches='tight')
                         plt.show()
                         plt.close()
+                    
                     
                     
             # ordonnance de chaque composante
@@ -4013,7 +4037,7 @@ def main():
                 plt.close()
     
         # prévalence des gestes dans les multi-gestes optimaux
-        if True:
+        if False:
             # individuels
             data = pd.read_csv('data/optimal_combinations.csv')
             distribution_typo = pd.read_csv(os.path.join('data','distribution_typologies_zcl8.csv')).rename(columns={'bt':'building_type','period':'typology'})
@@ -4197,6 +4221,165 @@ def main():
             plt.savefig(os.path.join(figs_folder,'prevalence_optim_collective.png'), bbox_inches='tight')
             plt.show()
                 
+        # affichage de l'effiency gap
+        if True:
+            
+            distribution_typo = pd.read_csv(os.path.join('data','distribution_typologies_zcl8.csv')).rename(columns={'bt':'building_type','period':'typology'})
+            distribution_typo = distribution_typo[distribution_typo.zcl.isin(['H1b','H3'])]
+            distribution_typo = distribution_typo[distribution_typo.typology<11]
+            # distribution_typo_indiv = distribution_typo[distribution_typo.building_type.isin(['SFH'])].copy()
+            distribution_typo_indiv = distribution_typo[distribution_typo.building_type.isin(['SFH','TH','MFH','AB'])].copy()
+            distribution_typo_indiv.loc[:,'ratio'] = distribution_typo_indiv.ratio/distribution_typo_indiv.ratio.sum()
+            distribution_typo_indiv = distribution_typo_indiv.set_index(['zcl','building_type','typology'])
+            distribution_typo_indiv = distribution_typo_indiv.sort_index()
+            
+            idx_energy = {'SFH':{'H1b':[126, 126, 127, 126, 126, 127, 126, 127, 127, 126, 127, 127, 127, 127, 125, 122, 126, 127, 127, 127, 127, 127, 127, 125, 127, 127, 127, 127, 127, 125],
+                                 'H3':[127, 127, 125, 127, 127, 125, 127, 127, 125, 127, 125, 125, 125, 125, 125, 127, 127, 127, 127, 127, 125, 125, 125, 125, 125, 125, 125, 125, 125, 125],},
+                          'TH':{'H1b':[126, 126, 127, 122, 126, 126, 127, 127, 127, 126, 126, 127, 127, 127, 127, 127, 127, 127, 127, 127, 127, 127, 127, 125, 127, 127, 127, 127, 127, 127],
+                                'H3':[127, 127, 127, 126, 127, 127, 127, 127, 127, 127, 127, 125, 127, 127, 127, 125, 125, 125, 125, 125, 125, 61, 117, 53, 125, 125, 125, 61, 61, 117],},
+                          'MFH':{'H1b':[127, 127, 125, 127, 127, 127, 127, 125, 125, 127, 127, 125, 127, 127, 127, 125, 125, 125, 127, 127, 125, 125, 125, 125, 125, 125, 125, 125, 61, 61],
+                                 'H3':[125, 125, 125, 125, 125, 125, 125, 125, 125, 125, 125, 117, 125, 125, 125, 117, 117, 117, 125, 125, 125, 125, 125, 125, 117, 117, 53, 53, 53, 37],},
+                          'AB':{'H1b':[125, 125, 125, 127, 127, 125, 125, 125, 125, 125, 125, 125, 125, 125, 125, 125, 125, 125, 125, 125, 125, 125, 125, 125, 45, 117, 117, 61, 45, 45],
+                                'H3':[125, 125, 125, 125, 125, 125, 125, 117, 117, 53, 53, 53, 117, 117, 117, 117, 117, 117, 125, 125, 125, 117, 117, 117, 37, 37, 93, 53, 37, 37],}                
+                          }
+            
+            idx_social = {'SFH':{'H1b':[122, 122, 88, 122, 122, 88, 122, 122, 82, 122, 122, 88, 40, 40, 8, 42, 42, 8, 40, 40, 8, 40, 8, 8, 40, 8, 0, 8, 8, 0],
+                                 'H3':[16, 16, 0, 80, 80, 80, 80, 80, 16, 80, 80, 80, 8, 0, 0, 8, 8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],},
+                          'TH':{'H1b':[122, 122, 88, 122, 122, 90, 122, 122, 90, 122, 122, 90, 106, 106, 64, 40, 40, 0, 40, 40, 8, 32, 32, 0, 32, 0, 0, 8, 8, 0],
+                                'H3':[24, 24, 16, 80, 80, 16, 82, 80, 80, 80, 80, 16, 0, 0, 0, 0, 0, 0, 8, 8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],},
+                          'MFH':{'H1b':[114, 114, 80, 114, 112, 80, 112, 112, 80, 48, 48, 16, 32, 32, 0, 48, 48, 16, 32, 32, 0, 32, 32, 0, 32, 0, 0, 0, 0, 0],
+                                 'H3':[80, 80, 16, 80, 80, 80, 80, 80, 80, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],},
+                          'AB':{'H1b':[112, 112, 80, 112, 112, 80, 112, 112, 80, 48, 16, 16, 48, 48, 16, 40, 32, 0, 32, 32, 0, 32, 32, 0, 32, 0, 0, 0, 0, 0],
+                                'H3':[80, 80, 16, 80, 80, 16, 80, 80, 80, 16, 16, 16, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],}
+                          }
+            
+            idx_private = {'SFH':{'H1b':[0, 0, 0, 80, 80, 16, 16, 16, 16, 80, 80, 80, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                                  'H3':[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],},
+                           'TH':{'H1b':[16, 16, 0, 80, 16, 16, 80, 80, 64, 18, 16, 16, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                                 'H3':[0, 0, 0, 0, 0, 0, 0, 0, 0, 16, 16, 16, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],},
+                           'MFH':{'H1b':[80, 80, 16, 80, 80, 80, 80, 80, 80, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                                  'H3':[16, 0, 0, 16, 16, 0, 80, 16, 16, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],},
+                           'AB':{'H1b':[80, 80, 16, 80, 80, 16, 80, 80, 80, 16, 16, 16, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                                 'H3':[16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],}
+                           }
+            
+            dict_optimums = {'energy_needs_optimal':idx_energy,
+                             'private_optimal':idx_private,
+                             'social_optimal':idx_social,
+                             }
+            
+            dict_labels = {'energy_needs_optimal':'Energy optimum',
+                           'social_optimal':'Social costs optimum',
+                           'private_optimal':'Private costs optimum'}
+            
+            columns_optimal_colors = {'energy_needs_optimal':plt.get_cmap('viridis')(0.8),
+                                      'private_optimal':plt.get_cmap('viridis')(0.5), 
+                                      'social_optimal':plt.get_cmap('viridis')(0.1)}
+            
+            # columns_optimal_colors = {'energy_needs_optimal':'w',
+            #                           'private_optimal':'w', 
+            #                           'social_optimal':'w'}
+            
+            # columns_optimal_colors = {'energy_needs_optimal':plt.get_cmap('viridis')(0.8),
+            #                           'private_optimal':'w', 
+            #                           'social_optimal':'w'}
+            
+            # columns_optimal_colors = {'energy_needs_optimal':plt.get_cmap('viridis')(0.8),
+            #                           'private_optimal':plt.get_cmap('viridis')(0.5), 
+            #                           'social_optimal':'w'}
+            
+            dict_values = {'energy_needs_optimal_x':[],
+                           'energy_needs_optimal_y':[],
+                           'social_optimal_x':[],
+                           'social_optimal_y':[],
+                           'private_optimal_x':[],
+                           'private_optimal_y':[]}
+            
+            fig,ax = plt.subplots(figsize=(5,5),dpi=300)
+            for label,d in dict_optimums.items():
+                y_energy_ref = 0
+                y_energy_2deg = 0
+                y_energy_4deg = 0
+                
+                x_energy_ref = 0
+                x_energy_2deg = 0
+                x_energy_4deg = 0
+                for bt in ['SFH','TH','MFH','AB']:
+                    for zcl in ['H1b','H3']:
+                        dataset_energy = pd.read_csv('{}_{}_energy.csv'.format(bt,zcl)).set_index('Period')
+                        dataset_social_cost = pd.read_csv('{}_{}_social.csv'.format(bt,zcl)).set_index('Period')*1e-3
+                        nb_households = np.asarray([Typology('FR.N.{}.{:02d}.Gen'.format(bt,i)).households for i in range(1, 11) for _ in range(3)])
+                        
+                        reduction_needs = dataset_energy['0'].values - np.asarray([dataset_energy.iloc[i][str(e)] for i,e in enumerate(d.get(bt).get(zcl))])
+                        reduction_needs_ref = reduction_needs[0::3]
+                        reduction_needs_2deg = reduction_needs[1::3]
+                        reduction_needs_4deg = reduction_needs[2::3]
+                        reduction_needs_ref = (reduction_needs_ref * distribution_typo_indiv.loc[(zcl,bt)].T.values).sum()
+                        reduction_needs_2deg = (reduction_needs_2deg * distribution_typo_indiv.loc[(zcl,bt)].T.values).sum()
+                        reduction_needs_4deg = (reduction_needs_4deg * distribution_typo_indiv.loc[(zcl,bt)].T.values).sum()
+                        
+                        cost_efficiency = np.asarray([dataset_social_cost.iloc[i][str(e)] for i,e in enumerate(d.get(bt).get(zcl))])
+                        cost_efficiency = cost_efficiency/nb_households
+                        cost_efficiency_ref = cost_efficiency[0::3]
+                        cost_efficiency_2deg = cost_efficiency[1::3]
+                        cost_efficiency_4deg = cost_efficiency[2::3]
+                        cost_efficiency_ref = (cost_efficiency_ref * distribution_typo_indiv.loc[(zcl,bt)].T.values).sum()
+                        cost_efficiency_2deg = (cost_efficiency_2deg * distribution_typo_indiv.loc[(zcl,bt)].T.values).sum()
+                        cost_efficiency_4deg = (cost_efficiency_4deg * distribution_typo_indiv.loc[(zcl,bt)].T.values).sum()
+                        
+                        y_energy_ref += reduction_needs_ref
+                        y_energy_2deg += reduction_needs_2deg
+                        y_energy_4deg += reduction_needs_4deg
+                        
+                        x_energy_ref += cost_efficiency_ref
+                        x_energy_2deg += cost_efficiency_2deg
+                        x_energy_4deg += cost_efficiency_4deg
+                        
+                        dict_values[label+'_x'] = [x_energy_ref,x_energy_2deg,x_energy_4deg]
+                        dict_values[label+'_y'] = [y_energy_ref,y_energy_2deg,y_energy_4deg]
+                    
+                
+                ax.plot([x_energy_ref,x_energy_2deg,x_energy_4deg],
+                        [y_energy_ref,y_energy_2deg,y_energy_4deg],marker='o',label=dict_labels.get(label),
+                        color=columns_optimal_colors.get(label))
+                ax.plot([x_energy_ref],
+                        [y_energy_ref],marker='o',mfc='w',color=columns_optimal_colors.get(label))
+                ax.plot([x_energy_ref],
+                        [y_energy_ref],marker='o',mfc='w',color=columns_optimal_colors.get(label))
+            
+            ax2 = ax.twinx()
+            ax2.plot([-1],[-100],marker='o',ls='',color='k',mfc='w',label='Reference')
+            ax2.plot([-1],[-100],marker='o',ls='',color='k',label='+2°C/+4°C')
+            ax2.legend(loc='lower left')
+            ax2.set_yticks([])
+            ax2.set_ylim(bottom=0)
+            
+            xlims = ax.get_xlim()
+            
+            ax.arrow(dict_values.get('social_optimal_x')[0],dict_values.get('energy_needs_optimal_y')[0],
+                     0,dict_values.get('social_optimal_y')[0]-dict_values.get('energy_needs_optimal_y')[0],
+                     head_width=0.7,head_length=4,length_includes_head=True,color='tab:red',zorder=3,width=0.1)
+            ax.plot([dict_values.get('energy_needs_optimal_x')[0],dict_values.get('social_optimal_x')[0]],
+                    [dict_values.get('energy_needs_optimal_y')[0]]*2,ls=':',color='tab:red',lw=1,zorder=-1)
+            ax.arrow(dict_values.get('social_optimal_x')[1],dict_values.get('energy_needs_optimal_y')[1],
+                     0,dict_values.get('social_optimal_y')[1]-dict_values.get('energy_needs_optimal_y')[1],
+                     head_width=0.7,head_length=4,length_includes_head=True,color='tab:red',zorder=3,width=0.1)
+            ax.plot([dict_values.get('energy_needs_optimal_x')[1],dict_values.get('social_optimal_x')[1]],
+                    [dict_values.get('energy_needs_optimal_y')[1]]*2,ls=':',color='tab:red',lw=1,zorder=-1)
+            ax.arrow(dict_values.get('social_optimal_x')[2],dict_values.get('energy_needs_optimal_y')[2],
+                     0,dict_values.get('social_optimal_y')[2]-dict_values.get('energy_needs_optimal_y')[2],
+                     head_width=0.7,head_length=4,length_includes_head=True,color='tab:red',zorder=3,width=0.1)
+            ax.plot([dict_values.get('energy_needs_optimal_x')[2],dict_values.get('social_optimal_x')[2]],
+                    [dict_values.get('energy_needs_optimal_y')[2]]*2,ls=':',color='tab:red',lw=1,zorder=-1)
+            
+            ax.legend(loc='center left')
+            ax.set_ylim(bottom=0)
+            ax.set_xlim(xlims)
+            # ax.set_title('SFH')
+            ax.set_ylabel('Reduction in energy needs (kWh.m$^{-2}$.yr$^{-1}$)')
+            ax.set_xlabel('Social profitability (k€.household$^{-1}$)')
+            plt.savefig(os.path.join(figs_folder,'SFH_efficiency_gap.png'), bbox_inches='tight')
+            plt.show()
                 
                 
                 
