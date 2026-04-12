@@ -172,7 +172,8 @@ def compute_energy_needs_single_actions(component,typo_code,zcl,output_path,
                                           'var_label':'Solar shader length (m)',
                                           'var_saver':'action_{}_{}_{}_{}_{}-{}_mod{}_reftest'.format(component,typo_code,zcl.code,behaviour.name,period[0],period[1],nmod)
                                               },
-                               'windows':{'var_space':[10,0.8],
+                               'windows':{'var_space':[10,1.3],
+                                          # 'var_space':[10,0.8],
                                           'var_label':'Windows U-value (W.m$^{-2}$.K$^{-1}$)',
                                           'var_saver':'action_{}_{}_{}_{}_{}-{}_mod{}_reftest'.format(component,typo_code,zcl.code,behaviour.name,period[0],period[1],nmod)
                                               },
@@ -394,7 +395,8 @@ def get_energy_needs_single_actions(component,typo_code,zcl,output_path,
                                           'var_label':'Solar shader length (m)',
                                           'var_saver':'action_{}_{}_{}_{}_{}-{}_mod{}_reftest'.format(component,typo_code,zcl.code,behaviour.name,period[0],period[1],nmod)
                                               },
-                               'windows':{'var_space':[10,0.8],
+                               'windows':{'var_space':[10,1.3],
+                                          # 'var_space':[10,0.8],
                                           'var_label':'Windows U-value (W.m$^{-2}$.K$^{-1}$)',
                                           'var_saver':'action_{}_{}_{}_{}_{}-{}_mod{}_reftest'.format(component,typo_code,zcl.code,behaviour.name,period[0],period[1],nmod)
                                               },
