@@ -654,17 +654,14 @@ def compute_external_Phi(typology, weather_data, wall):
     return Phi_se
 
 
-def get_solar_transmission_factor(typology,weather_data,wall):
+def get_solar_transmission_factor(typology,weather_data,wall,glass_loss_method='linear', glass_loss_plot=False):
     # Dans les règles Th-bat (p51) : voir norme NF P50 777, puis norme NF EN 410 
-    # à raffiner selon le nombre de couches principalement (et peut-être l'angle d'incidence ?)
+    # à raffiner selon le nombre de couches principalement et l'angle d'incidence : fait
 
     wall_orientation = {0:typology.w0_orientation,
                         1:typology.w1_orientation,
                         2:typology.w2_orientation,
                         3:typology.w3_orientation,}.get(wall)
-    # valid_orientations = ['N','NE','E','SE','S','SW','W','NW']
-    # dict_angle_orientation = {i*45:o for i,o in enumerate(valid_orientations)}
-    # dict_orientation_angle = {v:k for k,v in dict_angle_orientation.items()}
     
     wall_angle = dict_orientation_angle.get(wall_orientation)
     
@@ -677,6 +674,35 @@ def get_solar_transmission_factor(typology,weather_data,wall):
     
     solar_factor = np.maximum(np.cos(np.deg2rad(sun_angle)),0)
     solar_factor = solar_factor * (1-typology.windows_frame_ratio)
+    
+    if glass_loss_method == 'linear':
+        
+        def function(uw):
+            glass_loss = (0.9-0.7)/(4.8-1.3)*(uw-1.3)+0.7
+            glass_loss = np.clip(glass_loss,a_min=0.3,a_max=0.9)
+            return glass_loss
+        
+        glass_loss = function(typology.windows_U)
+        
+        if glass_loss_plot:
+            X = np.linspace(0.7,5)
+            Y = function(X)
+            
+            fig,ax = plt.subplots(figsize=(5,5),dpi=300)
+            ax.plot(X,Y,color='k')
+            ax.set_ylabel('Transmission factor (ratio)')
+            ax.set_xlabel('Windows U-value (W.m$^{-2}$.K$^{-1}$)')
+            ax.set_ylim([0,1])
+            plt.show()
+        
+    elif glass_loss_method == 'cste':
+        glass_loss = 0.85
+        
+    elif glass_loss_method == 'disable':
+        glass_loss = 1.
+        
+    solar_factor = solar_factor * glass_loss
+            
     # solar_factor = 1
     return solar_factor
 
