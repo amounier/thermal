@@ -103,7 +103,7 @@ def main():
     # https://www.statistiques.developpement-durable.gouv.fr/les-renovations-energetiques-aidees-du-secteur-residentiel-entre-2016-et-2021?rubrique=&dossier=843982
     
     # moins de rénovations car climat doux dans le sud : vraiment ?
-    if True:
+    if False:
         data = pd.read_excel(os.path.join('data','SDES','graphiques_onre_2016_2021.xlsx'), sheet_name='Carte1', skiprows=2)
         data['Département'] = [Departement(dep) for dep in data.Département]
         
@@ -194,7 +194,7 @@ def main():
             
         
     #%% TREMI
-    if False:
+    if True:
         tremi = pd.read_csv(os.path.join('data','TREMI','tremi_2020_metropole_opda.csv'), na_values=['_NC_', 'NC', '_NR_'], low_memory=False).dropna(axis=1, how='all')
         tremi = tremi[tremi.treg!=7]
         

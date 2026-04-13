@@ -3281,7 +3281,7 @@ def main():
         
         
         # Comparaison entre typologies (consommations et U-values)
-        if True:
+        if False:
             
             for building_type in ['SFH','TH','MFH','AB']:
             # for building_type in ['SFH']:
@@ -3486,6 +3486,78 @@ def main():
                         plt.savefig(os.path.join(figs_folder,'{}.png'.format('{}_TABULA_{}'.format(building_type,element))),bbox_inches='tight')
                         plt.show()
 
+        # Test de la longueur optimale des masquages solaires
+        if False:
+            # zcl_code = 'H1a'
+            zcl_code = 'H3'
+            city = City(Climat(zcl_code).center_prefecture).name
+            period = [2000,2020]
+            weather_source = 'SAFRAN' # ERA5
+            
+            # Checkpoint weather data
+            if weather_source == 'ERA5':
+                weather_data_checkfile = ".weather_data_{}_{}_{}_".format(city,period[0],period[1]) + today + ".pickle"
+                if weather_data_checkfile not in os.listdir():
+                    weather_data = get_historical_weather_data(city,period)
+                    weather_data = refine_resolution(weather_data, resolution='600s')
+                    pickle.dump(weather_data, open(weather_data_checkfile, "wb"))
+                else:
+                    weather_data = pickle.load(open(weather_data_checkfile, 'rb'))
+            elif weather_source == 'SAFRAN':
+                weather_data = get_safran_hourly_weather_data(zcl_code,period)
+                weather_data = refine_resolution(weather_data, resolution='600s')
+            
+            # Carte de France avec la localisation de la ville
+            if False:
+                draw_climat_map({Climat(e):None for e in France().climats},zcl_label=False, 
+                                figs_folder=figs_folder, save='map_France_{}'.format(city),
+                                add_city_points=[city],lw=0.7)
+                
+            conventionnel = Behaviour('conventionnel_th-bce_2020')
+            
+            building_type = 'SFH'
+            period = 1
+            level = 'initial'
+            
+            code = 'FR.N.{}.{:02d}.Gen'.format(building_type,period)
+            typo = Typology(code,level)
+            
+            results = {'heating':[],'cooling':[],'protection_length':[]}
+            
+            for protection_length in tqdm.tqdm(np.linspace(0,2,11)):
+                typo.solar_shader_length = protection_length
+                
+                simulation = run_thermal_model_corrected(typo, conventionnel, weather_data, pmax_warning=False)
+                simulation = aggregate_resolution(simulation, resolution='h')
+                
+                heating_cooling_modelling = aggregate_resolution(simulation[['heating_needs','cooling_needs']], resolution='YE',agg_method='sum')
+                heating_cooling_modelling = heating_cooling_modelling/1000
+                heating_cooling_modelling = heating_cooling_modelling/typo.surface
+                heating_cooling_modelling.index = heating_cooling_modelling.index.year
+                mean_heating_cooling = heating_cooling_modelling.mean()
+                mean_heating = mean_heating_cooling.loc['heating_needs']
+                mean_cooling = mean_heating_cooling.loc['cooling_needs']
+                
+                results['heating'].append(mean_heating)
+                results['cooling'].append(mean_cooling)
+                results['protection_length'].append(protection_length)
+            
+            results = pd.DataFrame().from_dict(results)
+            
+            fig,ax = plt.subplots(figsize=(5,5),dpi=300)
+            ax.plot(results.protection_length, results.heating,color='tab:red',label='Heating needs',marker='o',ls=':')
+            ax.plot(results.protection_length, results.cooling,color='tab:blue',label='Cooling needs',marker='o',ls=':')
+            ax.set_ylabel('Energy needs (kWh.m$^{-2}$.yr$^{-1}$)')
+            ax.set_xlabel('Solar protection length (m)')
+            ax.set_ylim(bottom=0.)
+            ax.legend()
+            plt.show()
+            
+                
+            
+            
+            
+            
             
     #%% Analyse de sensibilité H1a SFH.01  
     if False:
