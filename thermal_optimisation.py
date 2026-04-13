@@ -27,6 +27,7 @@ from meteorology import get_historical_weather_data, get_safran_hourly_weather_d
 from thermal_model import (refine_resolution, 
                            aggregate_resolution, 
                            run_thermal_model, 
+                           run_thermal_model_corrected,
                            plot_timeserie,
                            compute_C_w0)
 from behaviour import Behaviour
@@ -225,7 +226,7 @@ def compute_energy_needs_single_actions(component,typo_code,zcl,output_path,
                 
             # typo.basement = False
                 
-            simulation = run_thermal_model(typo, behaviour, weather_data, pmax_warning=False)
+            simulation = run_thermal_model_corrected(typo, behaviour, weather_data, pmax_warning=False)
             simulation = aggregate_resolution(simulation, resolution='h')
             simulation = aggregate_resolution(simulation[['heating_needs','cooling_needs']], resolution='YE',agg_method='sum')
             Bfr_list[idx] = simulation.cooling_needs.to_list()
@@ -414,7 +415,7 @@ def get_energy_needs_single_actions(component,typo_code,zcl,output_path,
     if '{}.pickle'.format(dict_components.get('var_saver')) not in os.listdir(output_path):
         compute_energy_needs_single_actions(component,typo_code,zcl,output_path,
                                             behaviour,period,
-                                            plot=False,nb_intervals=nb_intervals,show=False,
+                                            plot=False,nb_intervals=nb_intervals,show=False,demo=False,
                                             progressbar=False, model=model,
                                             nmod=nmod)
         
@@ -464,7 +465,7 @@ def compute_energy_needs_typology(typo_code, typo_level,zcl,output_path,
     
     if '{}.pickle'.format(var_saver) not in os.listdir(output_path):
         
-        simulation = run_thermal_model(typo, behaviour, weather_data, pmax_warning=False)
+        simulation = run_thermal_model_corrected(typo, behaviour, weather_data, pmax_warning=False)
         simulation = aggregate_resolution(simulation, resolution='h')
         simulation = aggregate_resolution(simulation[['heating_needs','cooling_needs']], resolution='YE',agg_method='sum')
         
@@ -1061,7 +1062,7 @@ def compute_energy_needs_multi_actions(multi_action_idx,typo_code,zcl,output_pat
             
         typo.basement = False
             
-        simulation = run_thermal_model(typo, behaviour, weather_data, pmax_warning=False)
+        simulation = run_thermal_model_corrected(typo, behaviour, weather_data, pmax_warning=False)
         simulation = aggregate_resolution(simulation, resolution='h')
         
         # fig,ax = plot_timeserie(simulation[['heating_needs','cooling_needs','Pvnat']],figsize=(15,5),
@@ -1309,7 +1310,7 @@ def main():
             # print(typo.modelled_Upb)
             
             t1 = time.time()
-            simulation = run_thermal_model(typo, conventionnel, weather_data, pmax_warning=False)
+            simulation = run_thermal_model_corrected(typo, conventionnel, weather_data, pmax_warning=False)
             simulation = aggregate_resolution(simulation, resolution='h')
             simulation_year = aggregate_resolution(simulation[['heating_needs','cooling_needs']], resolution='YE',agg_method='sum')
             initial_Bch = simulation_year.heating_needs.values[0]
@@ -1338,7 +1339,7 @@ def main():
                 typo.heater_maximum_power = 10000*typo.households # W
                 typo.cooler_maximum_power = 0 # W
                 
-                simulation = run_thermal_model(typo, conventionnel, weather_data, pmax_warning=False)
+                simulation = run_thermal_model_corrected(typo, conventionnel, weather_data, pmax_warning=False)
                 simulation = aggregate_resolution(simulation, resolution='h')
                 simulation = aggregate_resolution(simulation[['heating_needs','cooling_needs']], resolution='YE',agg_method='sum')
                 Bch_list[idx] = simulation.heating_needs.mean()
@@ -1360,7 +1361,7 @@ def main():
                 typo.heater_maximum_power = 0
                 typo.cooler_maximum_power = 10000*typo.households # W
                 
-                simulation = run_thermal_model(typo, conventionnel, weather_data, pmax_warning=False)
+                simulation = run_thermal_model_corrected(typo, conventionnel, weather_data, pmax_warning=False)
                 simulation = aggregate_resolution(simulation, resolution='h')
                 simulation = aggregate_resolution(simulation[['heating_needs','cooling_needs']], resolution='YE',agg_method='sum')
                 Bfr_list[idx] = simulation.cooling_needs.mean()
@@ -1425,7 +1426,7 @@ def main():
                 typo.w2_insulation_thickness = thickness
                 typo.w3_insulation_thickness = thickness
             
-                simulation = run_thermal_model(typo, conventionnel, weather_data, pmax_warning=False)
+                simulation = run_thermal_model_corrected(typo, conventionnel, weather_data, pmax_warning=False)
                 simulation = aggregate_resolution(simulation, resolution='h')
                 simulation = aggregate_resolution(simulation[['heating_needs','cooling_needs']], resolution='YE',agg_method='sum')
                 
@@ -1623,10 +1624,11 @@ def main():
                     
 
     #%% Changement de période climatique
-    if False:
+    if True:
         
         output = 'output'
-        folder = '20251023_thermal_optimisation'
+        # folder = '20251023_thermal_optimisation'
+        folder = '20260413_thermal_optimisation'
         figs_folder = os.path.join(output, folder, 'figs')
         
         # premier test 
@@ -1644,7 +1646,7 @@ def main():
                                  output_path=os.path.join(output, folder),
                                  behaviour='conventionnel',
                                  period=[2000,2020],
-                                 plot=True,nb_intervals='reftest',show=True,
+                                 plot=True,nb_intervals='reftest',show=True,demo=False,
                                  progressbar=True,
                                  model='explore2',nmod=mod)
             
@@ -1652,7 +1654,7 @@ def main():
                                  output_path=os.path.join(output, folder),
                                  behaviour='conventionnel',
                                  period=models_period_dict.get(mod).get(4),
-                                 plot=True,nb_intervals='reftest',show=True,
+                                 plot=True,nb_intervals='reftest',show=True,demo=False,
                                  progressbar=True,
                                  model='explore2',nmod=mod)
             
@@ -1712,22 +1714,22 @@ def main():
         if True:
             
             # calcul des gains
-            if False:
+            if True:
                 # component = 'shading'
                 zcl_list = ['H1b','H3']
-                zcl_list = France().climats
+                # zcl_list = France().climats
                 behaviour = Behaviour('conventionnel_th-bce_2020')
                 elements = sorted(os.listdir(os.path.join(output, folder)))
                 
                 run_list = []
                 for mod in list(range(5)):
                 # for mod in [1]:
-                    for component in ['shading','walls','floor','roof','albedo','windows','ventilation']:
-                    # for component in ['walls']:
+                    # for component in ['shading','walls','floor','roof','albedo','windows','ventilation']:
+                    for component in ['windows']:
                         for zcl_code in zcl_list:
                             zcl = Climat(zcl_code)
-                            for building_type in ['SFH','TH','MFH','AB']:
-                            # for building_type in ['SFH']:
+                            # for building_type in ['SFH','TH','MFH','AB']:
+                            for building_type in ['SFH']:
                                 for i in range(1,11):
                                     code = 'FR.N.{}.{:02d}.Gen'.format(building_type,i)
                                     
@@ -1743,7 +1745,7 @@ def main():
                                                          os.path.join(output, folder),
                                                          'conventionnel',
                                                          [2000,2020],
-                                                         False,'reftest',False,False,
+                                                         False,'reftest',False,False,False,
                                                          'explore2',mod))
                                         
                                     if '{}.pickle'.format(var_saver_2deg) not in elements:
@@ -1751,7 +1753,7 @@ def main():
                                                          os.path.join(output, folder),
                                                          'conventionnel',
                                                          models_period_dict.get(mod).get(2),
-                                                         False,'reftest',False,False,
+                                                         False,'reftest',False,False,False,
                                                          'explore2',mod))
                                     
                                     if '{}.pickle'.format(var_saver_4deg) not in elements:
@@ -1759,7 +1761,7 @@ def main():
                                                          os.path.join(output, folder),
                                                          'conventionnel',
                                                          models_period_dict.get(mod).get(4),
-                                                         False,'reftest',False,False,
+                                                         False,'reftest',False,False,False,
                                                          'explore2',mod))
                 
                 print('Number of runs to do : {:.0f}'.format(len(run_list)))
@@ -1821,14 +1823,14 @@ def main():
                              }
 
                 # for component in ['shading','walls','floor','roof','albedo','windows','ventilation']:
-                for component in ['shading','walls','floor','roof','albedo','windows']:
+                # for component in ['shading','walls','floor','roof','albedo','windows']:
                 # for component in ['shading','floor','roof','albedo','windows']:
-                # for component in ['walls']:
+                for component in ['windows']:
                     for zcl_code in zcl_list:
                         zcl = Climat(zcl_code)
-                        for building_type in ['SFH','TH','MFH','AB']:
+                        # for building_type in ['SFH','TH','MFH','AB']:
                         # for building_type in ['TH','MFH','AB']:
-                        # for building_type in ['SFH']:
+                        for building_type in ['SFH']:
                             fig,ax = plt.subplots(figsize=(5,5),dpi=300)
                             max_Delta_x = 0
                             max_Delta_y = maxy_dict.get(building_type).get(component)
@@ -1948,7 +1950,7 @@ def main():
             
             
             # aggregation des cadrans
-            if True:
+            if False:
                 # marker_list = list(Line2D.filled_markers)[1:]
                 # marker_list = ['o','^','s','*','d','P','X']
                 cmap_dict = {'H3':plt.colormaps.get_cmap('Reds_r'),
@@ -2135,7 +2137,7 @@ def main():
                     
                     
             # aggregation des cadrans (hist2d)
-            if True:
+            if False:
                 zcl_list = France().climats
                 output_path = os.path.join(output, folder)
                 component_list = ['walls']
@@ -3736,7 +3738,7 @@ def main():
                 typo.w3_color = color
                 typo.w2_color = color
             
-                simulation = run_thermal_model(typo, conventionnel, weather_data, pmax_warning=False)
+                simulation = run_thermal_model_corrected(typo, conventionnel, weather_data, pmax_warning=False)
                 simulation = aggregate_resolution(simulation, resolution='h')
                 simulation = aggregate_resolution(simulation[['heating_needs','cooling_needs']], resolution='YE',agg_method='sum')
                 Bfr_list[idx] = simulation.cooling_needs.mean()
@@ -3835,7 +3837,7 @@ def main():
                             typo.w2_insulation_thickness = thickness
                             typo.w3_insulation_thickness = thickness
                         
-                            simulation = run_thermal_model(typo, conventionnel, weather_data, pmax_warning=False)
+                            simulation = run_thermal_model_corrected(typo, conventionnel, weather_data, pmax_warning=False)
                             simulation = aggregate_resolution(simulation, resolution='h')
                             simulation = aggregate_resolution(simulation[['heating_needs','cooling_needs']], resolution='YE',agg_method='sum')
                             Bfr_list[idx] = simulation.cooling_needs.mean()
@@ -3927,7 +3929,7 @@ def main():
                     
                     # typo.floor_insulation_thickness = thf
             
-                    simulation = run_thermal_model(typo, conventionnel, weather_data, pmax_warning=False)
+                    simulation = run_thermal_model_corrected(typo, conventionnel, weather_data, pmax_warning=False)
                     simulation = aggregate_resolution(simulation, resolution='h')
                     simulation = aggregate_resolution(simulation[['heating_needs','cooling_needs']], resolution='YE',agg_method='sum')
                     Bfr_list[idx,idy] = simulation.cooling_needs.mean()
@@ -4224,7 +4226,7 @@ def main():
             plt.show()
                 
         # affichage de l'effiency gap
-        if True:
+        if False:
             
             distribution_typo = pd.read_csv(os.path.join('data','distribution_typologies_zcl8.csv')).rename(columns={'bt':'building_type','period':'typology'})
             distribution_typo = distribution_typo[distribution_typo.zcl.isin(['H1b','H3'])]
