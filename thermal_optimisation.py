@@ -1624,7 +1624,7 @@ def main():
                     
 
     #%% Changement de période climatique
-    if True:
+    if False:
         
         output = 'output'
         # folder = '20251023_thermal_optimisation'
@@ -1716,20 +1716,20 @@ def main():
             # calcul des gains
             if True:
                 # component = 'shading'
-                zcl_list = ['H1b','H3']
-                # zcl_list = France().climats
+                # zcl_list = ['H1b','H3']
+                zcl_list = France().climats
                 behaviour = Behaviour('conventionnel_th-bce_2020')
                 elements = sorted(os.listdir(os.path.join(output, folder)))
                 
                 run_list = []
                 for mod in list(range(5)):
                 # for mod in [1]:
-                    # for component in ['shading','walls','floor','roof','albedo','windows','ventilation']:
-                    for component in ['windows']:
+                    for component in ['shading','walls','floor','roof','albedo','windows','ventilation']:
+                    # for component in ['shading']:
                         for zcl_code in zcl_list:
                             zcl = Climat(zcl_code)
-                            # for building_type in ['SFH','TH','MFH','AB']:
-                            for building_type in ['SFH']:
+                            for building_type in ['SFH','TH','MFH','AB']:
+                            # for building_type in ['TH']:
                                 for i in range(1,11):
                                     code = 'FR.N.{}.{:02d}.Gen'.format(building_type,i)
                                     
@@ -2356,13 +2356,14 @@ def main():
     
             
     #%% Combinaisons de gestes de rénovations
-    if False:
+    if True:
         
         # TODO: attention au dossier déclaré
         # folder = '20250331_thermal_optimisation'
         # folder = '20250414_thermal_optimisation'
         # folder = '20250814_thermal_optimisation'
-        folder = '20251023_thermal_optimisation'
+        # folder = '20251023_thermal_optimisation'
+        folder = '20260413_thermal_optimisation'
         figs_folder = os.path.join(output, folder, 'figs')
         
         # first test 
@@ -2386,8 +2387,9 @@ def main():
 
             
         # parallelisation
-        if False:
-            zcl_list = ['H1b','H3']
+        if True:
+            # zcl_list = ['H1b','H3']
+            zcl_list = France().climats
             nocturnal_natural_cooling = False
             
             zcl_dict = {c: Climat(c) for c in zcl_list}
@@ -2458,7 +2460,7 @@ def main():
             
         
         # ouverture et affichage des données 
-        if True:
+        if False:
             
             # premier test 
             if False:
