@@ -3281,10 +3281,10 @@ def main():
         
         
         # Comparaison entre typologies (consommations et U-values)
-        if False:
+        if True:
             
             for building_type in ['SFH','TH','MFH','AB']:
-            # for building_type in ['SFH']:
+            # for building_type in ['MFH']:
             
                 heating_needs_TABULA = {}
                 Uph_TABULA = {}
@@ -3403,7 +3403,8 @@ def main():
                 ax.legend()
                 ax.set_xticks([(i*7)+2 for i in range(1,11)],['{}.{:02d}'.format(building_type,i) for i in range(1,11)])
                 
-                ylims = ax.get_ylim()
+                # ylims = ax.get_ylim()
+                ylims = [0,500]
                 xlims = ax.get_xlim()
                 for i in range(1,11):
                     j = i*7
@@ -3411,6 +3412,7 @@ def main():
                     if i%2==0:
                         ax.fill_between(X,[ylims[1]]*3,[ylims[0]]*3,color='lightgrey',alpha=0.37,zorder=-2)
                 ax.set_xlim(xlims)
+                ax.set_ylim(ylims)
                 
                 plt.savefig(os.path.join(figs_folder,'{}.png'.format('{}_TABULA_consumption'.format(building_type))),bbox_inches='tight')
                 plt.show()
