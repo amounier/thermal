@@ -87,6 +87,7 @@ class Typology():
         params = open_tabula_typologies().loc[self.code].to_dict()
         # self.desc = params.get('building_name')
         self.type = params.get('building_type')
+        self.period_number = self.code.split('.')[-2]
         # print(params.keys())
         
         # orientation des murs
