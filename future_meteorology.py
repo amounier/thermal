@@ -1531,12 +1531,46 @@ def main():
                 mean_array.to_netcdf(os.path.join(data_folder,'{}Adjust_France_p4deg_MF-ADAMONT-SAFRAN-1980-2011_day_1950-2100.nc'.format(climate_var)),'w',format='NETCDF4')
                 
                 del mean_array
+                
+        # enregistrement d'un netCDF avec chaque model en variable (juste moyenne periode +2)
+        if False:
+            # climate_vars = ['tas','tasmax','tasmin','rsds']
+            climate_vars = ['tas','rsds']
+            
+            for climate_var in climate_vars:
+                print(climate_var)
+                
+                mean_array = None
+                
+                for idx,mod in enumerate(range(0,5)):
+                    
+                    Explore2 = os.path.join(data_folder,climate_var+models_dict.get(mod).get('historical_rcp85'))
+                    array = xr.open_dataset(Explore2)
+                    period = models_period_dict.get(mod).get(2)
+                    array = array.sel(time=slice("{}-01-01".format(period[0]), "{}-12-31".format(period[1]))).mean('time')
+                    
+                    array = array.rename({'{}Adjust'.format(climate_var):'mod{}'.format(mod)})
+                    array.rio.write_crs('epsg:27572', inplace=True)
+                    
+                    geom = pd.Series(France().geometry).apply(mapping)
+                    array = array.rio.clip(geom, 'epsg:4326', drop=False)
+                    
+                    if mean_array is None:
+                        mean_array = array
+                    else:
+                        mean_array['mod{}'.format(mod)] = array['mod{}'.format(mod)]
+                    
+                    del array
+                    
+                mean_array.to_netcdf(os.path.join(data_folder,'{}Adjust_France_p2deg_MF-ADAMONT-SAFRAN-1980-2011_day_1950-2100.nc'.format(climate_var)),'w',format='NETCDF4')
+                
+                del mean_array
                         
                 
         # carte moyenne des 5 modèles
         if True:
             climate_vars = ['tas','rsds']
-            climate_vars = ['tas']
+            # climate_vars = ['rsds']
             
             for climate_var in climate_vars:
                 
@@ -1567,6 +1601,7 @@ def main():
                     # fig,ax = draw_climat_map({c:None for c in climats}, figs_folder=figs_folder,
                     #                          border_color='w',lw=1.,add_legend=False)
                     
+                    
                     vmin = hist.min()
                     vmax = hist.max()
                         
@@ -1594,57 +1629,70 @@ def main():
                     plt.close()
                 
                 # carte des difference à +2, +4
-                # TODO à refaire
                 if True:
                     
-                    fdeg = os.path.join(data_folder,'{}Adjust_France_p4deg_MF-ADAMONT-SAFRAN-1980-2011_day_1950-2100.nc'.format(climate_var))
-                    fdeg = xr.open_dataset(fdeg)
-                    diff = fdeg-hist
+                    vmax = None
                     
-                    mean = diff.to_array(dim='new').mean('new')
-                    stan = diff.to_array(dim='new').std('new')
-                    diff = diff.assign(avg=mean)
-                    diff = diff.assign(sta=stan)
-                    diff = diff.assign(sig=((abs(mean)-abs(stan))<0))
-                    # diff['sig'] = diff.sig.where(diff.sig == True, np.nan)
-                    
-                    # diff.rio.write_crs('epsg:27572', inplace=True)
-                    # geom = pd.Series(France().geometry).apply(mapping)
-                    # diff['sig'] = diff.sig.rio.clip(geom, 'epsg:4326', drop=False)
-                    # diff['avg'] = diff.avg.rio.clip(geom, 'epsg:4326', drop=False)
-                    
-                    cmap = cmocean.cm.balance
-                    
-                    fig,ax = blank_national_map()
-                    
-                    vmin = diff.avg.min()
-                    vmax = diff.avg.max()
-                    vmax = max(abs(vmin),vmax)
-                    
-                    img = diff.avg.plot(ax=ax,transform=ccrs.epsg('27572'),add_colorbar=False,
-                                        cmap=cmap,vmin=-vmax,vmax=vmax)
-                    
-                    # h = diff.sig.plot(ax=ax,transform=ccrs.epsg('27572'),add_colorbar=False,hatch='/')
-                    ax.contourf(diff.x, diff.y, diff.sig,transform=ccrs.epsg('27572'),colors='none',levels=[.5,1.5],hatches=[5*'/',5*'/'],)
-                    
-                    ax.set_title('+4°C period')
-                    
-                    ax_cb = fig.add_axes([0,0,0.1,0.1])
-                    posn = ax.get_position()
-                    ax_cb.set_position([posn.x0+posn.width+0.02, posn.y0, 0.04, posn.height])
-                    fig.add_axes(ax_cb)
-                    cbar = plt.colorbar(img,cax=ax_cb,extendfrac=0.02)
-                    
-                    cbar_label_diff_dict = {'tas':'Difference of daily temperature (°C)',
-                                            'tasmax':'Difference of daily maximal temperature (°C)',
-                                            'tasmin':'Difference of daily minimal temperature (°C)',
-                                            'rsds':'RSDS difference (W.m$^{-2}$)'}
-                    cbar.set_label(cbar_label_diff_dict.get(climate_var))
-                    
-                    ax.set_extent(get_extent())
-                    plt.savefig(os.path.join(figs_folder,'map_{}_4deg.png'.format(climate_var)),bbox_inches='tight')
-                    plt.show()
-                    plt.close()
+                    for warming in [4,2]:
+                        fdeg = os.path.join(data_folder,'{}Adjust_France_p{}deg_MF-ADAMONT-SAFRAN-1980-2011_day_1950-2100.nc'.format(climate_var,warming))
+                        fdeg = xr.open_dataset(fdeg)
+                        diff = fdeg-hist
+                        
+                        # mean = diff.to_array(dim='new').mean('new')
+                        # stan = diff.to_array(dim='new').std('new')
+                        # diff = diff.assign(avg=mean)
+                        # diff = diff.assign(sta=stan)
+                        # diff = diff.assign(sig=((abs(mean)-abs(stan))<0))
+                        
+                        not_all_same_direction = (((diff>0)).to_array(dim='new').sum('new')<5)&(((diff>0)).to_array(dim='new').sum('new')>0)
+                        diff = diff.assign(nb_same=not_all_same_direction)
+                        
+                        mean = diff.to_array(dim='new').mean('new')
+                        # stan = diff.to_array(dim='new').std('new')
+                        diff = diff.assign(avg=mean)
+                        # diff = diff.assign(sta=stan)
+                        # diff = diff.assign(sig=((abs(mean)-abs(stan))<0))
+                        
+                        diff['nb_same'] = diff.nb_same.where(diff.nb_same == True, np.nan)
+                        
+                        diff.rio.write_crs('epsg:27572', inplace=True)
+                        geom = pd.Series(France().geometry).apply(mapping)
+                        diff['nb_same'] = diff.nb_same.rio.clip(geom, 'epsg:4326', drop=False)
+                        diff['avg'] = diff.avg.rio.clip(geom, 'epsg:4326', drop=False)
+                        
+                        cmap = cmocean.cm.balance
+                        
+                        fig,ax = blank_national_map()
+                        
+                        if vmax is None:
+                            vmin = diff.avg.min()
+                            vmax = diff.avg.max()
+                            vmax = max(abs(vmin),vmax)
+                        
+                        img = diff.avg.plot(ax=ax,transform=ccrs.epsg('27572'),add_colorbar=False,
+                                            cmap=cmap,vmin=-vmax,vmax=vmax)
+                        
+                        # h = diff.sig.plot(ax=ax,transform=ccrs.epsg('27572'),add_colorbar=False,hatch='/')
+                        ax.contourf(diff.x, diff.y, diff.nb_same,transform=ccrs.epsg('27572'),colors='none',levels=[.5,1.5],hatches=[3*'/',3*'/'],)
+                        
+                        ax.set_title(f'+{warming}°C period')
+                        
+                        ax_cb = fig.add_axes([0,0,0.1,0.1])
+                        posn = ax.get_position()
+                        ax_cb.set_position([posn.x0+posn.width+0.02, posn.y0, 0.04, posn.height])
+                        fig.add_axes(ax_cb)
+                        cbar = plt.colorbar(img,cax=ax_cb,extendfrac=0.02)
+                        
+                        cbar_label_diff_dict = {'tas':'Difference of daily temperature (°C)',
+                                                'tasmax':'Difference of daily maximal temperature (°C)',
+                                                'tasmin':'Difference of daily minimal temperature (°C)',
+                                                'rsds':'RSDS difference (W.m$^{-2}$)'}
+                        cbar.set_label(cbar_label_diff_dict.get(climate_var))
+                        
+                        ax.set_extent(get_extent())
+                        plt.savefig(os.path.join(figs_folder,'map_{}_{}deg.png'.format(climate_var,warming)),bbox_inches='tight')
+                        plt.show()
+                        plt.close()
                 
                 
                 del array
