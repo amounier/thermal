@@ -59,7 +59,7 @@ from utils import get_zcl_colors
 #                       4:{2:[2006,2021], # debut des projections en 2006
 #                          4:[2040,2060],},}
 
-# TODO : refaire tourner les calculs avec ces nouvelles périodes 
+# refaire tourner les calculs avec ces nouvelles périodes : ok
 models_period_dict = {0:{2:  [2034,2053],
                          2.7:[2046,2065],
                          4:  [2072,2091],},
@@ -1326,7 +1326,7 @@ def main():
             
         
         # Besoins et températures de consignes
-        # TODO faire varier les météos et les périodes de construction
+        # faire varier les météos et les périodes de construction ok
         if False:
             Tch_cons_list = np.linspace(15,23,20)
             Tfr_cons_list = np.linspace(22,30,20)
@@ -1659,7 +1659,7 @@ def main():
                                  model='explore2',nmod=mod)
             
         # evolution des consommations totales pour les typologies
-        # TODO: à refaire cf p200 carnet
+        # à refaire cf p200 carnet : fait
         if False:
             zcl_list = ['H1b','H3']
             # zcl = Climat('H1b')
@@ -2137,11 +2137,12 @@ def main():
                     
                     
             # aggregation des cadrans (hist2d)
-            if False:
+            if True:
                 zcl_list = France().climats
                 output_path = os.path.join(output, folder)
                 # component_list = ['walls']
-                component_list = ['walls','roof','floor','windows','albedo','shading']
+                # component_list = ['walls','roof','floor','windows','albedo','shading']
+                component_list = ['walls','windows','floor','roof','shading','albedo']
                 
                 distribution_typo = pd.read_csv(os.path.join('data','distribution_typologies_zcl8.csv'))
                 distrib = distribution_typo[(distribution_typo.period.isin(list(range(1,11))))]
@@ -2222,8 +2223,17 @@ def main():
                     else:
                         component_df = pd.read_parquet(os.path.join(output_path, component_df_name))
                         
-                    # component_df = component_df[component_df.typ.str.contains('.AB.')]
-                    # component_df = component_df[(component_df.typ.str.contains('.01.'))|(component_df.typ.str.contains('.02.'))|(component_df.typ.str.contains('.03.'))|(component_df.typ.str.contains('.03.'))|(component_df.typ.str.contains('.03.'))]
+                    # component_df = component_df[
+                    #                             # (component_df.typ.str.contains('.SFH.'))|
+                    #                             (component_df.typ.str.contains('.TH.'))
+                    #                             ]
+                    # component_df = component_df[
+                    #                             # (component_df.typ.str.contains('.01.'))|
+                    #                             # (component_df.typ.str.contains('.02.'))|
+                    #                             # (component_df.typ.str.contains('.03.'))|
+                    #                             (component_df.typ.str.contains('.04.'))
+                    #                             # (component_df.typ.str.contains('.05.'))
+                    #                             ]
                     component_df = component_df[(component_df.war==4)]
                     
                     max_val = max([abs(e) for e in [component_df.heating_gains.quantile(0.99),component_df.heating_gains.min(),component_df.cooling_gains.quantile(0.99),component_df.cooling_gains.min(),global_max_val]])
@@ -2279,7 +2289,8 @@ def main():
                 zcl_list = France().climats
                 output_path = os.path.join(output, folder)
                 # component_list = ['walls']
-                component_list = ['walls','roof','floor','windows','albedo','shading']
+                # component_list = ['walls','roof','floor','windows','albedo','shading']
+                component_list = ['walls','windows','floor','roof','shading','albedo']
                 
                 distribution_typo = pd.read_csv(os.path.join('data','distribution_typologies_zcl8.csv'))
                 distrib = distribution_typo[(distribution_typo.period.isin(list(range(1,11))))]
@@ -2434,7 +2445,8 @@ def main():
                 zcl_list = France().climats
                 output_path = os.path.join(output, folder)
                 # component_list = ['walls']
-                component_list = ['walls','roof','floor','windows','albedo','shading']
+                # component_list = ['walls','roof','floor','windows','albedo','shading']
+                component_list = ['walls','windows','floor','roof','shading','albedo']
                 
                 distribution_typo = pd.read_csv(os.path.join('data','distribution_typologies_zcl8.csv'))
                 distrib = distribution_typo[(distribution_typo.period.isin(list(range(1,11))))]
@@ -2936,7 +2948,7 @@ def main():
                                 dataset_consumption_heating_per_surface_3_uses_dict[e][idx] += dataset_dhw_consumption[e][idx] + dataset_consumption_cooling_per_surface[idx]
                         
                         # calcul des typos à risque d'hiver
-                        # TODO: vérifier qu'il n'y a pas redite entre la baisse conso et la baisse Masselot, a priori si
+                        # vérifier qu'il n'y a pas redite entre la baisse conso et la baisse Masselot, a priori si: corrigé
                         winter_risk_threshold = 378 # kWh/m2/yr
                         dataset_winter_risk_dict = {e:dataset_consumption_heating_per_surface_3_uses_dict[e].copy() for e in dict_energy_efficiency.keys()}
                         for e in dict_energy_efficiency.keys():
@@ -3249,7 +3261,7 @@ def main():
                             plt.savefig(os.path.join(figs_folder,'{}.png'.format('discount_factor')),bbox_inches='tight')
                             plt.show()
                         
-                        # TODO: redite avec l'indicateur de logements à risques ? 
+                        # redite avec l'indicateur de logements à risques ? Non
                         winter_risk_cost = 7479 # €/yr/household (Dervaux et Rochaix 2022)
                         winter_risk_evolution = np.asarray([-8.98,-12.21,-25.09]) # Masselot 2025
                         winter_risk_evolution = winter_risk_evolution[0]/winter_risk_evolution
@@ -3273,7 +3285,9 @@ def main():
                         behaviour = Behaviour('conventionnel_th-bce_2020')
                         typology_list = [Typology(c) for c in dataset_summer_risk.Typologies]
                         nb_households = np.asarray([typo.households for typo in typology_list])
-                        nb_inhab = np.asarray([behaviour.get_number_equivalent_adults(typo.surface/typo.households,typo.type)*typo.households/typo.levels for typo in typology_list])
+                        #todo : /typo.levels : vulnérable = dernier étage uniquement, peut-être à débattre
+                        nb_inhab = np.asarray([behaviour.get_number_equivalent_adults(typo.surface/typo.households,typo.type)*typo.households/typo.levels for typo in typology_list]) 
+                        # nb_inhab = np.asarray([behaviour.get_number_equivalent_adults(typo.surface/typo.households,typo.type)*typo.households for typo in typology_list]) 
                         
                         
                         for idx in range(128):
@@ -3812,7 +3826,7 @@ def main():
                                 
                                 Y = subsidies[subsidies.Typologies==code][['gain_ref_private','gain_2°C_private', 'gain_4°C_private']].values
                                 Y = Y[0,:] # optimal_ref
-                                # Y = np.asarray([Y[r,r] for r in range(3)]) # optimal_local_warming #TODO: meh
+                                # Y = np.asarray([Y[r,r] for r in range(3)]) # optimal_local_warming 
                                 Y *= -1
                                 
                                 Y_2D = np.asarray([subsidies_dict.get(nth)[subsidies_dict.get(nth).Typologies==code][['gain_ref_private','gain_2°C_private', 'gain_4°C_private']].values[0,:] for nth in range(1,11)])
@@ -4165,7 +4179,7 @@ def main():
         
     
     # %% Autres    
-    if False:                           
+    if True:                           
     
         # Effets de l'albedo de la maison 
         if False:
@@ -4593,7 +4607,7 @@ def main():
                     for X,comp in enumerate(components):
                         label = None
                         if comp == 'walls':
-                            label = 'Energy'
+                            label = 'Energy opt.'
                         x = np.asarray([-0.3,0.,0.3])
                         ax.plot(X+x, energy_needs_components.get(comp),color=color,marker='o',mec='w',label=label)
                         ax.plot((X+x)[0], energy_needs_components.get(comp)[0],color=color,marker='o',mfc='w')
@@ -4601,7 +4615,7 @@ def main():
                     for X,comp in enumerate(components):
                         label = None
                         if comp == 'walls':
-                            label = 'Private costs'
+                            label = 'Private opt.'
                         x = np.asarray([-0.3,0.,0.3])
                         ax.plot(X+x, private_needs_components.get(comp),color=color,marker='o',mec='w',label=label,zorder=1)
                         ax.plot((X+x)[0], private_needs_components.get(comp)[0],color=color,marker='o',mfc='w',zorder=1.5)
@@ -4609,7 +4623,7 @@ def main():
                     for X,comp in enumerate(components):
                         label = None
                         if comp == 'walls':
-                            label = 'Social costs'
+                            label = 'Social opt.'
                         x = np.asarray([-0.3,0.,0.3])
                         ax.plot(X+x, social_needs_components.get(comp),color=color,marker='o',mec='w',label=label,zorder=2)
                         ax.plot((X+x)[0], social_needs_components.get(comp)[0],color=color,marker='o',mfc='w',zorder=3)
@@ -4733,7 +4747,7 @@ def main():
             pass
                 
         # affichage de l'efficiency gap
-        if True:
+        if False:
             
             distribution_typo = pd.read_csv(os.path.join('data','distribution_typologies_zcl8.csv')).rename(columns={'bt':'building_type','period':'typology'})
             # distribution_typo = distribution_typo[distribution_typo.zcl.isin(['H1b','H3'])]
@@ -4753,9 +4767,9 @@ def main():
                              'social_optimal':idx_social,
                              }
             
-            dict_labels = {'energy_needs_optimal':'Energy',
-                           'social_optimal':'Social costs',
-                           'private_optimal':'Private costs'}
+            dict_labels = {'energy_needs_optimal':'Energy opt.',
+                           'social_optimal':'Social opt.',
+                           'private_optimal':'Private opt.'}
             
             columns_optimal_colors = {'energy_needs_optimal':plt.get_cmap('viridis')(0.8),
                                       'private_optimal':plt.get_cmap('viridis')(0.5), 
@@ -4866,10 +4880,10 @@ def main():
             ax2.plot([-1],[-100],marker='D',ls='',color='k',mfc='w',label='Reference')
             ax2.plot([-1],[-100],marker='D',ls='',color='k',label='+2°C/+4°C')
             ax2.plot([-1],[-100],marker='',ls='',color='grey',label=' ')
-            ax2.plot([-1],[-100],marker='o',ls='',color='k',mfc='w',label='SFH')
-            ax2.plot([-1],[-100],marker='s',ls='',color='k',mfc='w',label='TH')
-            ax2.plot([-1],[-100],marker='v',ls='',color='k',mfc='w',label='MFH')
-            ax2.plot([-1],[-100],marker='^',ls='',color='k',mfc='w',label='AB')
+            ax2.plot([-1],[-100],marker='o',ls='',color='k',mfc='w',label='Single-family house (SFH)')
+            ax2.plot([-1],[-100],marker='s',ls='',color='k',mfc='w',label='Terraced-house (TH)')
+            ax2.plot([-1],[-100],marker='v',ls='',color='k',mfc='w',label='Multi-family house (MFH)')
+            ax2.plot([-1],[-100],marker='^',ls='',color='k',mfc='w',label='Apartment block (AB)')
             ax2.legend(loc='lower right')
             ax2.set_yticks([])
             ax2.set_ylim(bottom=0)
@@ -4915,7 +4929,7 @@ def main():
             plt.show()
                 
         # courbe McKinsey
-        if True:
+        if False:
             distribution_typo = pd.read_csv(os.path.join('data','distribution_typologies_zcl8.csv')).rename(columns={'bt':'building_type','period':'typology'})
             # distribution_typo = distribution_typo[distribution_typo.zcl.isin(['H1b','H3'])]
             distribution_typo = distribution_typo[distribution_typo.typology<11]
@@ -5099,7 +5113,7 @@ def main():
                 def tick_values(self, vmin, vmax):
                     raise NotImplementedError('Cannot get tick locations for a '
                                       '%s type.' % type(self))
-
+                    
             # yaxis = plt.gca().yaxis
             # yaxis.set_minor_locator(MinorSymLogLocator(1e-1))
             # ax.yaxis.set_major_formatter(plt.ScalarFormatter())
@@ -5130,7 +5144,7 @@ def main():
             print(data_to_plot.to_latex(float_format='%.2f'))
             
         # comptage des combinaisons optimales 
-        if False:
+        if True:
             distribution_typo = pd.read_csv(os.path.join('data','distribution_typologies_zcl8.csv')).rename(columns={'bt':'building_type','period':'typology'})
             # distribution_typo = distribution_typo[distribution_typo.zcl.isin(['H1b','H3'])]
             distribution_typo = distribution_typo[distribution_typo.typology<11]
@@ -5242,6 +5256,7 @@ def main():
                 axs[0].plot([idx_min,idx_min],[line,line+1],color=color_square,zorder=10)
                 axs[0].plot([idx_min+1,idx_min+1],[line,line+1],color=color_square,zorder=10)
                 axs[0].plot([idx_min,idx_min+1],[line+1,line+1],color=color_square,zorder=10)
+                axs[0].plot([idx_min+0.5],[line+0.89],marker='^',mfc=color_square,mec='k',zorder=12,ms=7)
                 
             axs[0].set_ylabel('')
             ax_cb0 = fig.add_axes([0,0,0.1,0.1])
@@ -5267,6 +5282,7 @@ def main():
                 axs[1].plot([idx_min,idx_min],[line,line+1],color=color_square,zorder=10)
                 axs[1].plot([idx_min+1,idx_min+1],[line,line+1],color=color_square,zorder=10)
                 axs[1].plot([idx_min,idx_min+1],[line+1,line+1],color=color_square,zorder=10)
+                axs[1].plot([idx_min+0.5],[line+0.89],marker='^',mfc=color_square,mec='k',zorder=12,ms=7)
                 
             axs[1].set_ylabel('')
             ax_cb1 = fig.add_axes([0,0,0.1,0.1])
@@ -5292,6 +5308,7 @@ def main():
                 axs[2].plot([idx_min,idx_min],[line,line+1],color=color_square,zorder=10)
                 axs[2].plot([idx_min+1,idx_min+1],[line,line+1],color=color_square,zorder=10)
                 axs[2].plot([idx_min,idx_min+1],[line+1,line+1],color=color_square,zorder=10)
+                axs[2].plot([idx_min+0.5],[line+0.89],marker='^',mfc=color_square,mec='k',zorder=12,ms=7)
                 
             axs[2].set_ylabel('')
             ax_cb2 = fig.add_axes([0,0,0.1,0.1])
@@ -5308,7 +5325,7 @@ def main():
             plt.show()
         
         # décomposition des couts privés et sociaux
-        if True:
+        if False:
             distribution_typo = pd.read_csv(os.path.join('data','distribution_typologies_zcl8.csv')).rename(columns={'bt':'building_type','period':'typology'})
             distribution_typo = distribution_typo[distribution_typo.typology<11]
             distribution_typo_indiv = distribution_typo[distribution_typo.building_type.isin(['SFH','TH','MFH','AB'])].copy()
@@ -5325,9 +5342,9 @@ def main():
                              'social_optimal':idx_social,
                              }
             
-            dict_labels = {'energy_needs_optimal':'Energy',
-                           'social_optimal':'Social costs',
-                           'private_optimal':'Private costs'}
+            dict_labels = {'energy_needs_optimal':'Energy opt.',
+                           'social_optimal':'Social opt.',
+                           'private_optimal':'Private opt.'}
             
             investment_costs = dict()
             private_energy_costs = dict()
@@ -5580,7 +5597,12 @@ def main():
                               'private':['investment_costs','energy_costs']}
             
             variables_color_dict = {k:plt.get_cmap('viridis')(idx/len(variables_dict.get('social'))) for idx, k in enumerate(variables_dict.get('social'))}
-            variables_label_dict = {'investment_costs':'Investment','investment_carbon_costs':'Carbon investment','energy_costs':'Energy','energy_carbon_costs':'Carbon energy','winter_health_costs':'Winter health','summer_health_costs':'Summer health'}
+            variables_label_dict = {'investment_costs':'Investment costs',
+                                    'investment_carbon_costs':'Embedded CO$_2$',
+                                    'energy_costs':'Energy savings',
+                                    'energy_carbon_costs':'CO$_2$ savings',
+                                    'winter_health_costs':'Winter health',
+                                    'summer_health_costs':'Summer health'}
             
             fig,ax = plt.subplots(figsize=(7,7),dpi=300)
             
@@ -5591,7 +5613,7 @@ def main():
             prof_width = 3.5
             for opt_idx,optimum in enumerate(investment_costs.keys()): 
                 opt_x = opt_idx*opt_width
-    
+                
                 for prof_idx, prof in enumerate(['private','social']):
                     prof_x = prof_idx*prof_width
                     
@@ -5639,7 +5661,7 @@ def main():
             xlims = ax.get_xlim()
             ylims = np.asarray(ax.get_ylim())*1.15
             
-            for (i,_),text in zip(enumerate(investment_costs.keys()),['Energy','Private costs','Social costs']):  
+            for (i,_),text in zip(enumerate(investment_costs.keys()),['Energy opt.','Private opt.','Social opt.']):  
                 ax.fill_between([i*opt_width-1,i*opt_width+prof_width-0.75],[ylims[1]]*2,[ylims[0]]*2,color='lightgrey',alpha=0.37,zorder=-2)
                 ax.plot([i*opt_width-1]*2,ylims,color='grey',alpha=0.67,zorder=-1)
                 ax.text(i*opt_width+prof_width-0.75,ylims[1]*0.9,text,ha='center',va='center',bbox=dict(boxstyle='round', facecolor='w', alpha=0.8))
@@ -5665,7 +5687,26 @@ def main():
             plt.savefig(os.path.join(figs_folder,'{}.png'.format('decomposition_costs')),bbox_inches='tight')
             plt.show()
                                 
-                            
+        # calcul des couts de santé (été) par ménage
+        if False:
+            behaviour = Behaviour('conventionnel_th-bce_2020')
+            
+            distribution_typo = pd.read_csv(os.path.join('data','distribution_typologies_zcl8.csv')).rename(columns={'bt':'building_type','period':'typology'})
+            distribution_typo = distribution_typo[distribution_typo.typology<11]
+            distribution_typo = distribution_typo.groupby(['building_type','typology'])[['ratio']].sum()
+            distribution_typo.loc[:,'ratio'] = distribution_typo.ratio/distribution_typo.ratio.sum()
+            distribution_typo = distribution_typo.sort_index()
+            
+            nb_inhab_per_log = []
+            for bt in ['SFH','TH','MFH','AB']:
+                for bp in range(1,11):
+                    typo = Typology('FR.N.{}.{:02d}.Gen'.format(bt,bp))
+                    nb_households = typo.households
+                    nb_inhab = behaviour.get_number_equivalent_adults(typo.surface/typo.households,typo.type)*typo.households
+                    ratio = distribution_typo.loc[(bt,bp)].values[0]
+                    nb_inhab_per_log.append(nb_inhab/nb_households*ratio)
+            
+            print("Nombre moyen d'adulte équivalent par logement:", np.asarray(nb_inhab_per_log).sum().round(2))
                             
                             
                         
